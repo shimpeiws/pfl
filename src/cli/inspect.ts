@@ -103,7 +103,7 @@ function renderInspect(
         ...counts,
         confidence: resolved.resolution.confidence,
       },
-      diagnostics: observed.diagnostics,
+      diagnostics: { observed: observed.diagnostics, resolved: resolved.diagnostics },
     });
     return;
   }

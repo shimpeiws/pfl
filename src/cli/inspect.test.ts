@@ -121,6 +121,10 @@ describe('runInspect', () => {
     // inspected (2 project files + 1 user skill + 1 opaque layer), all effective.
     expect(payload.observed.elements).toBe(4);
     expect(payload.resolved).toMatchObject({ effective: 4, conditional: 0, shadowed: 0 });
+    // The §17 warning is not dropped from JSON output.
+    expect(payload.diagnostics.resolved).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: 'runtime-version-unverified' })]),
+    );
   });
 
   it('rejects an unknown runtime with RUNTIME_UNSUPPORTED', async () => {

@@ -157,6 +157,28 @@ describe('resolved snapshots', () => {
     );
     expect(await readdir(snapshotsDir('proj', home))).toEqual([`${resolved.snapshotId}.json`]);
   });
+
+  it('rejects a file missing a valid resolution/confidence', async () => {
+    const home = await tempHome();
+    await mkdir(snapshotsDir('proj', home), { recursive: true });
+    await writeFile(
+      join(snapshotsDir('proj', home), 'res_shallow.json'),
+      JSON.stringify({
+        schemaVersion: '1',
+        snapshotId: 'res_shallow',
+        observedSnapshotId: 'obs_y',
+        runtime: { id: 'claude-code', version: null },
+        resolution: { semanticsVersion: '1' },
+        elements: [],
+        relations: [],
+        effectiveElementIds: [],
+        diagnostics: [],
+        digests: { harnessContent: 'sha256:h', resolvedSnapshot: 'sha256:r' },
+      }),
+    );
+
+    await expect(readResolvedSnapshot('proj', 'res_shallow', home)).rejects.toThrowError(PflError);
+  });
 });
 
 describe('latest pointer', () => {
@@ -167,6 +189,14 @@ describe('latest pointer', () => {
     await writeLatestPointer('proj', { observed: 'obs_a', resolved: 'res_a' }, home);
 
     expect(await readLatestPointer('proj', home)).toEqual({ observed: 'obs_a', resolved: 'res_a' });
+  });
+
+  it('throws on a corrupted pointer instead of reporting it as missing', async () => {
+    const home = await tempHome();
+    await mkdir(projectDir('proj', home), { recursive: true });
+    await writeFile(latestPath('proj', home), '{ not json');
+
+    await expect(readLatestPointer('proj', home)).rejects.toThrowError(PflError);
   });
 });
 

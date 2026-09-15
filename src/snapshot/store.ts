@@ -58,6 +58,47 @@ const ARTIFACT_SUFFIX = '.json';
 const LATEST_FILE = 'latest';
 const SAFE_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const COMPLETENESS_VALUES: readonly string[] = ['complete', 'partial', 'unknown'];
+const RESOLVED_STATUS_VALUES: readonly string[] = [
+  'effective',
+  'shadowed',
+  'conditional',
+  'unresolved',
+  'unknown',
+];
+const ACTIVATION_VALUES: readonly string[] = [
+  'always',
+  'conditional',
+  'on-demand',
+  'event-driven',
+  'unknown',
+];
+const STRATEGY_VALUES: readonly string[] = [
+  'override',
+  'accumulate',
+  'available',
+  'policy',
+  'event-pipeline',
+  'runtime-defined',
+  'unknown',
+];
+const APPLICABILITY_VALUES: readonly string[] = [
+  'global',
+  'project',
+  'directory-subtree',
+  'tool-event',
+  'config-rule',
+  'runtime-defined',
+  'unknown',
+];
+const RELATION_TYPE_VALUES: readonly string[] = [
+  'contains',
+  'discovered-from',
+  'accumulates-with',
+  'overrides',
+  'shadows',
+  'resolves-to',
+  'applies-to',
+];
 
 export function pflHome(home: string = homedir()): string {
   return join(home, '.pfl');
@@ -180,12 +221,16 @@ export async function readLatestPointer(
   try {
     parsed = JSON.parse(text);
   } catch {
-    return null;
+    throw snapshotStoreError('the latest pointer is not valid JSON');
   }
-  if (!isRecord(parsed)) return null;
+  if (!isRecord(parsed)) {
+    throw snapshotStoreError('the latest pointer is not a JSON object');
+  }
   const observed = parsed['observed'];
   const resolved = parsed['resolved'];
-  if (typeof observed !== 'string' || typeof resolved !== 'string') return null;
+  if (typeof observed !== 'string' || typeof resolved !== 'string') {
+    throw snapshotStoreError('the latest pointer is missing an id');
+  }
   return { observed, resolved };
 }
 
@@ -384,20 +429,61 @@ function isResolvedSnapshot(value: unknown): value is ResolvedSnapshot {
   }
   const runtime = value['runtime'];
   if (!isRecord(runtime) || typeof runtime['id'] !== 'string') return false;
-  if (!isRecord(value['resolution'])) return false;
+
+  const resolution = value['resolution'];
+  if (!isRecord(resolution) || typeof resolution['semanticsVersion'] !== 'string') return false;
+  const confidence = resolution['confidence'];
+  if (confidence !== 'verified' && confidence !== 'unverified-runtime-version') return false;
+
   if (
     !Array.isArray(value['elements']) ||
+    !value['elements'].every(isResolvedElement) ||
     !Array.isArray(value['relations']) ||
+    !value['relations'].every(isRelation) ||
     !Array.isArray(value['effectiveElementIds']) ||
+    !value['effectiveElementIds'].every((id) => typeof id === 'string') ||
     !Array.isArray(value['diagnostics'])
   ) {
     return false;
   }
+
   const digests = value['digests'];
   return (
     isRecord(digests) &&
     typeof digests['harnessContent'] === 'string' &&
     typeof digests['resolvedSnapshot'] === 'string'
+  );
+}
+
+function isResolvedElement(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (typeof value['id'] !== 'string') return false;
+  if (typeof value['status'] !== 'string' || !RESOLVED_STATUS_VALUES.includes(value['status'])) {
+    return false;
+  }
+  const activation = value['activation'];
+  if (typeof activation !== 'string' || !ACTIVATION_VALUES.includes(activation)) return false;
+  const resolution = value['resolution'];
+  if (!isRecord(resolution)) return false;
+  const strategy = resolution['strategy'];
+  if (typeof strategy !== 'string' || !STRATEGY_VALUES.includes(strategy)) return false;
+  const applicability = value['applicability'];
+  if (applicability !== undefined) {
+    if (!isRecord(applicability)) return false;
+    const type = applicability['type'];
+    if (typeof type !== 'string' || !APPLICABILITY_VALUES.includes(type)) return false;
+  }
+  return true;
+}
+
+function isRelation(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  const type = value['type'];
+  return (
+    typeof type === 'string' &&
+    RELATION_TYPE_VALUES.includes(type) &&
+    typeof value['from'] === 'string' &&
+    typeof value['to'] === 'string'
   );
 }
 
