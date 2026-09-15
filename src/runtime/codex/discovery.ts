@@ -45,8 +45,9 @@ const USER_PREFIX = '~/.codex';
 export async function discoverCodex(
   project: ProjectContext,
   access: AccessPolicy,
+  home: string = homedir(),
 ): Promise<ObservedSnapshot> {
-  return collectCodexHarness(project, access, homedir());
+  return collectCodexHarness(project, access, home);
 }
 
 /** The discovery core with an injected home, so tests need no global state. */

@@ -70,8 +70,9 @@ const PLUGIN_KIND_BY_DIR: Record<string, ClaudeCodeElementKind> = {
 export async function discoverClaudeCode(
   project: ProjectContext,
   access: AccessPolicy,
+  home: string = homedir(),
 ): Promise<ObservedSnapshot> {
-  return collectClaudeCodeHarness(project, access, homedir());
+  return collectClaudeCodeHarness(project, access, home);
 }
 
 /** The discovery core with an injected home, so tests need no global state. */

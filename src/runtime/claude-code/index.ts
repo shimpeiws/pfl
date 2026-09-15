@@ -1,3 +1,4 @@
+import { homedir } from 'node:os';
 import { runtimeId, type RuntimeId } from '../../core/ids.js';
 import type { ObservedSnapshot } from '../../core/observed.js';
 import type { ResolvedSnapshot } from '../../core/resolved.js';
@@ -12,12 +13,36 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
     return runtimeId('claude-code');
   }
 
-  async detect(_project: ProjectContext): Promise<RuntimeDetection> {
-    return detectClaudeCode();
+  async detect(
+    _project: ProjectContext,
+    access: AccessPolicy,
+    home?: string,
+  ): Promise<RuntimeDetection> {
+    if (!access.allowOutsideProject) {
+      return {
+        runtimeId: this.id(),
+        installed: false,
+        version: null,
+        runtimeCompatibility: 'unverified',
+        diagnostics: [
+          {
+            severity: 'info',
+            code: 'consent-not-granted',
+            message:
+              'runtime detection reads installation metadata outside the project and needs consent',
+          },
+        ],
+      };
+    }
+    return detectClaudeCode(home ?? homedir());
   }
 
-  async discover(project: ProjectContext, access: AccessPolicy): Promise<ObservedSnapshot> {
-    return discoverClaudeCode(project, access);
+  async discover(
+    project: ProjectContext,
+    access: AccessPolicy,
+    home?: string,
+  ): Promise<ObservedSnapshot> {
+    return discoverClaudeCode(project, access, home ?? homedir());
   }
 
   async resolve(observed: ObservedSnapshot): Promise<ResolvedSnapshot> {
