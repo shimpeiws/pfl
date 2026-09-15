@@ -60,7 +60,18 @@ export async function collectCodexHarness(
 
   const detection = access.allowOutsideProject
     ? await detectCodex(home)
-    : { version: null, runtimeCompatibility: 'unverified' as const };
+    : {
+        version: null,
+        runtimeCompatibility: 'unverified' as const,
+        diagnostics: [
+          {
+            severity: 'info' as const,
+            code: 'consent-not-granted',
+            message: 'user-scope discovery skipped: consent was not granted',
+          },
+        ],
+      };
+  diagnostics.push(...detection.diagnostics);
 
   await collectProject(project, elements, diagnostics);
   if (access.allowOutsideProject) {
@@ -122,6 +133,7 @@ async function collectUser(
     join(configDir, USER_CONFIG_FILE),
     `${USER_PREFIX}/${USER_CONFIG_FILE}`,
     elements,
+    diagnostics,
   );
   await collectHooks(
     join(configDir, USER_HOOKS_FILE),
@@ -148,8 +160,9 @@ async function collectToml(
   absPath: string,
   displayPath: string,
   elements: ObservedElement[],
+  diagnostics: Diagnostic[],
 ): Promise<void> {
-  const text = await readFile(absPath, 'utf8').catch(() => null);
+  const text = await readTextOrNull(absPath, displayPath, diagnostics);
   if (text === null) return;
   const facts = readTomlFacts(text);
 
@@ -195,7 +208,7 @@ async function collectHooks(
   elements: ObservedElement[],
   diagnostics: Diagnostic[],
 ): Promise<void> {
-  const text = await readFile(absPath, 'utf8').catch(() => null);
+  const text = await readTextOrNull(absPath, displayPath, diagnostics);
   if (text === null) return;
 
   let parsed: unknown;
@@ -422,6 +435,30 @@ function redactValue(value: SafeMetadataValue): SafeMetadataValue {
     return result;
   }
   return value;
+}
+
+/**
+ * Reads a file that may legitimately be absent: ENOENT means "not there", any
+ * other failure is recorded so an unreadable config is never mistaken for a
+ * missing one.
+ */
+async function readTextOrNull(
+  absPath: string,
+  displayPath: string,
+  diagnostics: Diagnostic[],
+): Promise<string | null> {
+  try {
+    return await readFile(absPath, 'utf8');
+  } catch (error) {
+    if ((error as { code?: string }).code === 'ENOENT') return null;
+    diagnostics.push({
+      severity: 'warning',
+      code: 'unreadable-file',
+      message: `could not read ${displayPath}`,
+      path: displayPath,
+    });
+    return null;
+  }
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

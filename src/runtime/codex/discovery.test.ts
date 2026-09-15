@@ -130,6 +130,7 @@ describe('collectCodexHarness', () => {
     expect(snapshot.elements.some((element) => element.native.origin === 'user')).toBe(false);
     expect(snapshot.runtime.version).toBeNull();
     expect(snapshot.adapter.runtimeCompatibility).toBe('unverified');
+    expect(snapshot.diagnostics.map((entry) => entry.code)).toContain('consent-not-granted');
   });
 
   it('reports the detected runtime version when consented', async () => {

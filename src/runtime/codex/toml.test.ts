@@ -39,4 +39,19 @@ describe('readTomlFacts', () => {
     const facts = readTomlFacts('model = "gpt-5" # the model\nurl = "https://x/#frag"\n');
     expect(facts.values).toEqual({ model: 'gpt-5', url: 'https://x/#frag' });
   });
+
+  it('handles escaped quotes inside a string', () => {
+    const facts = readTomlFacts('name = "a\\"b" # comment\n');
+    expect(facts.values).toEqual({ name: 'a"b' });
+  });
+
+  it('ignores an assignment with trailing content', () => {
+    const facts = readTomlFacts('model = "m" extra\n');
+    expect(facts.values).toEqual({});
+  });
+
+  it('reads quoted section names that contain a dot', () => {
+    const facts = readTomlFacts('[mcp_servers."foo.bar"]\n[mcp_servers."baz.qux".env]\n');
+    expect(facts.mcpServers).toEqual(['foo.bar', 'baz.qux']);
+  });
 });
