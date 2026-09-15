@@ -62,16 +62,22 @@ export async function walkHarnessPaths(
       continue;
     }
 
+    const relativePath = toRelative(canonicalRoot, target);
+    if (!(await staysWithinRoot(canonicalRoot, target, entry.isSymbolicLink()))) {
+      diagnostics.push(outsideRoot(relativePath));
+      continue;
+    }
+
     if (entry.isSymbolicLink()) {
-      record(entries, { relativePath: toRelative(canonicalRoot, target), kind: 'symlink' });
+      record(entries, { relativePath, kind: 'symlink' });
     } else if (entry.isDirectory()) {
-      record(entries, { relativePath: toRelative(canonicalRoot, target), kind: 'directory' });
+      record(entries, { relativePath, kind: 'directory' });
       await walkDirectory(canonicalRoot, target, entries, diagnostics);
     } else if (entry.isFile()) {
       record(entries, await fileEntry(canonicalRoot, target, diagnostics));
     } else {
-      diagnostics.push(unsupportedEntry(toRelative(canonicalRoot, target)));
-      record(entries, { relativePath: toRelative(canonicalRoot, target), kind: 'unknown' });
+      diagnostics.push(unsupportedEntry(relativePath));
+      record(entries, { relativePath, kind: 'unknown' });
     }
   }
 
@@ -100,21 +106,13 @@ async function walkDirectory(
     const full = join(dir, dirent.name);
     const relativePath = toRelative(root, full);
 
-    if (dirent.isSymbolicLink()) {
-      // Never realpath, read through, or recurse into a symlink. Asserting
-      // containment on the parent directory (a real directory, since we never
-      // descend through a link) keeps the link itself under the root without
-      // resolving its target.
-      if (!(await isPathWithin(root, dirname(full)))) {
-        diagnostics.push(outsideRoot(relativePath));
-        continue;
-      }
-      record(entries, { relativePath, kind: 'symlink' });
+    if (!(await staysWithinRoot(root, full, dirent.isSymbolicLink()))) {
+      diagnostics.push(outsideRoot(relativePath));
       continue;
     }
 
-    if (!(await isPathWithin(root, full))) {
-      diagnostics.push(outsideRoot(relativePath));
+    if (dirent.isSymbolicLink()) {
+      record(entries, { relativePath, kind: 'symlink' });
       continue;
     }
 
@@ -154,6 +152,17 @@ function record(entries: Map<string, DiscoveredPath>, entry: DiscoveredPath): vo
   if (!entries.has(entry.relativePath)) {
     entries.set(entry.relativePath, entry);
   }
+}
+
+/**
+ * Whether an entry stays under the walk root without following it. For a
+ * symlink the parent directory is asserted instead — the link itself lives
+ * under the root, but resolving it would read the target. `isPathWithin`
+ * resolves symlinks, so a regular entry reached through a symlinked ancestor
+ * (an intermediate component of a subpath) is correctly rejected.
+ */
+async function staysWithinRoot(root: string, full: string, isSymlink: boolean): Promise<boolean> {
+  return isPathWithin(root, isSymlink ? dirname(full) : full);
 }
 
 function resolveSubpath(root: string, subpath: string): string | null {

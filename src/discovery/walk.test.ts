@@ -17,6 +17,26 @@ afterEach(async () => {
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
+/**
+ * Whether this environment actually denies reads to a mode-000 file. Running as
+ * root (or on a filesystem that ignores the mode) makes the read succeed, so the
+ * unreadable-file case is skipped visibly rather than passing without asserting.
+ */
+const canTestUnreadable = await (async () => {
+  const dir = await mkdtemp(join(tmpdir(), 'pfl-walk-perm-'));
+  const probe = join(dir, 'probe');
+  try {
+    await writeFile(probe, 'probe');
+    await chmod(probe, 0o000);
+    return await readFile(probe).then(
+      () => false,
+      () => true,
+    );
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+})();
+
 interface Fixture {
   root: string;
   settings: string;
@@ -77,22 +97,30 @@ describe('walkHarnessPaths', () => {
     expect(entries.some((entry) => entry.relativePath.includes('leaked'))).toBe(false);
   });
 
-  it('records an unreadable file as a diagnostic and continues', async () => {
-    const fixture = await makeFixture();
-    await chmod(fixture.secret, 0o000);
+  it.skipIf(!canTestUnreadable)(
+    'records an unreadable file as a diagnostic and continues',
+    async () => {
+      const fixture = await makeFixture();
+      await chmod(fixture.secret, 0o000);
 
-    const { entries, diagnostics } = await walkHarnessPaths(fixture.root, ['.claude']);
+      const { entries, diagnostics } = await walkHarnessPaths(fixture.root, ['.claude']);
 
-    const denied = await readFile(fixture.secret).then(
-      () => false,
-      () => true,
-    );
-    if (denied) {
       expect(diagnostics.some((d) => d.code === 'unreadable-file')).toBe(true);
       expect(entries.find((e) => e.relativePath === '.claude/secret.txt')?.digest).toBeUndefined();
-    }
-    // The walk never aborts: a readable sibling is still discovered.
-    expect(entries.some((e) => e.relativePath === '.claude/settings.json')).toBe(true);
+      // The walk never aborts: a readable sibling is still discovered.
+      expect(entries.some((e) => e.relativePath === '.claude/settings.json')).toBe(true);
+    },
+  );
+
+  it('does not follow a symlinked ancestor in a subpath', async () => {
+    const fixture = await makeFixture();
+
+    const { entries, diagnostics } = await walkHarnessPaths(fixture.root, [
+      '.claude/link/leaked.txt',
+    ]);
+
+    expect(entries).toHaveLength(0);
+    expect(diagnostics.some((d) => d.code === 'path-outside-root')).toBe(true);
   });
 
   it('reports a subpath that escapes the root instead of walking it', async () => {
