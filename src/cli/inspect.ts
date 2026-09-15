@@ -1,10 +1,15 @@
 import { homedir } from 'node:os';
 import type { ObservedSnapshot } from '../core/observed.js';
+import type { ResolvedSnapshot, ResolvedStatus } from '../core/resolved.js';
 import { resolveAccessPolicy, type ConsentIO } from '../discovery/consent.js';
 import { resolveProjectContext } from '../discovery/project-identity.js';
 import { getAdapter, getConsentRequest } from '../runtime/registry.js';
 import type { RuntimeDetection } from '../runtime/types.js';
-import { writeLatestSnapshotId, writeSnapshot } from '../snapshot/store.js';
+import {
+  writeLatestPointer,
+  writeObservedSnapshot,
+  writeResolvedSnapshot,
+} from '../snapshot/store.js';
 import type { Logger } from '../util/logger.js';
 
 export interface InspectOptions {
@@ -20,12 +25,11 @@ export interface InspectOptions {
 
 /**
  * `pfl inspect --runtime <id>` (design doc §9, §23, §25): resolve project
- * identity, request consent, detect the runtime, discover its harness, persist
- * an immutable snapshot, and print the summary.
+ * identity, request consent, detect the runtime, discover its harness, resolve
+ * it, persist both snapshots, and print the summary.
  *
- * Inspects one runtime at a time. A `partial` snapshot is a success with
- * diagnostics, not a failure. Resolved-fact counts (Effective / Conditional /
- * Shadowed) arrive with resolution (M2) and are not printed yet.
+ * Inspects one runtime at a time. A `partial` observed snapshot is a success
+ * with diagnostics, not a failure.
  */
 export async function runInspect(
   cwd: string,
@@ -47,49 +51,74 @@ export async function runInspect(
   });
 
   const detection = await adapter.detect(project, access, home);
-  const snapshot = await adapter.discover(project, access, home);
+  const observed = await adapter.discover(project, access, home);
+  const resolved = await adapter.resolve(observed);
 
-  await writeSnapshot(project.id, snapshot, home);
-  await writeLatestSnapshotId(project.id, snapshot.snapshotId, home);
+  await writeObservedSnapshot(project.id, observed, home);
+  await writeResolvedSnapshot(project.id, resolved, home);
+  await writeLatestPointer(
+    project.id,
+    { observed: observed.snapshotId, resolved: resolved.snapshotId },
+    home,
+  );
 
-  renderInspect(logger, request.runtimeName, snapshot, detection, options.json === true);
+  renderInspect(logger, request.runtimeName, observed, resolved, detection, options.json === true);
+}
+
+function countStatus(resolved: ResolvedSnapshot, status: ResolvedStatus): number {
+  return resolved.elements.filter((element) => element.status === status).length;
 }
 
 function renderInspect(
   logger: Logger,
   runtimeName: string,
-  snapshot: ObservedSnapshot,
+  observed: ObservedSnapshot,
+  resolved: ResolvedSnapshot,
   detection: RuntimeDetection,
   json: boolean,
 ): void {
-  const opaqueLayers = snapshot.elements.filter(
+  const opaqueLayers = observed.elements.filter(
     (element) => element.inspectability === 'opaque',
   ).length;
+  const counts = {
+    effective: countStatus(resolved, 'effective'),
+    conditional: countStatus(resolved, 'conditional'),
+    shadowed: countStatus(resolved, 'shadowed'),
+  };
 
   if (json) {
     logger.info('inspect', {
-      runtime: snapshot.runtime.id,
-      runtimeVersion: snapshot.runtime.version,
-      runtimeCompatibility: snapshot.adapter.runtimeCompatibility,
-      project: snapshot.project.id,
+      runtime: observed.runtime.id,
+      runtimeVersion: observed.runtime.version,
+      runtimeCompatibility: observed.adapter.runtimeCompatibility,
+      project: observed.project.id,
       observed: {
-        snapshotId: snapshot.snapshotId,
-        elements: snapshot.elements.length,
+        snapshotId: observed.snapshotId,
+        elements: observed.elements.length,
         opaqueLayers,
-        completeness: snapshot.completeness,
+        completeness: observed.completeness,
       },
-      diagnostics: snapshot.diagnostics,
+      resolved: {
+        snapshotId: resolved.snapshotId,
+        ...counts,
+        confidence: resolved.resolution.confidence,
+      },
+      diagnostics: observed.diagnostics,
     });
     return;
   }
 
   logger.info(`Inspecting ${runtimeName} harness...`);
   logger.info('');
-  logger.info(`Observed        ${snapshot.elements.length} elements`);
+  logger.info(`Observed        ${observed.elements.length} elements`);
+  logger.info(`Effective       ${counts.effective}`);
+  logger.info(`Conditional     ${counts.conditional}`);
+  logger.info(`Shadowed        ${counts.shadowed}`);
   logger.info(`Opaque layers   ${opaqueLayers}`);
   logger.info('');
   logger.info('Snapshot');
-  logger.info(`  observed   ${snapshot.snapshotId}`);
+  logger.info(`  observed   ${observed.snapshotId}`);
+  logger.info(`  resolved   ${resolved.snapshotId}`);
 
   if (detection.runtimeCompatibility === 'unverified') {
     logger.info('');

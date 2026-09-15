@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { EXIT_CODES } from './exit-codes.js';
 import { resolveProjectContext } from '../discovery/project-identity.js';
-import { latestPath, snapshotsDir } from '../snapshot/store.js';
+import { latestPath, observationsDir, snapshotsDir } from '../snapshot/store.js';
 import { runInspect } from './inspect.js';
 
 const tempDirs: string[] = [];
@@ -77,14 +77,25 @@ describe('runInspect', () => {
     const output = lines.join('\n');
     expect(output).toContain('Inspecting Claude Code harness...');
     expect(output).toContain('Observed');
+    expect(output).toContain('Effective');
+    expect(output).toContain('Conditional');
+    expect(output).toContain('Shadowed');
     expect(output).toContain('Opaque layers');
     expect(output).toContain('pfl report');
 
     const projectId = (await resolveProjectContext(project)).id;
-    const stored = await readdir(snapshotsDir(projectId, home));
-    expect(stored).toHaveLength(1);
-    expect(stored[0]).toMatch(/^obs_[0-9a-f]{12}\.json$/);
-    expect((await readFile(latestPath(projectId, home), 'utf8')).trim()).toMatch(/^obs_/);
+    const observedFiles = await readdir(observationsDir(projectId, home));
+    const resolvedFiles = await readdir(snapshotsDir(projectId, home));
+    expect(observedFiles).toHaveLength(1);
+    expect(observedFiles[0]).toMatch(/^obs_[0-9a-f]{12}\.json$/);
+    expect(resolvedFiles[0]).toMatch(/^res_[0-9a-f]{12}\.json$/);
+
+    const pointer = JSON.parse(await readFile(latestPath(projectId, home), 'utf8')) as {
+      observed: string;
+      resolved: string;
+    };
+    expect(pointer.observed).toMatch(/^obs_/);
+    expect(pointer.resolved).toMatch(/^res_/);
   });
 
   it('renders the same facts as JSON', async () => {
@@ -101,11 +112,15 @@ describe('runInspect', () => {
     expect(payload).toMatchObject({
       runtime: 'claude-code',
       observed: { completeness: 'complete' },
+      // The isolated home has no Claude Code install, so the version is unverified.
+      resolved: { confidence: 'unverified-runtime-version' },
     });
     expect(payload.observed.snapshotId).toMatch(/^obs_/);
+    expect(payload.resolved.snapshotId).toMatch(/^res_/);
     // The temp home is used by discovery too, so the isolated fixture is fully
-    // inspected (2 project files + 1 user skill + 1 opaque layer).
+    // inspected (2 project files + 1 user skill + 1 opaque layer), all effective.
     expect(payload.observed.elements).toBe(4);
+    expect(payload.resolved).toMatchObject({ effective: 4, conditional: 0, shadowed: 0 });
   });
 
   it('rejects an unknown runtime with RUNTIME_UNSUPPORTED', async () => {
