@@ -2,6 +2,7 @@ import { runtimeId, type RuntimeId } from '../../core/ids.js';
 import type { ObservedSnapshot } from '../../core/observed.js';
 import type { ResolvedSnapshot } from '../../core/resolved.js';
 import type { AccessPolicy, ProjectContext, RuntimeAdapter, RuntimeDetection } from '../types.js';
+import { detectClaudeCode } from './detect.js';
 import { discoverClaudeCode } from './discovery.js';
 import { resolveClaudeCode } from './resolve.js';
 
@@ -12,7 +13,7 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
   }
 
   async detect(_project: ProjectContext): Promise<RuntimeDetection> {
-    return { runtimeId: this.id(), installed: false, version: null };
+    return detectClaudeCode();
   }
 
   async discover(project: ProjectContext, access: AccessPolicy): Promise<ObservedSnapshot> {

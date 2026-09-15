@@ -1,3 +1,4 @@
+import type { Diagnostic } from '../core/diagnostics.js';
 import type { RuntimeId } from '../core/ids.js';
 import type { ObservedSnapshot } from '../core/observed.js';
 import type { ResolvedSnapshot } from '../core/resolved.js';
@@ -26,9 +27,14 @@ export interface ProjectContext {
  */
 export interface RuntimeDetection {
   runtimeId: RuntimeId;
+  /** True only when a known installation was actually found. */
   installed: boolean;
   /** null = version could not be determined; never guess a fallback value. */
   version: string | null;
+  /** Whether the detected version falls inside the adapter's verified range. */
+  runtimeCompatibility: 'verified' | 'unverified';
+  /** Why detection reported what it did; never fatal (design doc §17, §18). */
+  diagnostics: Diagnostic[];
 }
 
 /**
