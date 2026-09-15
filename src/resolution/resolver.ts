@@ -1,14 +1,39 @@
-import { notImplemented } from '../cli/exit-codes.js';
+import type { ElementId } from '../core/ids.js';
+import type {
+  Activation,
+  Applicability,
+  ResolvedElement,
+  ResolvedSnapshot,
+  ResolvedStatus,
+  ResolutionStrategy,
+} from '../core/resolved.js';
 import type { ObservedSnapshot } from '../core/observed.js';
-import type { ResolvedSnapshot } from '../core/resolved.js';
 import type { RuntimeAdapter } from '../runtime/types.js';
 
 /**
- * Runtime-agnostic resolution entry point (design doc §11). The normalized
- * model separates Native source, Applicability, Resolution semantics, and
- * Activation; a single global precedence rank is insufficient. Runtime-specific
- * precedence and accumulation rules live in each adapter's `resolve`.
+ * Runtime-agnostic resolution core (design doc §11). The normalized model keeps
+ * four axes separate — native source, applicability, resolution semantics, and
+ * activation — because a single global precedence rank is insufficient.
+ * Runtime-specific precedence and accumulation rules live in each adapter's
+ * `resolve`, which uses this core to derive a `ResolvedStatus` from the axes.
+ *
+ * `effective` means the element can affect agent process or output under the
+ * current static environment and runtime semantics (design doc §11). An
+ * on-demand skill is therefore effective, not conditional: it is available to
+ * the agent.
  */
+
+/** One observed element's resolved axes, as an adapter determined them. */
+export interface ElementResolutionInput {
+  id: ElementId;
+  applicability: Applicability;
+  strategy: ResolutionStrategy;
+  activation: Activation;
+  /** Set when the adapter determined this element is overridden by another. */
+  shadowedBy?: ElementId;
+}
+
+/** Runtime-agnostic entry point (design doc §11): delegates to the adapter. */
 export async function resolveHarness(
   adapter: RuntimeAdapter,
   observed: ObservedSnapshot,
@@ -16,6 +41,67 @@ export async function resolveHarness(
   return adapter.resolve(observed);
 }
 
-export function notYetImplemented(): never {
-  notImplemented('harness resolution');
+export function resolveElements(inputs: readonly ElementResolutionInput[]): ResolvedElement[] {
+  return inputs.map((input) => resolveElement(input));
+}
+
+export function resolveElement(input: ElementResolutionInput): ResolvedElement {
+  const { status, reason } = deriveStatus(input);
+  return {
+    id: input.id,
+    status,
+    applicability: input.applicability,
+    activation: input.activation,
+    resolution: { strategy: input.strategy, reason },
+  };
+}
+
+function deriveStatus(input: ElementResolutionInput): { status: ResolvedStatus; reason: string } {
+  if (input.shadowedBy !== undefined) {
+    return { status: 'shadowed', reason: `overridden by ${input.shadowedBy}` };
+  }
+  if (input.applicability.type === 'unknown') {
+    return { status: 'unresolved', reason: 'applicability could not be determined' };
+  }
+  if (input.strategy === 'unknown' || input.activation === 'unknown') {
+    return {
+      status: 'unknown',
+      reason: 'resolution could not be determined from static facts',
+    };
+  }
+  if (input.activation === 'conditional') {
+    return {
+      status: 'conditional',
+      reason: 'activation is conditional and its condition is not statically determined',
+    };
+  }
+  if (input.applicability.type === 'config-rule') {
+    return {
+      status: 'conditional',
+      reason: 'a configuration rule applies conditionally',
+    };
+  }
+  return { status: 'effective', reason: effectiveReason(input) };
+}
+
+function effectiveReason(input: ElementResolutionInput): string {
+  if (input.activation === 'on-demand') {
+    return 'available on demand; still effective';
+  }
+  switch (input.strategy) {
+    case 'accumulate':
+      return 'accumulates with the other layers';
+    case 'override':
+      return 'overrides lower-precedence elements';
+    case 'available':
+      return 'available to the agent';
+    case 'policy':
+      return 'applies as policy';
+    case 'event-pipeline':
+      return 'runs as part of the event pipeline';
+    case 'runtime-defined':
+      return 'runtime-defined layer';
+    default:
+      return 'applies under the current environment';
+  }
 }
