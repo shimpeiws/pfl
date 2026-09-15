@@ -58,6 +58,18 @@ pfl diff <snapshot-a> <snapshot-b>
 
 The default snapshot for read commands is `latest`.
 
+## Exit codes
+
+| Code | Meaning                                                                        |
+| ---- | ------------------------------------------------------------------------------ |
+| 0    | Success                                                                        |
+| 2    | Configuration error — a missing or invalid argument                            |
+| 3    | Runtime unsupported — the requested runtime id is unknown                      |
+| 4    | Inspection failed — an unexpected error during inspection                      |
+| 5    | Consent required — a read outside the project needs consent and none was given |
+| 6    | Snapshot store failure — writing or reading `~/.pfl/` failed                   |
+| 7    | Not implemented — the command exists but carries no logic yet (scaffold only)  |
+
 ## Development
 
 Node.js `>=22` and pnpm `11.6.0` (this repository pins both with
