@@ -63,10 +63,12 @@ function deriveStatus(input: ElementResolutionInput): { status: ResolvedStatus; 
   if (input.applicability.type === 'unknown') {
     return { status: 'unresolved', reason: 'applicability could not be determined' };
   }
-  if (input.strategy === 'unknown' || input.activation === 'unknown') {
+  // A config rule and a conditional activation are known to be conditional even
+  // when another axis is unknown; design §11 makes conditionality the answer.
+  if (input.applicability.type === 'config-rule') {
     return {
-      status: 'unknown',
-      reason: 'resolution could not be determined from static facts',
+      status: 'conditional',
+      reason: 'a configuration rule applies conditionally',
     };
   }
   if (input.activation === 'conditional') {
@@ -75,10 +77,10 @@ function deriveStatus(input: ElementResolutionInput): { status: ResolvedStatus; 
       reason: 'activation is conditional and its condition is not statically determined',
     };
   }
-  if (input.applicability.type === 'config-rule') {
+  if (input.strategy === 'unknown' || input.activation === 'unknown') {
     return {
-      status: 'conditional',
-      reason: 'a configuration rule applies conditionally',
+      status: 'unknown',
+      reason: 'resolution could not be determined from static facts',
     };
   }
   return { status: 'effective', reason: effectiveReason(input) };

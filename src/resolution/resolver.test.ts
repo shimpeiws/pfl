@@ -77,6 +77,13 @@ describe('resolveElement — status derivation', () => {
       expected: 'conditional',
     },
     {
+      name: 'a config rule stays conditional even with an unknown strategy',
+      applicability: 'config-rule',
+      strategy: 'unknown',
+      activation: 'unknown',
+      expected: 'conditional',
+    },
+    {
       name: 'an unknown strategy is unknown',
       applicability: 'project',
       strategy: 'unknown',
