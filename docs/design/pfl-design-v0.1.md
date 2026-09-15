@@ -1432,8 +1432,8 @@ v0.1 is usable when all of the following are true:
 
 ## 33. Open Questions / Deferred Decisions
 
-- exact snapshot serialization format
-- exact schema versioning policy
+- ~~exact snapshot serialization format~~ — decided in [ADR 0001](adr/0001-snapshot-serialization-and-ids.md)
+- ~~exact schema versioning policy~~ — decided in [ADR 0001](adr/0001-snapshot-serialization-and-ids.md)
 - exact snapshot retention / garbage collection
 - exact terminal graph renderer
 - exact export format policy

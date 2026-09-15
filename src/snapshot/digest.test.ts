@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
+import { elementIdFor, runtimeId } from '../core/ids.js';
 import type { ObservedElement } from '../core/observed.js';
 import { harnessContentDigest, resolvedSnapshotDigest } from './digest.js';
 
 function element(id: string, inspectability: ObservedElement['inspectability']): ObservedElement {
   return {
-    id,
+    id: elementIdFor({ runtimeId: runtimeId('claude-code'), origin: 'project', path: `${id}.md` }),
     native: { kind: 'instructions', origin: 'project', scope: null },
     source: { path: `${id}.md` },
     inspectability,
