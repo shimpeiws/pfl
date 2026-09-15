@@ -14,8 +14,10 @@ import { permissionsPath } from '../snapshot/store.js';
  * runtime + scope, so granting user-scope access for `claude-code` grants
  * nothing for `codex`.
  *
- * A non-interactive run (no TTY, `--json`) fails closed with
- * `CONSENT_REQUIRED` rather than assuming consent.
+ * A grant already on disk is honored regardless of interactivity, so a
+ * non-interactive run (`--json`, no TTY) can proceed on consent the user
+ * recorded earlier. Only a *missing* grant fails closed: a non-interactive run
+ * throws `CONSENT_REQUIRED` rather than assuming consent.
  */
 
 /** A stable key for one runtime + scope grant. */
@@ -88,9 +90,10 @@ export interface ConsentOptions {
 
 /**
  * Resolves the AccessPolicy for one runtime + scope. An existing grant returns
- * immediately without prompting; otherwise it prompts once, and an answer other
- * than `y`/`yes` (including an empty answer, the default) leaves the policy
- * closed.
+ * immediately, before any interactivity check, so a non-interactive run can
+ * reuse recorded consent. With no grant, an interactive run prompts once and an
+ * answer other than `y`/`yes` (including the empty default) leaves the policy
+ * closed; a non-interactive run throws `CONSENT_REQUIRED`.
  */
 export async function resolveAccessPolicy(
   request: ConsentRequest,
