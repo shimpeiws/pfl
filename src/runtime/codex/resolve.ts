@@ -1,11 +1,123 @@
-import { notImplemented } from '../../cli/exit-codes.js';
-import type { ObservedSnapshot } from '../../core/observed.js';
-import type { ResolvedSnapshot } from '../../core/resolved.js';
+import type { ElementId } from '../../core/ids.js';
+import type { ObservedElement, ObservedSnapshot } from '../../core/observed.js';
+import type {
+  Activation,
+  Applicability,
+  ResolvedSnapshot,
+  ResolutionStrategy,
+} from '../../core/resolved.js';
+import { assembleResolvedSnapshot } from '../../resolution/assemble.js';
+import { resolveElements, type ElementResolutionInput } from '../../resolution/resolver.js';
 
 /**
- * Apply Codex's native precedence and accumulation rules to produce a
- * ResolvedSnapshot (design doc §8, §11).
+ * Codex resolution rules, verified against Codex 0.154.0 (design doc §11,
+ * §31.2, §4.3). Each observed element's kind maps to the four resolution axes;
+ * the core derives the status. Nothing here runs the runtime.
+ *
+ * ```text
+ * kind                          applicability       strategy        activation
+ * instructions                  project | global    accumulate      always
+ * fallback-instructions         project             override        always   (replaces AGENTS.md)
+ * skills                        project             available       on-demand (still effective)
+ * custom-agents                 project             available       on-demand
+ * permissions                   global              policy          always
+ * memory                        project             accumulate      always
+ * hooks                         tool-event(target)  event-pipeline  event-driven
+ * approval-sandbox              global              policy          always
+ * compaction-controls           global              policy          always   (behavioral control)
+ * mcp-configuration             global              available       on-demand
+ * runtime-provided-instructions runtime-defined     runtime-defined always   (opaque)
+ * anything else                 unknown             unknown         unknown  (unresolved)
+ * ```
+ *
+ * `AGENTS.override.md` takes precedence over `AGENTS.md` in the same scope, so
+ * the base file is `shadowed` when an override is present. Codex has no
+ * project-scoped configuration directory, so there is no cross-scope settings
+ * shadowing to apply. Skill dependencies are recorded as observed structure,
+ * never inferred.
  */
-export async function resolveCodex(_observed: ObservedSnapshot): Promise<ResolvedSnapshot> {
-  notImplemented('Codex resolution');
+
+export async function resolveCodex(observed: ObservedSnapshot): Promise<ResolvedSnapshot> {
+  const shadowedBy = overrideShadowing(observed.elements);
+
+  const inputs: ElementResolutionInput[] = observed.elements.map((element) => {
+    const axes = axesFor(element);
+    const by = shadowedBy.get(element.id);
+    return {
+      id: element.id,
+      ...axes,
+      ...(by !== undefined ? { shadowedBy: by } : {}),
+    };
+  });
+
+  return assembleResolvedSnapshot({
+    observed,
+    elements: resolveElements(inputs),
+  });
+}
+
+function axesFor(element: ObservedElement): {
+  applicability: Applicability;
+  strategy: ResolutionStrategy;
+  activation: Activation;
+} {
+  if (element.status !== 'observed') {
+    return { applicability: { type: 'unknown' }, strategy: 'unknown', activation: 'unknown' };
+  }
+
+  switch (element.native.kind) {
+    case 'instructions':
+      return {
+        applicability: { type: element.native.origin === 'project' ? 'project' : 'global' },
+        strategy: 'accumulate',
+        activation: 'always',
+      };
+    case 'fallback-instructions':
+      return { applicability: { type: 'project' }, strategy: 'override', activation: 'always' };
+    case 'skills':
+    case 'custom-agents':
+      return { applicability: { type: 'project' }, strategy: 'available', activation: 'on-demand' };
+    case 'memory':
+      return { applicability: { type: 'project' }, strategy: 'accumulate', activation: 'always' };
+    case 'permissions':
+    case 'approval-sandbox':
+    case 'compaction-controls':
+      return { applicability: { type: 'global' }, strategy: 'policy', activation: 'always' };
+    case 'mcp-configuration':
+      return { applicability: { type: 'global' }, strategy: 'available', activation: 'on-demand' };
+    case 'hooks':
+      return {
+        applicability: { type: 'tool-event', ...eventTarget(element) },
+        strategy: 'event-pipeline',
+        activation: 'event-driven',
+      };
+    case 'runtime-provided-instructions':
+      return {
+        applicability: { type: 'runtime-defined' },
+        strategy: 'runtime-defined',
+        activation: 'always',
+      };
+    default:
+      return { applicability: { type: 'unknown' }, strategy: 'unknown', activation: 'unknown' };
+  }
+}
+
+function eventTarget(element: ObservedElement): { target?: string } {
+  const events = element.metadata['eventNames'];
+  if (!Array.isArray(events)) return {};
+  const names = events.filter((value): value is string => typeof value === 'string');
+  return names.length > 0 ? { target: names.join(',') } : {};
+}
+
+/** `AGENTS.override.md` shadows the base `AGENTS.md` in the same scope. */
+function overrideShadowing(elements: readonly ObservedElement[]): Map<ElementId, ElementId> {
+  const override = elements.find((element) => element.native.kind === 'fallback-instructions');
+  const base = elements.find(
+    (element) => element.native.kind === 'instructions' && element.native.origin === 'project',
+  );
+  const shadowed = new Map<ElementId, ElementId>();
+  if (override !== undefined && base !== undefined) {
+    shadowed.set(base.id, override.id);
+  }
+  return shadowed;
 }
