@@ -1,0 +1,68 @@
+{
+  "name": "@shimpeiws/pfl",
+  "version": "0.1.0",
+  "description": "Pre-Flight Listen for coding-agent harnesses: static inspection of Claude Code and Codex harness configuration.",
+  "keywords": [
+    "agent",
+    "claude-code",
+    "cli",
+    "codex",
+    "coding-agent",
+    "harness",
+    "inspection",
+    "static-analysis"
+  ],
+  "homepage": "https://github.com/shimpeiws/pfl#readme",
+  "bugs": {
+    "url": "https://github.com/shimpeiws/pfl/issues"
+  },
+  "license": "MIT",
+  "author": "Shimpei Takamatsu",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/shimpeiws/pfl.git"
+  },
+  "bin": {
+    "pfl": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "docs/assets"
+  ],
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "dev": "node --import tsx src/index.ts",
+    "build": "tsc --build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "check": "oxlint --deny-warnings",
+    "check:fix": "oxlint --deny-warnings --fix",
+    "format": "oxfmt --check .",
+    "format:fix": "oxfmt --write .",
+    "knip": "knip",
+    "prepare": "lefthook install"
+  },
+  "dependencies": {
+    "cac": "^7.0.0"
+  },
+  "devDependencies": {
+    "@tsconfig/strictest": "^2.0.5",
+    "@types/node": "^22.0.0",
+    "knip": "^6.0.0",
+    "lefthook": "^2.0.0",
+    "oxfmt": "^0.67.0",
+    "oxlint": "^1.82.0",
+    "tsx": "^4.19.0",
+    "typescript": "^6.0.0",
+    "vitest": "^5.0.0"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "packageManager": "pnpm@11.6.0"
+}

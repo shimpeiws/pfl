@@ -1,0 +1,8 @@
+{
+  "project": ["src/**/*.ts"],
+  "rules": {
+    "files": "off",
+    "exports": "off",
+    "types": "off"
+  }
+}

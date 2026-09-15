@@ -1,0 +1,77 @@
+# pfl
+
+Pre-Flight Listen for coding-agent harnesses. A CLI that **statically**
+inspects the harness configuration surrounding a coding agent (Claude Code,
+Codex) and reconstructs the effective harness without executing the agent.
+
+Full design: [`docs/design/pfl-design-v0.1.md`](docs/design/pfl-design-v0.1.md).
+That document is authoritative. When the summary below and the design doc
+disagree, the design doc is right.
+
+## Status
+
+Scaffold. The domain model from the design document is encoded as types with
+real file/directory layout, and the CLI commands exist but throw
+`not implemented` (`PflError` with the config-error exit code). Discovery,
+resolution, classification, storage, and rendering are not implemented yet.
+
+## Commands
+
+```sh
+pnpm test              # vitest run
+pnpm run check         # oxlint --deny-warnings
+pnpm run format        # oxfmt --check
+pnpm run build         # tsc --build (type check)
+pnpm run knip          # unused exports
+```
+
+Prefer targeted test files over the full suite locally (`pnpm test <path>`).
+Node and pnpm are pinned with mise (`mise install`).
+
+## Invariants
+
+These are guarantees the implementation is expected to uphold. A change that
+breaks one is a defect, not a tradeoff. The normative wording is the design
+document's Security Model; the list below is a working summary.
+
+- **Read-only.** `pfl` never modifies discovered harness files.
+- **No execution.** `pfl` never executes the runtime, discovered tools,
+  skills, scripts, hooks, or MCP servers.
+- **Static first.** Do not execute the runtime in order to inspect it.
+- **Resolution over listing.** Explain not only what exists, but how the
+  runtime resolves it.
+- **Do not infer more than can be supported.** Opaque or unknown behavior is
+  recorded as such, never guessed.
+- **No symlink traversal.** Symlinks are recorded (`status: "skipped"`,
+  `reason: "symlink-not-followed"`) but never followed.
+- **Consent boundary.** Project-local discovery is implicit. Reading outside
+  the project requires explicit consent, stored per runtime + scope.
+- **Persistence is deny-by-default.** Persist existence, structure,
+  relationships, safe metadata, and digests only. Never persist raw
+  instructions, memory, or knowledge content; secrets; auth headers; tokens;
+  passwords; environment values; or arbitrary command arguments.
+- **Safe metadata allowlist.** Each adapter explicitly defines which metadata
+  fields may be persisted; unknown fields are not persisted automatically.
+- **Best effort, never silently incomplete.** Unreadable, unsupported,
+  skipped, or unknown elements are recorded, not ignored, and do not abort
+  the inspection.
+- **Newer-than-verified runtimes do not block.** Collect observed facts, produce
+  resolved facts best-effort, attach a visible warning, and downgrade
+  resolution confidence.
+- **Snapshots are immutable.** Observation events are distinguished from
+  harness state. Store state under `~/.pfl/`, never inside the inspected
+  project.
+
+## Out of scope (Non-Goals)
+
+v0.1 deliberately does **not** provide these. When reviewing, do not raise them
+as findings; if they are relevant, name them as deferred:
+
+- agent execution or dry-run execution
+- tool, skill, hook, or MCP execution
+- output-quality scoring, ROI ranking, or automatic harness optimization
+- LLM-based classification or semantic dependency inference from natural
+  language
+- cross-runtime harness conversion
+- full reconstruction of opaque runtime-provided instructions
+- remote/cloud inventory aggregation

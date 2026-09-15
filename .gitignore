@@ -1,0 +1,26 @@
+node_modules/
+dist/
+*.tsbuildinfo
+
+# pfl stores snapshots under ~/.pfl/ by design, never inside the inspected
+# project, so there is intentionally no project-local data directory to ignore.
+
+*.local
+.DS_Store
+.verification/
+.worktrees/
+
+# Local session state is not committed.
+.claude/*.lock
+.claude/settings.local.json
+
+# graft's local graph cache — regenerable, not committed (run `graft build`).
+graft/
+
+# graft per-developer wiring (optional tool; each developer runs `graft init` locally).
+.claude/settings.json
+.claude/helpers/
+.claude/skills/graft/
+.mcp.json
+opencode.json
+.ignore
