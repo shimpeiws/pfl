@@ -20,5 +20,11 @@ export const CLAUDE_CODE_SAFE_METADATA_ALLOWLIST: readonly string[] = [
   'toolNames',
   'permissionMode',
   'approvalPolicy',
+  'allowCount',
+  'denyCount',
+  'askCount',
+  'serverNames',
+  'outputStyle',
+  'enabledPluginCount',
   'model',
 ];
