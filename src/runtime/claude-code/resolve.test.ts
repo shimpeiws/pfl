@@ -100,6 +100,11 @@ describe('resolveClaudeCode', () => {
     const shadowed = find(resolved.elements, user);
     expect(shadowed.status).toBe('shadowed');
     expect(shadowed.resolution.reason).toContain(project.id);
+    expect(resolved.relations).toContainEqual({
+      type: 'shadows',
+      from: project.id,
+      to: user.id,
+    });
   });
 
   it('prefers project-local settings over project settings', async () => {
