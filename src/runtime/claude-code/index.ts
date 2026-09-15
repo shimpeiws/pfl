@@ -12,7 +12,23 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
     return runtimeId('claude-code');
   }
 
-  async detect(_project: ProjectContext): Promise<RuntimeDetection> {
+  async detect(_project: ProjectContext, access: AccessPolicy): Promise<RuntimeDetection> {
+    if (!access.allowOutsideProject) {
+      return {
+        runtimeId: this.id(),
+        installed: false,
+        version: null,
+        runtimeCompatibility: 'unverified',
+        diagnostics: [
+          {
+            severity: 'info',
+            code: 'consent-not-granted',
+            message:
+              'runtime detection reads installation metadata outside the project and needs consent',
+          },
+        ],
+      };
+    }
     return detectClaudeCode();
   }
 

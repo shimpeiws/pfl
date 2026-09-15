@@ -52,7 +52,7 @@ export interface AccessPolicy {
 export interface RuntimeAdapter {
   id(): RuntimeId;
 
-  detect(project: ProjectContext): Promise<RuntimeDetection>;
+  detect(project: ProjectContext, access: AccessPolicy): Promise<RuntimeDetection>;
 
   discover(project: ProjectContext, access: AccessPolicy): Promise<ObservedSnapshot>;
 
