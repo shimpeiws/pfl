@@ -1,4 +1,4 @@
-import { readFile, stat } from 'node:fs/promises';
+import { lstat, readFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import type { ProjectContext } from '../runtime/types.js';
 import { realpathAsFarAsExists } from '../util/fs.js';
@@ -19,6 +19,12 @@ import { sha256Digest } from '../util/hash.js';
  * Discovery is static: it walks up for `.git`, reads `.git/config` and, for a
  * linked worktree, the `gitdir`/`commondir` files. It never shells out to `git`
  * and never runs a hook.
+ *
+ * `.git` is found with `lstat`, so a symlinked `.git` is never followed.
+ * `gitdir`/`commondir` are treated as an explicitly allowed Git-metadata scope:
+ * a linked worktree's common dir legitimately lives outside the worktree, so
+ * containment cannot be required. Only `config` is read from the resolved dir,
+ * and nothing but `remote.*.url` is taken from it.
  */
 
 /** Where `.git` and the remote configuration live for a discovered repository. */
@@ -63,7 +69,9 @@ async function findGitLocation(startDir: string): Promise<GitLocation | null> {
   let dir = startDir;
   for (;;) {
     const dotGit = join(dir, '.git');
-    const entry = await stat(dotGit).catch(() => null);
+    // `lstat`, not `stat`: a symlinked `.git` is not followed, so repository
+    // discovery cannot escape the tree by link.
+    const entry = await lstat(dotGit).catch(() => null);
     if (entry?.isDirectory()) {
       return { root: dir, configDir: dotGit };
     }
