@@ -460,7 +460,10 @@ Derived Interpretation may change when Inventory logic improves. Raw observation
 interface RuntimeAdapter {
   id(): RuntimeId;
 
-  detect(project: ProjectContext): Promise<RuntimeDetection>;
+  detect(
+    project: ProjectContext,
+    access: AccessPolicy
+  ): Promise<RuntimeDetection>;
 
   discover(
     project: ProjectContext,
@@ -472,6 +475,12 @@ interface RuntimeAdapter {
   ): Promise<ResolvedSnapshot>;
 }
 ```
+
+Detection reads runtime installation metadata (for example, the installed
+version) outside the project, so it obeys the consent boundary (§19) and takes
+the same `AccessPolicy` as discovery. Without consent an adapter must not read
+user/global locations: detection reports only project-local evidence and leaves
+the version unknown.
 
 Initial implementations:
 
@@ -927,6 +936,11 @@ Reading outside the project requires explicit consent, stored per:
 runtime + scope
 ```
 
+Runtime presence and version detection is a read outside the project and is
+part of the same boundary. Without consent, detection leaves the version
+unknown rather than reading user/global installation metadata; it never runs
+the runtime to learn the version.
+
 ### No symlink traversal
 Symlinks are recorded but never followed.
 
@@ -1111,12 +1125,16 @@ Inventory needs read-only access to the following locations:
     ~/.claude/agents/**
     ~/.claude/projects/**/memory/**
 
+  Installation and version metadata
+    ~/.local/share/claude/versions/**
+
   External references
     Plugin directories referenced by Claude Code config
     MCP configuration metadata
 
 Inventory will:
   ✓ Read files needed to resolve the effective harness
+  ✓ Check the installed runtime version
   ✓ Process content locally
   ✓ Store only digests and allowlisted metadata
   ✗ Store file contents
