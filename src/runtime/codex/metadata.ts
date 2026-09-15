@@ -22,4 +22,8 @@ export const CODEX_SAFE_METADATA_ALLOWLIST: readonly string[] = [
   'approvalMode',
   'sandboxMode',
   'model',
+  'reasoningEffort',
+  'serviceTier',
+  'serverNames',
+  'enabledPluginCount',
 ];
