@@ -1,3 +1,4 @@
+import { homedir } from 'node:os';
 import { runtimeId, type RuntimeId } from '../../core/ids.js';
 import type { ObservedSnapshot } from '../../core/observed.js';
 import type { ResolvedSnapshot } from '../../core/resolved.js';
@@ -12,7 +13,11 @@ export class CodexAdapter implements RuntimeAdapter {
     return runtimeId('codex');
   }
 
-  async detect(_project: ProjectContext, access: AccessPolicy): Promise<RuntimeDetection> {
+  async detect(
+    _project: ProjectContext,
+    access: AccessPolicy,
+    home?: string,
+  ): Promise<RuntimeDetection> {
     if (!access.allowOutsideProject) {
       return {
         runtimeId: this.id(),
@@ -29,11 +34,15 @@ export class CodexAdapter implements RuntimeAdapter {
         ],
       };
     }
-    return detectCodex();
+    return detectCodex(home ?? homedir());
   }
 
-  async discover(project: ProjectContext, access: AccessPolicy): Promise<ObservedSnapshot> {
-    return discoverCodex(project, access);
+  async discover(
+    project: ProjectContext,
+    access: AccessPolicy,
+    home?: string,
+  ): Promise<ObservedSnapshot> {
+    return discoverCodex(project, access, home ?? homedir());
   }
 
   async resolve(observed: ObservedSnapshot): Promise<ResolvedSnapshot> {

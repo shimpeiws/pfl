@@ -49,12 +49,16 @@ export interface AccessPolicy {
   grantedScopes: readonly string[];
 }
 
+/**
+ * `home` is an environment override used to locate user-scope files; it defaults
+ * to the user's home directory and lets callers run against an isolated home.
+ */
 export interface RuntimeAdapter {
   id(): RuntimeId;
 
-  detect(project: ProjectContext, access: AccessPolicy): Promise<RuntimeDetection>;
+  detect(project: ProjectContext, access: AccessPolicy, home?: string): Promise<RuntimeDetection>;
 
-  discover(project: ProjectContext, access: AccessPolicy): Promise<ObservedSnapshot>;
+  discover(project: ProjectContext, access: AccessPolicy, home?: string): Promise<ObservedSnapshot>;
 
   resolve(observed: ObservedSnapshot): Promise<ResolvedSnapshot>;
 }

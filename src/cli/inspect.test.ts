@@ -57,10 +57,12 @@ async function makeFixture(grantConsent: boolean): Promise<Fixture> {
   await writeFile(join(project, '.claude', 'skills', 'foo', 'SKILL.md'), '# Foo\n');
   if (grantConsent) {
     await mkdir(join(home, '.pfl'), { recursive: true });
+    await mkdir(join(home, '.claude', 'skills', 'bar'), { recursive: true });
     await writeFile(
       join(home, '.pfl', 'permissions.json'),
       JSON.stringify({ grantedScopes: ['claude-code:user'] }),
     );
+    await writeFile(join(home, '.claude', 'skills', 'bar', 'SKILL.md'), '# Bar\n');
   }
   return { project, home };
 }
@@ -98,9 +100,12 @@ describe('runInspect', () => {
     const payload = JSON.parse(lines[0] ?? '{}');
     expect(payload).toMatchObject({
       runtime: 'claude-code',
-      observed: { completeness: 'partial' },
+      observed: { completeness: 'complete' },
     });
     expect(payload.observed.snapshotId).toMatch(/^obs_/);
+    // The temp home is used by discovery too, so the isolated fixture is fully
+    // inspected (2 project files + 1 user skill + 1 opaque layer).
+    expect(payload.observed.elements).toBe(4);
   });
 
   it('rejects an unknown runtime with RUNTIME_UNSUPPORTED', async () => {

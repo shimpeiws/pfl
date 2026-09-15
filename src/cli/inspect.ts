@@ -46,8 +46,8 @@ export async function runInspect(
     ...(options.io !== undefined ? { io: options.io } : {}),
   });
 
-  const detection = await adapter.detect(project, access);
-  const snapshot = await adapter.discover(project, access);
+  const detection = await adapter.detect(project, access, home);
+  const snapshot = await adapter.discover(project, access, home);
 
   await writeSnapshot(project.id, snapshot, home);
   await writeLatestSnapshotId(project.id, snapshot.snapshotId, home);
