@@ -43,6 +43,17 @@ describe('assembleObservedSnapshot', () => {
     expect(snapshot.completeness).toBe('complete');
   });
 
+  it('freezes the snapshot and its elements', () => {
+    const snapshot = assembleObservedSnapshot(input([element('a', 'observed')]));
+
+    expect(Object.isFrozen(snapshot)).toBe(true);
+    expect(Object.isFrozen(snapshot.elements)).toBe(true);
+    expect(Object.isFrozen(snapshot.elements[0])).toBe(true);
+    expect(() => {
+      (snapshot as { capturedAt: string }).capturedAt = 'later';
+    }).toThrow(TypeError);
+  });
+
   it('preserves a skipped symlink element with its reason', () => {
     const skipped = element('link', 'skipped', 'symlink-not-followed');
 

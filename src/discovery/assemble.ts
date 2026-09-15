@@ -39,7 +39,10 @@ export function assembleObservedSnapshot(input: ObservedSnapshotInput): Observed
   const diagnostics = [...(input.diagnostics ?? [])];
   assertReasonsPresent(elements);
 
-  return {
+  // Snapshots are immutable (design doc §15). Freeze deeply so a caller that
+  // later mutates an element it handed in cannot desynchronize the elements
+  // from `digests.observed`, which was computed at assembly time.
+  return deepFreeze({
     schemaVersion: SNAPSHOT_SCHEMA_VERSION,
     snapshotId: input.snapshotId ?? generateObservedSnapshotId(),
     capturedAt: input.capturedAt ?? new Date().toISOString(),
@@ -50,7 +53,17 @@ export function assembleObservedSnapshot(input: ObservedSnapshotInput): Observed
     diagnostics,
     completeness: completenessOf(elements, diagnostics),
     digests: { observed: harnessContentDigest(elements) },
-  };
+  });
+}
+
+function deepFreeze<T>(value: T): T {
+  if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
+    Object.freeze(value);
+    for (const nested of Object.values(value as Record<string, unknown>)) {
+      deepFreeze(nested);
+    }
+  }
+  return value;
 }
 
 export function completenessOf(

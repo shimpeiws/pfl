@@ -99,8 +99,8 @@ export interface ObservedSnapshot {
   runtime: ObservedRuntime;
   adapter: AdapterIdentity;
 
-  elements: ObservedElement[];
-  diagnostics: Diagnostic[];
+  readonly elements: readonly ObservedElement[];
+  readonly diagnostics: readonly Diagnostic[];
 
   completeness: Completeness;
 
