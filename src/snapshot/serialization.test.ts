@@ -17,6 +17,15 @@ describe('serializeSnapshot', () => {
     const text = serializeSnapshot<Fixture>({ schemaVersion: '1', b: 'two', a: 1 });
     expect(text).toBe('{"a":1,"b":"two","schemaVersion":"1"}\n');
   });
+
+  it('refuses to write an unsupported schema version', () => {
+    expect(() => serializeSnapshot<Fixture>({ schemaVersion: '9', b: 'two', a: 1 })).toThrow(
+      UnsupportedSchemaVersionError,
+    );
+    expect(() => serializeSnapshot<Fixture>({ schemaVersion: 'x', b: 'two', a: 1 })).toThrow(
+      UnsupportedSchemaVersionError,
+    );
+  });
 });
 
 describe('deserializeSnapshot', () => {
@@ -42,5 +51,11 @@ describe('deserializeSnapshot', () => {
   it('rejects a missing or non-string schema version', () => {
     expect(() => deserializeSnapshot('{}')).toThrow(InvalidSnapshotError);
     expect(() => deserializeSnapshot('{"schemaVersion":1}')).toThrow(InvalidSnapshotError);
+  });
+
+  it('rejects a schema version that is not a decimal integer string', () => {
+    expect(() => deserializeSnapshot('{"schemaVersion":"not-a-version"}')).toThrow(
+      InvalidSnapshotError,
+    );
   });
 });
