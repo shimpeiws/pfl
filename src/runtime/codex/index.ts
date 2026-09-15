@@ -2,6 +2,7 @@ import { runtimeId, type RuntimeId } from '../../core/ids.js';
 import type { ObservedSnapshot } from '../../core/observed.js';
 import type { ResolvedSnapshot } from '../../core/resolved.js';
 import type { AccessPolicy, ProjectContext, RuntimeAdapter, RuntimeDetection } from '../types.js';
+import { detectCodex } from './detect.js';
 import { discoverCodex } from './discovery.js';
 import { resolveCodex } from './resolve.js';
 
@@ -12,7 +13,7 @@ export class CodexAdapter implements RuntimeAdapter {
   }
 
   async detect(_project: ProjectContext): Promise<RuntimeDetection> {
-    return { runtimeId: this.id(), installed: false, version: null };
+    return detectCodex();
   }
 
   async discover(project: ProjectContext, access: AccessPolicy): Promise<ObservedSnapshot> {

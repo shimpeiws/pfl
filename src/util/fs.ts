@@ -1,4 +1,4 @@
-import { access, realpath } from 'node:fs/promises';
+import { access, readdir, realpath } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 
 /**
@@ -36,4 +36,9 @@ export async function pathExists(path: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/** Directory entry names, or an empty list when the directory cannot be read. */
+export async function readDirectoryNames(path: string): Promise<string[]> {
+  return readdir(path).catch(() => []);
 }
