@@ -21,6 +21,8 @@ import { canonicalJsonStringify } from '../util/json.js';
 export const SNAPSHOT_SCHEMA_VERSION = '1';
 export const SUPPORTED_SNAPSHOT_SCHEMA_VERSIONS: readonly string[] = [SNAPSHOT_SCHEMA_VERSION];
 
+const SCHEMA_VERSION_PATTERN = /^\d+$/;
+
 /** Every persisted snapshot carries a schema version. */
 export interface VersionedSnapshot {
   schemaVersion: string;
@@ -45,8 +47,15 @@ export class InvalidSnapshotError extends Error {
   }
 }
 
-/** Serializes a snapshot to newline-terminated canonical JSON. */
+/**
+ * Serializes a snapshot to newline-terminated canonical JSON. Refuses to write
+ * anything but the current schema, so a caller cannot persist a version the
+ * reader would then reject.
+ */
 export function serializeSnapshot<T extends VersionedSnapshot>(snapshot: T): string {
+  if (snapshot.schemaVersion !== SNAPSHOT_SCHEMA_VERSION) {
+    throw new UnsupportedSchemaVersionError(snapshot.schemaVersion, [SNAPSHOT_SCHEMA_VERSION]);
+  }
   return `${canonicalJsonStringify(snapshot)}\n`;
 }
 
@@ -70,6 +79,11 @@ export function deserializeSnapshot<T extends VersionedSnapshot>(
   const { schemaVersion } = parsed as { schemaVersion?: unknown };
   if (typeof schemaVersion !== 'string') {
     throw new InvalidSnapshotError('snapshot is missing a string schemaVersion');
+  }
+  if (!SCHEMA_VERSION_PATTERN.test(schemaVersion)) {
+    throw new InvalidSnapshotError(
+      `snapshot schemaVersion is not a decimal integer string: ${schemaVersion}`,
+    );
   }
   if (!supported.includes(schemaVersion)) {
     throw new UnsupportedSchemaVersionError(schemaVersion, supported);
