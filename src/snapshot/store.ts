@@ -44,12 +44,17 @@ import { deserializeSnapshot, serializeSnapshot, type VersionedSnapshot } from '
  * Snapshots are immutable: an existing id is a conflict, not an update, and a
  * new snapshot is linked into place atomically. The `latest` pointer is the one
  * mutable artifact and is replaced atomically.
+ *
+ * The project id and artifact ids are treated as boundary input: they become
+ * path segments, so each is validated against a safe charset before use.
  */
 
 const DIR_MODE = 0o700;
 const FILE_MODE = 0o600;
 const ARTIFACT_SUFFIX = '.json';
 const LATEST_FILE = 'latest';
+const SAFE_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const COMPLETENESS_VALUES: readonly string[] = ['complete', 'partial', 'unknown'];
 
 export function pflHome(home: string = homedir()): string {
   return join(home, '.pfl');
@@ -60,6 +65,7 @@ export function permissionsPath(home: string = homedir()): string {
 }
 
 export function projectDir(projectId: string, home: string = homedir()): string {
+  assertSafeSegment(projectId, 'project id');
   return join(pflHome(home), 'projects', projectId);
 }
 
@@ -113,7 +119,7 @@ export async function readSnapshot(
   snapshotId: string,
   home: string = homedir(),
 ): Promise<ObservedSnapshot> {
-  return readArtifact<ObservedSnapshot>(artifactPath(snapshotsDir(projectId, home), snapshotId));
+  return readArtifact(artifactPath(snapshotsDir(projectId, home), snapshotId), isObservedSnapshot);
 }
 
 /** Reads an observation event by id (`observations/`). */
@@ -122,8 +128,9 @@ export async function readObservation(
   observationId: string,
   home: string = homedir(),
 ): Promise<ObservedSnapshot> {
-  return readArtifact<ObservedSnapshot>(
+  return readArtifact(
     artifactPath(observationsDir(projectId, home), observationId),
+    isObservedSnapshot,
   );
 }
 
@@ -133,8 +140,9 @@ export async function readInterpretation(
   interpretationId: string,
   home: string = homedir(),
 ): Promise<Interpretation> {
-  return readArtifact<Interpretation>(
+  return readArtifact(
     artifactPath(interpretationsDir(projectId, home), interpretationId),
+    isInterpretation,
   );
 }
 
@@ -143,8 +151,14 @@ export async function readLatestSnapshotId(
   projectId: string,
   home: string = homedir(),
 ): Promise<string | null> {
-  const text = await readFile(latestPath(projectId, home), 'utf8').catch(() => null);
-  const id = text?.trim();
+  let text: string;
+  try {
+    text = await readFile(latestPath(projectId, home), 'utf8');
+  } catch (error) {
+    if (isNotFound(error)) return null;
+    throw snapshotStoreError(`could not read the latest pointer: ${errorMessage(error)}`);
+  }
+  const id = text.trim();
   return id ? id : null;
 }
 
@@ -154,12 +168,19 @@ export async function writeLatestSnapshotId(
   snapshotId: string,
   home: string = homedir(),
 ): Promise<void> {
+  assertSafeSegment(snapshotId, 'snapshot id');
   const target = latestPath(projectId, home);
   await ensureDir(dirname(target));
   const temp = tempPath(target);
-  await writeFile(temp, `${snapshotId}\n`, { mode: FILE_MODE });
-  await chmod(temp, FILE_MODE).catch(() => undefined);
-  await rename(temp, target);
+  try {
+    await writeFile(temp, `${snapshotId}\n`, { mode: FILE_MODE });
+    await chmod(temp, FILE_MODE);
+    await rename(temp, target);
+  } catch (error) {
+    throw snapshotStoreError(`could not write the latest pointer: ${errorMessage(error)}`);
+  } finally {
+    await unlink(temp).catch(() => undefined);
+  }
 }
 
 /** Lists stored snapshots, newest first, recording unreadable ones as diagnostics. */
@@ -168,14 +189,32 @@ export async function listSnapshots(
   home: string = homedir(),
 ): Promise<SnapshotListResult> {
   const dir = snapshotsDir(projectId, home);
-  const names = await readdir(dir).catch(() => [] as string[]);
+
+  let names: string[];
+  try {
+    names = await readdir(dir);
+  } catch (error) {
+    if (isNotFound(error)) return { snapshots: [], diagnostics: [] };
+    return {
+      snapshots: [],
+      diagnostics: [
+        {
+          severity: 'error',
+          code: 'snapshot-store-unreadable',
+          message: `could not read the snapshot store: ${errorMessage(error)}`,
+          path: dir,
+        },
+      ],
+    };
+  }
+
   const snapshots: StoredSnapshotSummary[] = [];
   const diagnostics: Diagnostic[] = [];
 
   for (const name of names) {
     if (!name.endsWith(ARTIFACT_SUFFIX)) continue;
     try {
-      const snapshot = await readArtifact<ObservedSnapshot>(join(dir, name));
+      const snapshot = await readArtifact(join(dir, name), isObservedSnapshot);
       snapshots.push({
         id: snapshot.snapshotId,
         capturedAt: snapshot.capturedAt,
@@ -186,7 +225,7 @@ export async function listSnapshots(
       diagnostics.push({
         severity: 'warning',
         code: 'unreadable-snapshot',
-        message: error instanceof Error ? error.message : String(error),
+        message: errorMessage(error),
         path: name,
       });
     }
@@ -199,21 +238,35 @@ export async function listSnapshots(
 }
 
 function artifactPath(dir: string, id: string): string {
+  assertSafeSegment(id, 'artifact id');
   return join(dir, `${id}${ARTIFACT_SUFFIX}`);
 }
 
-async function readArtifact<T>(target: string): Promise<T> {
-  const text = await readFile(target, 'utf8').catch(() => null);
-  if (text === null) {
-    throw snapshotStoreError(`snapshot not found: ${basename(target)}`);
+async function readArtifact<T>(
+  target: string,
+  isValid: (value: unknown) => value is T,
+): Promise<T> {
+  let text: string;
+  try {
+    text = await readFile(target, 'utf8');
+  } catch (error) {
+    if (isNotFound(error)) throw snapshotStoreError(`snapshot not found: ${basename(target)}`);
+    throw snapshotStoreError(`could not read snapshot: ${errorMessage(error)}`);
   }
+
+  let parsed: unknown;
   try {
     // The on-disk envelope always carries `schemaVersion` (ADR 0001), even when
     // the artifact type itself does not model it (for example Interpretation).
-    return deserializeSnapshot<T & VersionedSnapshot>(text);
+    parsed = deserializeSnapshot<VersionedSnapshot>(text);
   } catch (error) {
-    throw snapshotStoreError(error instanceof Error ? error.message : String(error));
+    throw snapshotStoreError(errorMessage(error));
   }
+
+  if (!isValid(parsed)) {
+    throw snapshotStoreError(`snapshot is missing required fields: ${basename(target)}`);
+  }
+  return parsed;
 }
 
 /**
@@ -229,27 +282,72 @@ async function writeArtifact(target: string, content: string): Promise<void> {
   }
 
   const temp = tempPath(target);
-  await writeFile(temp, content, { mode: FILE_MODE });
-  await chmod(temp, FILE_MODE).catch(() => undefined);
   try {
+    await writeFile(temp, content, { mode: FILE_MODE });
+    await chmod(temp, FILE_MODE);
     await link(temp, target);
   } catch (error) {
-    await unlink(temp).catch(() => undefined);
     if (isAlreadyExists(error)) {
       throw snapshotStoreError(`snapshot already exists: ${basename(target)}`);
     }
     throw snapshotStoreError(`could not write snapshot: ${errorMessage(error)}`);
+  } finally {
+    await unlink(temp).catch(() => undefined);
   }
-  await unlink(temp).catch(() => undefined);
 }
 
 async function ensureDir(dir: string): Promise<void> {
   await mkdir(dir, { recursive: true, mode: DIR_MODE });
-  await chmod(dir, DIR_MODE).catch(() => undefined);
+  try {
+    await chmod(dir, DIR_MODE);
+  } catch (error) {
+    throw snapshotStoreError(`could not set permissions on ${dir}: ${errorMessage(error)}`);
+  }
 }
 
 function tempPath(target: string): string {
   return `${target}.${randomBytes(6).toString('hex')}.tmp`;
+}
+
+function assertSafeSegment(segment: string, what: string): void {
+  if (!SAFE_SEGMENT.test(segment)) {
+    throw snapshotStoreError(`invalid ${what}: ${JSON.stringify(segment)}`);
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isObservedSnapshot(value: unknown): value is ObservedSnapshot {
+  if (!isRecord(value)) return false;
+  if (typeof value['snapshotId'] !== 'string' || typeof value['capturedAt'] !== 'string') {
+    return false;
+  }
+  const project = value['project'];
+  if (!isRecord(project) || typeof project['id'] !== 'string') return false;
+  const runtime = value['runtime'];
+  if (!isRecord(runtime) || typeof runtime['id'] !== 'string') return false;
+  if (!(runtime['version'] === null || typeof runtime['version'] === 'string')) return false;
+  const adapter = value['adapter'];
+  if (!isRecord(adapter) || typeof adapter['id'] !== 'string') return false;
+  if (!Array.isArray(value['elements']) || !Array.isArray(value['diagnostics'])) return false;
+  const completeness = value['completeness'];
+  if (typeof completeness !== 'string' || !COMPLETENESS_VALUES.includes(completeness)) return false;
+  const digests = value['digests'];
+  return isRecord(digests) && typeof digests['observed'] === 'string';
+}
+
+function isInterpretation(value: unknown): value is Interpretation {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value['interpretationId'] === 'string' &&
+    typeof value['resolvedSnapshotId'] === 'string' &&
+    isRecord(value['classifier']) &&
+    Array.isArray(value['elements']) &&
+    isRecord(value['stats']) &&
+    Array.isArray(value['findings'])
+  );
 }
 
 async function exists(path: string): Promise<boolean> {
@@ -257,6 +355,10 @@ async function exists(path: string): Promise<boolean> {
     () => true,
     () => false,
   );
+}
+
+function isNotFound(error: unknown): boolean {
+  return (error as { code?: string }).code === 'ENOENT';
 }
 
 function isAlreadyExists(error: unknown): boolean {

@@ -88,8 +88,18 @@ describe('writeSnapshot / readSnapshot', () => {
       exitCode: EXIT_CODES.SNAPSHOT_STORE_FAILED,
     });
     expect(await readFile(file, 'utf8')).toBe(before);
+    expect((await readdir(snapshotsDir('proj', home))).some((name) => name.endsWith('.tmp'))).toBe(
+      false,
+    );
   });
 
+  it('rejects a snapshot file that is only a schema version', async () => {
+    const home = await tempHome();
+    await mkdir(snapshotsDir('proj', home), { recursive: true });
+    await writeFile(join(snapshotsDir('proj', home), 'obs_sparse.json'), '{"schemaVersion":"1"}\n');
+
+    await expect(readSnapshot('proj', 'obs_sparse', home)).rejects.toThrowError(PflError);
+  });
   it('leaves no temp file behind', async () => {
     const home = await tempHome();
     const snapshot = makeSnapshot();
@@ -112,6 +122,35 @@ describe('writeSnapshot / readSnapshot', () => {
         (await stat(join(snapshotsDir('proj', home), `${snapshot.snapshotId}.json`))).mode & 0o777
       ).toString(8),
     ).toBe('600');
+  });
+});
+
+describe('boundary validation', () => {
+  it('rejects ids that would escape the store', async () => {
+    const home = await tempHome();
+
+    expect(() => projectDir('../evil', home)).toThrowError(PflError);
+    expect(() => snapshotsDir('a/b', home)).toThrowError(PflError);
+    await expect(readSnapshot('proj', '../../etc/passwd', home)).rejects.toThrowError(PflError);
+    await expect(readSnapshot('proj', 'a/b', home)).rejects.toThrowError(PflError);
+    await expect(readLatestSnapshotId('../evil', home)).rejects.toThrowError(PflError);
+  });
+
+  it('reports an unreadable store instead of pretending it is empty', async () => {
+    const home = await tempHome();
+    await mkdir(projectDir('proj', home), { recursive: true });
+    await writeFile(snapshotsDir('proj', home), 'not a directory');
+
+    const { diagnostics } = await listSnapshots('proj', home);
+
+    expect(diagnostics.map((entry) => entry.code)).toContain('snapshot-store-unreadable');
+  });
+
+  it('throws on a non-ENOENT error reading the latest pointer', async () => {
+    const home = await tempHome();
+    await mkdir(latestPath('proj', home), { recursive: true });
+
+    await expect(readLatestSnapshotId('proj', home)).rejects.toThrowError(PflError);
   });
 });
 
@@ -153,7 +192,15 @@ describe('read-by-id for the other layers', () => {
     await mkdir(interpretationsDir('proj', home), { recursive: true });
     await writeFile(
       join(interpretationsDir('proj', home), 'int_x.json'),
-      serializeSnapshot({ schemaVersion: '1', interpretationId: 'int_x' }),
+      serializeSnapshot({
+        schemaVersion: '1',
+        interpretationId: 'int_x',
+        resolvedSnapshotId: 'res_y',
+        classifier: { id: 'classifier', version: '1' },
+        elements: [],
+        stats: {},
+        findings: [],
+      }),
     );
 
     await expect(readInterpretation('proj', 'int_x', home)).resolves.toMatchObject({
