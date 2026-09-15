@@ -7,7 +7,7 @@ const require = createRequire(import.meta.url);
  * single source for the CLI (`cli.version()`) and for any recorded package
  * identity. It is distinct from the design version
  * (`docs/design/pfl-design-v0.1.md`) and from the snapshot schema version
- * (design doc §33 leaves the schema-versioning policy open).
+ * (decided in `docs/design/adr/0001-snapshot-serialization-and-ids.md`).
  *
  * `createRequire(import.meta.url)` resolves `../package.json` relative to the
  * compiled module (`dist/version.js`), so it reaches the manifest both from a
