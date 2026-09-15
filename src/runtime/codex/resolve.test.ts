@@ -85,6 +85,17 @@ describe('resolveCodex', () => {
     expect(shadowed.resolution.reason).toContain(override.id);
   });
 
+  it('only shadows the base in the same directory as the override', async () => {
+    const rootBase = element('AGENTS.md', 'instructions', 'project');
+    const override = element('AGENTS.override.md', 'fallback-instructions', 'project');
+    const nestedBase = element('docs/AGENTS.md', 'instructions', 'project');
+
+    const resolved = await resolveCodex(snapshot([rootBase, override, nestedBase]));
+
+    expect(find(resolved.elements, rootBase).status).toBe('shadowed');
+    expect(find(resolved.elements, nestedBase).status).toBe('effective');
+  });
+
   it('treats on-demand skills and custom agents as effective', async () => {
     const skill = element('~/.codex/skills/SKILL.md', 'skills', 'user');
     const agent = element('~/.codex/agents/reviewer.md', 'custom-agents', 'user');

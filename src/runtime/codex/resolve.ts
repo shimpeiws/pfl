@@ -1,3 +1,4 @@
+import { dirname } from 'node:path';
 import type { ElementId } from '../../core/ids.js';
 import type { ObservedElement, ObservedSnapshot } from '../../core/observed.js';
 import type {
@@ -109,15 +110,32 @@ function eventTarget(element: ObservedElement): { target?: string } {
   return names.length > 0 ? { target: names.join(',') } : {};
 }
 
-/** `AGENTS.override.md` shadows the base `AGENTS.md` in the same scope. */
+/**
+ * `AGENTS.override.md` shadows the base `AGENTS.md` in the *same directory* (and
+ * therefore the same scope) — never across directories. The directory is derived
+ * from the element path, so a nested override cannot shadow an unrelated base.
+ */
 function overrideShadowing(elements: readonly ObservedElement[]): Map<ElementId, ElementId> {
-  const override = elements.find((element) => element.native.kind === 'fallback-instructions');
-  const base = elements.find(
-    (element) => element.native.kind === 'instructions' && element.native.origin === 'project',
-  );
+  const overridesByDirectory = new Map<string, ElementId>();
+  for (const element of elements) {
+    if (element.native.kind !== 'fallback-instructions') continue;
+    const path = element.source.path;
+    if (path === undefined) continue;
+    const directory = dirname(path);
+    if (!overridesByDirectory.has(directory)) {
+      overridesByDirectory.set(directory, element.id);
+    }
+  }
+
   const shadowed = new Map<ElementId, ElementId>();
-  if (override !== undefined && base !== undefined) {
-    shadowed.set(base.id, override.id);
+  for (const element of elements) {
+    if (element.native.kind !== 'instructions') continue;
+    const path = element.source.path;
+    if (path === undefined) continue;
+    const override = overridesByDirectory.get(dirname(path));
+    if (override !== undefined) {
+      shadowed.set(element.id, override);
+    }
   }
   return shadowed;
 }
