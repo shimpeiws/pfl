@@ -79,4 +79,13 @@ describe('detectCodex', () => {
     expect(detection.version).toBeNull();
     expect(detection.diagnostics.map((d) => d.code)).toContain('runtime-not-found');
   });
+
+  it('does not treat a bare config directory as installed', async () => {
+    const home = await tempHome();
+    await mkdir(join(home, '.codex'), { recursive: true });
+
+    const detection = await detectCodex(home);
+
+    expect(detection.installed).toBe(false);
+  });
 });

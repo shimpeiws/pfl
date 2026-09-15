@@ -22,6 +22,9 @@ import {
  *      metadata, not harness content.
  *   2. the highest `~/.local/share/claude/versions/<version>` entry.
  *
+ * `installed` is true only when an installation location exists — a bare
+ * `~/.claude` config directory is not evidence that the runtime is installed.
+ *
  * The verified range is provisional data until M2 pins Claude Code's
  * resolution semantics (issue #8).
  */
@@ -67,12 +70,11 @@ export async function detectClaudeCode(home: string = homedir()): Promise<Runtim
 }
 
 async function claudeCodeIsPresent(home: string): Promise<boolean> {
-  const locations = [
-    join(home, '.claude'),
+  const installations = [
     join(home, '.local', 'share', 'claude'),
     join(home, '.local', 'bin', 'claude'),
   ];
-  const found = await Promise.all(locations.map((location) => pathExists(location)));
+  const found = await Promise.all(installations.map((location) => pathExists(location)));
   return found.some(Boolean);
 }
 

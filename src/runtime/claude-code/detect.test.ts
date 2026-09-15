@@ -51,7 +51,9 @@ describe('detectClaudeCode', () => {
 
   it('reports present-but-version-unreadable with a null version', async () => {
     const home = await tempHome();
-    await mkdir(join(home, '.claude'), { recursive: true });
+    const versions = join(home, '.local', 'share', 'claude', 'versions');
+    await mkdir(versions, { recursive: true });
+    await writeFile(join(versions, 'not-a-version'), '');
 
     const detection = await detectClaudeCode(home);
 
@@ -59,6 +61,15 @@ describe('detectClaudeCode', () => {
     expect(detection.version).toBeNull();
     expect(detection.runtimeCompatibility).toBe('unverified');
     expect(detection.diagnostics.map((d) => d.code)).toContain('runtime-version-unknown');
+  });
+
+  it('does not treat a bare config directory as installed', async () => {
+    const home = await tempHome();
+    await mkdir(join(home, '.claude'), { recursive: true });
+
+    const detection = await detectClaudeCode(home);
+
+    expect(detection.installed).toBe(false);
   });
 
   it('reports an absent installation', async () => {

@@ -14,6 +14,9 @@ import { highestVersion, isWithinRange, type VersionRange } from '../version-com
  * entry. The release directory name carries the version, so no symlink (the
  * `current` symlink) is followed.
  *
+ * `installed` is true only when an installation location exists — a bare
+ * `~/.codex` config directory is not evidence that the runtime is installed.
+ *
  * The verified range is provisional data until M2 pins Codex's resolution
  * semantics (issue #8).
  */
@@ -62,7 +65,7 @@ function codexReleasesDir(home: string): string {
 }
 
 async function codexIsPresent(home: string): Promise<boolean> {
-  const locations = [join(home, '.codex'), codexReleasesDir(home)];
-  const found = await Promise.all(locations.map((location) => pathExists(location)));
+  const installations = [codexReleasesDir(home), join(home, '.codex', 'packages', 'standalone')];
+  const found = await Promise.all(installations.map((location) => pathExists(location)));
   return found.some(Boolean);
 }
