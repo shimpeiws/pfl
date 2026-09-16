@@ -149,6 +149,16 @@ describe('classify', () => {
     expect(stats.byFacet.actions).toBe(1);
   });
 
+  it('includes an observed element that the resolved snapshot omits', () => {
+    const only = makePair('instructions', 'orphan.md');
+    const { observed, resolved } = snapshots([only.observed], []);
+
+    const result = classify(observed, resolved);
+
+    expect(result.elements.map((element) => element.elementId)).toEqual([only.observed.id]);
+    expect(result.elements[0]?.facets).toEqual(['instructions']);
+  });
+
   it('is deterministic and independent of input order', () => {
     const a = makePair('instructions', 'CLAUDE.md');
     const b = makePair('skills', '.claude/skills/x/SKILL.md');

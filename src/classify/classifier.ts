@@ -94,11 +94,16 @@ export function classify(
     observed.elements.map((element) => [element.id, element]),
   );
 
-  const elements: ElementInterpretation[] = resolved.elements
-    .map((resolvedElement) => {
-      const observedElement = observedById.get(resolvedElement.id);
-      return classifyElement(resolvedElement.id, observedElement);
-    })
+  // Classify every known id: an observed element that a (possibly incomplete or
+  // older) resolved snapshot does not mention is still recorded, as unknown,
+  // rather than dropped.
+  const ids = new Set<string>([
+    ...observed.elements.map((element) => element.id),
+    ...resolved.elements.map((element) => element.id),
+  ]);
+
+  const elements: ElementInterpretation[] = [...ids]
+    .map((id) => classifyElement(id as ElementInterpretation['elementId'], observedById.get(id)))
     .sort((a, b) => (a.elementId < b.elementId ? -1 : a.elementId > b.elementId ? 1 : 0));
 
   return {
