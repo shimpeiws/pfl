@@ -51,13 +51,13 @@ export function renderGraph(model: GraphModel, style: TreeStyle = UTF8_STYLE): s
     label: facet,
     children: effective
       .filter((node) => node.facets.includes(facet))
-      .map((node) => ({ label: node.path })),
+      .map((node) => ({ label: nodeLabel(node) })),
   })).filter((group) => (group.children?.length ?? 0) > 0);
   const unclassified = effective.filter((node) => node.facets.length === 0);
   if (unclassified.length > 0) {
     groups.push({
       label: '(unclassified)',
-      children: unclassified.map((node) => ({ label: node.path })),
+      children: unclassified.map((node) => ({ label: nodeLabel(node) })),
     });
   }
   lines.push(...(groups.length === 0 ? ['  (none)'] : renderTree(groups, style)));
@@ -70,13 +70,20 @@ function nodeToTree(
   model: GraphModel,
   nodeById: ReadonlyMap<string, GraphNode>,
 ): TreeNode {
-  const label = node.inspectability === 'opaque' ? `${node.path} (opaque)` : node.path;
+  const label = nodeLabel(node);
   const outgoing = model.edges
     .filter((edge) => edge.from === node.id)
-    .map((edge) => ({
-      label: `${edgeLabel(edge.type)} → ${nodeById.get(edge.to)?.path ?? edge.to}`,
-    }));
+    .map((edge) => {
+      const target = nodeById.get(edge.to);
+      return {
+        label: `${edgeLabel(edge.type)} → ${target === undefined ? edge.to : nodeLabel(target)}`,
+      };
+    });
   return outgoing.length > 0 ? { label, children: outgoing } : { label };
+}
+
+function nodeLabel(node: GraphNode): string {
+  return node.inspectability === 'opaque' ? `${node.path} (opaque)` : node.path;
 }
 
 function edgeLabel(type: string): string {

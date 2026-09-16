@@ -48,4 +48,10 @@ describe('renderGraph', () => {
     expect(output).toContain('(builtin) layers (opaque)');
     expect(output).not.toContain('├─');
   });
+
+  it('marks an opaque node in the effective section too', () => {
+    const lines = renderGraph(model);
+
+    expect(lines.filter((line) => line.includes('(opaque)'))).toHaveLength(2);
+  });
 });
