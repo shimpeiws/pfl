@@ -41,6 +41,16 @@ const CONSENT: Record<string, { runtimeName: string; groups: readonly ConsentLoc
   codex: { runtimeName: CODEX_RUNTIME_NAME, groups: CODEX_CONSENT_GROUPS },
 };
 
+const RUNTIME_NAMES: Record<string, string> = {
+  'claude-code': CLAUDE_CODE_RUNTIME_NAME,
+  codex: CODEX_RUNTIME_NAME,
+};
+
+/** Human-readable runtime name for rendering (design doc §26); falls back to the id. */
+export function getRuntimeName(id: string): string {
+  return RUNTIME_NAMES[id] ?? id;
+}
+
 /** Builds the consent request for a runtime's user scope. */
 export function getConsentRequest(id: string): ConsentRequest {
   const entry = CONSENT[id];
