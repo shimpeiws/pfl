@@ -14,6 +14,8 @@ export interface ElementInterpretation {
   elementId: ElementId;
   facets: HarnessFacet[];
   confidence: ClassificationConfidence;
+  /** Why the classification was reached (design doc §21: inspectable). */
+  reason: string;
 }
 
 export interface HarnessStats {
