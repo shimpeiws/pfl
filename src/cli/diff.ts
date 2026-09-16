@@ -1,21 +1,240 @@
-import { notImplemented } from './exit-codes.js';
+import { homedir } from 'node:os';
+import { HARNESS_FACETS, type HarnessFacet } from '../core/facets.js';
+import type { ObservedElement } from '../core/observed.js';
+import type { ResolvedElement, ResolvedStatus } from '../core/resolved.js';
+import { canonicalJsonStringify } from '../util/json.js';
 import type { Logger } from '../util/logger.js';
+import { EXIT_CODES, PflError } from './exit-codes.js';
+import { loadInterpretation, type InterpretedRun } from './read.js';
 
 export interface DiffOptions {
   json?: boolean;
+  /** Injected for tests; defaults to the current user's home. */
+  home?: string;
+}
+
+interface StatusChange {
+  id: string;
+  from: ResolvedStatus | null;
+  to: ResolvedStatus | null;
+}
+
+export interface DiffResult {
+  runtimeId: string;
+  observedSnapshotIdA: string;
+  observedSnapshotIdB: string;
+  resolvedSnapshotIdA: string;
+  resolvedSnapshotIdB: string;
+  structural: {
+    added: number;
+    removed: number;
+    changed: number;
+    addedIds: string[];
+    removedIds: string[];
+    changedIds: string[];
+  };
+  effective: {
+    newlyEffective: number;
+    noLongerEffective: number;
+    activationChanged: number;
+    statusChanges: StatusChange[];
+  };
+  facetDeltas: Record<HarnessFacet, number>;
+  versionNotes: string[];
 }
 
 /**
- * `pfl diff <snapshot-a> <snapshot-b>` (design doc §23, §28): report
- * structural change, effective-state change, and semantic facet change.
- * Descriptive, not evaluative.
+ * `pfl diff <a> <b>` (design doc §15, §28): a descriptive comparison across three
+ * levels — structural, effective-state, and semantic facet. It never says
+ * whether a change improved or harmed outcomes, and never rewrites either
+ * snapshot.
+ *
+ * Refuses snapshots from different projects or runtimes. A runtime-version or
+ * semantics-version difference is allowed and reported, because resolution can
+ * change even when the harness content is identical (§15).
  */
 export async function runDiff(
-  _cwd: string,
-  _snapshotA: string,
-  _snapshotB: string,
-  _options: DiffOptions,
-  _logger: Logger,
+  cwd: string,
+  snapshotA: string,
+  snapshotB: string,
+  options: DiffOptions,
+  logger: Logger,
 ): Promise<void> {
-  notImplemented('pfl diff');
+  const home = options.home ?? homedir();
+  const runA = await loadInterpretation(cwd, snapshotA, home);
+  const runB = await loadInterpretation(cwd, snapshotB, home);
+  for (const diagnostic of [...runA.diagnostics, ...runB.diagnostics]) {
+    logger.warn(diagnostic.message, { code: diagnostic.code, path: diagnostic.path ?? undefined });
+  }
+
+  const result = computeDiff(runA, runB);
+  if (options.json) {
+    logger.info('diff', {
+      runtime: result.runtimeId,
+      resolvedSnapshotIdA: result.resolvedSnapshotIdA,
+      resolvedSnapshotIdB: result.resolvedSnapshotIdB,
+      structural: result.structural,
+      effective: result.effective,
+      facetDeltas: result.facetDeltas,
+      versionNotes: result.versionNotes,
+    });
+    return;
+  }
+
+  logger.info('Harness Diff');
+  logger.info(`Snapshot ${result.resolvedSnapshotIdA} → ${result.resolvedSnapshotIdB}`);
+  logger.info('');
+  logger.info('Changes');
+  logger.info(`  + ${result.structural.added} added`);
+  logger.info(`  - ${result.structural.removed} removed`);
+  logger.info(`  ~ ${result.structural.changed} changed`);
+  logger.info('');
+  logger.info('Effective changes');
+  logger.info(`  + ${result.effective.newlyEffective} newly effective`);
+  logger.info(`  - ${result.effective.noLongerEffective} no longer effective`);
+  logger.info(`  ~ ${result.effective.activationChanged} activation changed`);
+  logger.info('');
+  logger.info('Semantic impact');
+  for (const facet of HARNESS_FACETS) {
+    const delta = result.facetDeltas[facet];
+    logger.info(`  ${capitalize(facet).padEnd(14, ' ')}${delta > 0 ? `+${delta}` : `${delta}`}`);
+  }
+  if (result.versionNotes.length > 0) {
+    logger.info('');
+    for (const note of result.versionNotes) {
+      logger.warn(`⚠ ${note}`);
+    }
+  }
+}
+
+export function computeDiff(a: InterpretedRun, b: InterpretedRun): DiffResult {
+  if (a.observed.project.id !== b.observed.project.id) {
+    throw new PflError(
+      `cannot diff snapshots from different projects: A belongs to ${a.observed.project.id}, B to ${b.observed.project.id}`,
+      EXIT_CODES.CONFIG_ERROR,
+    );
+  }
+  if (a.resolved.runtime.id !== b.resolved.runtime.id) {
+    throw new PflError(
+      `cannot diff snapshots from different runtimes: A is ${a.resolved.runtime.id}, B is ${b.resolved.runtime.id}`,
+      EXIT_CODES.CONFIG_ERROR,
+    );
+  }
+
+  return {
+    runtimeId: a.resolved.runtime.id,
+    observedSnapshotIdA: a.observed.snapshotId,
+    observedSnapshotIdB: b.observed.snapshotId,
+    resolvedSnapshotIdA: a.resolved.snapshotId,
+    resolvedSnapshotIdB: b.resolved.snapshotId,
+    structural: structuralDiff(a, b),
+    effective: effectiveDiff(a, b),
+    facetDeltas: facetDeltas(a, b),
+    versionNotes: versionNotes(a, b),
+  };
+}
+
+function structuralDiff(a: InterpretedRun, b: InterpretedRun): DiffResult['structural'] {
+  // Fast path: an unchanged harness content digest means nothing changed.
+  if (a.observed.digests.observed === b.observed.digests.observed) {
+    return { added: 0, removed: 0, changed: 0, addedIds: [], removedIds: [], changedIds: [] };
+  }
+
+  const byIdA = new Map(a.observed.elements.map((element) => [element.id, element]));
+  const byIdB = new Map(b.observed.elements.map((element) => [element.id, element]));
+
+  const addedIds: string[] = [];
+  const removedIds: string[] = [];
+  const changedIds: string[] = [];
+  for (const element of a.observed.elements) {
+    const other = byIdB.get(element.id);
+    if (other === undefined) removedIds.push(element.id);
+    else if (!sameElement(element, other)) changedIds.push(element.id);
+  }
+  for (const element of b.observed.elements) {
+    if (!byIdA.has(element.id)) addedIds.push(element.id);
+  }
+
+  return {
+    added: addedIds.length,
+    removed: removedIds.length,
+    changed: changedIds.length,
+    addedIds,
+    removedIds,
+    changedIds,
+  };
+}
+
+function sameElement(a: ObservedElement, b: ObservedElement): boolean {
+  return (
+    a.source.digest === b.source.digest &&
+    canonicalJsonStringify(a.metadata) === canonicalJsonStringify(b.metadata)
+  );
+}
+
+function effectiveDiff(a: InterpretedRun, b: InterpretedRun): DiffResult['effective'] {
+  const byIdA = new Map<string, ResolvedElement>(
+    a.resolved.elements.map((element) => [element.id, element]),
+  );
+  const byIdB = new Map<string, ResolvedElement>(
+    b.resolved.elements.map((element) => [element.id, element]),
+  );
+  const ids = new Set<string>([...byIdA.keys(), ...byIdB.keys()]);
+
+  let newlyEffective = 0;
+  let noLongerEffective = 0;
+  let activationChanged = 0;
+  const statusChanges: StatusChange[] = [];
+
+  for (const id of ids) {
+    const elementA = byIdA.get(id);
+    const elementB = byIdB.get(id);
+    const statusA = elementA?.status ?? null;
+    const statusB = elementB?.status ?? null;
+    if (statusA !== 'effective' && statusB === 'effective') newlyEffective += 1;
+    if (statusA === 'effective' && statusB !== 'effective') noLongerEffective += 1;
+    if (
+      elementA !== undefined &&
+      elementB !== undefined &&
+      elementA.activation !== elementB.activation
+    ) {
+      activationChanged += 1;
+    }
+    if (elementA !== undefined && elementB !== undefined && statusA !== statusB) {
+      statusChanges.push({ id, from: statusA, to: statusB });
+    }
+  }
+
+  return { newlyEffective, noLongerEffective, activationChanged, statusChanges };
+}
+
+function facetDeltas(a: InterpretedRun, b: InterpretedRun): Record<HarnessFacet, number> {
+  const count = (run: InterpretedRun, facet: HarnessFacet): number =>
+    run.interpretation.elements.filter((element) => element.facets.includes(facet)).length;
+  const deltas = {} as Record<HarnessFacet, number>;
+  for (const facet of HARNESS_FACETS) {
+    deltas[facet] = count(b, facet) - count(a, facet);
+  }
+  return deltas;
+}
+
+function versionNotes(a: InterpretedRun, b: InterpretedRun): string[] {
+  const notes: string[] = [];
+  if (a.resolved.runtime.version !== b.resolved.runtime.version) {
+    notes.push(
+      `runtime version differs: ${a.resolved.runtime.version ?? 'unknown'} → ${
+        b.resolved.runtime.version ?? 'unknown'
+      }`,
+    );
+  }
+  if (a.resolved.resolution.semanticsVersion !== b.resolved.resolution.semanticsVersion) {
+    notes.push(
+      `resolution semantics differ: ${a.resolved.resolution.semanticsVersion} → ${b.resolved.resolution.semanticsVersion}`,
+    );
+  }
+  return notes;
+}
+
+function capitalize(value: string): string {
+  return `${value.charAt(0).toUpperCase()}${value.slice(1)}`;
 }
