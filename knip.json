@@ -1,8 +1,9 @@
 {
   "project": ["src/**/*.ts"],
+  "ignoreExportsUsedInFile": true,
   "rules": {
-    "files": "off",
-    "exports": "off",
-    "types": "off"
+    "files": "error",
+    "exports": "error",
+    "types": "error"
   }
 }

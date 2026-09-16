@@ -38,6 +38,7 @@
   "scripts": {
     "dev": "node --import tsx src/index.ts",
     "build": "tsc --build",
+    "typecheck:test": "tsc -p tsconfig.test.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "check": "oxlint --deny-warnings",

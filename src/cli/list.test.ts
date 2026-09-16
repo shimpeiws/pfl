@@ -126,7 +126,7 @@ function fakeLogger() {
 async function fixture(): Promise<{
   projectRoot: string;
   home: string;
-  ids: Record<string, string>;
+  ids: { instructions: string; skills: string; permissions: string; memory: string };
 }> {
   const projectRoot = await tempDir('pfl-list-project-');
   const home = await tempDir('pfl-list-home-');

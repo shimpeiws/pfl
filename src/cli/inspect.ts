@@ -3,6 +3,7 @@ import type { ObservedSnapshot } from '../core/observed.js';
 import type { ResolvedSnapshot, ResolvedStatus } from '../core/resolved.js';
 import { resolveAccessPolicy, type ConsentIO } from '../discovery/consent.js';
 import { resolveProjectContext } from '../discovery/project-identity.js';
+import { resolveHarness } from '../resolution/resolver.js';
 import { getAdapter, getConsentRequest } from '../runtime/registry.js';
 import type { RuntimeDetection } from '../runtime/types.js';
 import {
@@ -52,7 +53,7 @@ export async function runInspect(
 
   const detection = await adapter.detect(project, access, home);
   const observed = await adapter.discover(project, access, home);
-  const resolved = await adapter.resolve(observed);
+  const resolved = await resolveHarness(adapter, observed);
 
   await writeObservedSnapshot(project.id, observed, home);
   await writeResolvedSnapshot(project.id, resolved, home);
