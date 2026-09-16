@@ -66,7 +66,11 @@ function pair(
   rid: ReturnType<typeof runtimeId>,
   kind: string,
   path: string,
-  options: { origin?: NativeOrigin; status?: ResolvedStatus } = {},
+  options: {
+    origin?: NativeOrigin;
+    status?: ResolvedStatus;
+    inspectability?: ObservedElement['inspectability'];
+  } = {},
 ): Pair {
   const origin = options.origin ?? (path.startsWith('~/') ? 'user' : 'project');
   const id = elementIdFor({ runtimeId: rid, origin, path });
@@ -75,7 +79,7 @@ function pair(
       id,
       native: { kind, origin, scope: origin },
       source: { path },
-      inspectability: 'observable',
+      inspectability: options.inspectability ?? 'observable',
       metadata: {},
       status: 'observed',
     },
@@ -212,6 +216,84 @@ describe('computeDiff', () => {
 
     expect(result.versionNotes.join('\n')).toContain('2.1.272 → 2.2.0');
     expect(result.versionNotes.join('\n')).toContain('semantics differ: 1 → 2');
+  });
+
+  it('detects an opaque-only change despite an unchanged content digest', () => {
+    const opaque = pair(rid, 'runtime-provided-instructions', '(builtin) layers', {
+      origin: 'builtin',
+      inspectability: 'opaque',
+    });
+    const a = makeRun({
+      projectId: 'p1',
+      runtimeId: 'claude-code',
+      runtimeVersion: '1',
+      contentDigest: 'sha256:same',
+      pairs: [],
+    });
+    const b = makeRun({
+      projectId: 'p1',
+      runtimeId: 'claude-code',
+      runtimeVersion: '1',
+      contentDigest: 'sha256:same',
+      pairs: [opaque],
+    });
+
+    const result = computeDiff(a, b);
+
+    expect(result.structural.added).toBe(1);
+  });
+
+  it('detects a kind change for the same path', () => {
+    const a = makeRun({
+      projectId: 'p1',
+      runtimeId: 'claude-code',
+      runtimeVersion: '1',
+      contentDigest: 'sha256:a',
+      pairs: [pair(rid, 'instructions', 'CLAUDE.md')],
+    });
+    const b = makeRun({
+      projectId: 'p1',
+      runtimeId: 'claude-code',
+      runtimeVersion: '1',
+      contentDigest: 'sha256:b',
+      pairs: [pair(rid, 'rules', 'CLAUDE.md')],
+    });
+
+    const result = computeDiff(a, b);
+
+    expect(result.structural.changed).toBe(1);
+    expect(result.structural.added).toBe(0);
+  });
+
+  it('returns id lists in a deterministic order', () => {
+    const one = pair(rid, 'skills', '.claude/skills/a/SKILL.md');
+    const two = pair(rid, 'skills', '.claude/skills/b/SKILL.md');
+    const forward = makeRun({
+      projectId: 'p1',
+      runtimeId: 'claude-code',
+      runtimeVersion: '1',
+      contentDigest: 'sha256:a',
+      pairs: [one],
+    });
+    const reversed = makeRun({
+      projectId: 'p1',
+      runtimeId: 'claude-code',
+      runtimeVersion: '1',
+      contentDigest: 'sha256:b',
+      pairs: [two, one],
+    });
+    const ordered = makeRun({
+      projectId: 'p1',
+      runtimeId: 'claude-code',
+      runtimeVersion: '1',
+      contentDigest: 'sha256:b',
+      pairs: [one, two],
+    });
+
+    const first = computeDiff(forward, reversed);
+    const second = computeDiff(forward, ordered);
+
+    expect(first.structural.addedIds).toEqual(second.structural.addedIds);
   });
 
   it('computes per-facet deltas including zero', () => {

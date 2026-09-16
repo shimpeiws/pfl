@@ -135,11 +135,10 @@ export function computeDiff(a: InterpretedRun, b: InterpretedRun): DiffResult {
 }
 
 function structuralDiff(a: InterpretedRun, b: InterpretedRun): DiffResult['structural'] {
-  // Fast path: an unchanged harness content digest means nothing changed.
-  if (a.observed.digests.observed === b.observed.digests.observed) {
-    return { added: 0, removed: 0, changed: 0, addedIds: [], removedIds: [], changedIds: [] };
-  }
-
+  // Compare element by element. `harnessContentDigest` intentionally excludes
+  // opaque layers, so it cannot stand in for structural equality — an
+  // opaque-only change would be missed. Both snapshots are already in memory, so
+  // there is no filesystem re-walk to avoid.
   const byIdA = new Map(a.observed.elements.map((element) => [element.id, element]));
   const byIdB = new Map(b.observed.elements.map((element) => [element.id, element]));
 
@@ -155,6 +154,9 @@ function structuralDiff(a: InterpretedRun, b: InterpretedRun): DiffResult['struc
     if (!byIdA.has(element.id)) addedIds.push(element.id);
   }
 
+  addedIds.sort(byId);
+  removedIds.sort(byId);
+  changedIds.sort(byId);
   return {
     added: addedIds.length,
     removed: removedIds.length,
@@ -165,8 +167,19 @@ function structuralDiff(a: InterpretedRun, b: InterpretedRun): DiffResult['struc
   };
 }
 
+function byId(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0;
+}
+
+/**
+ * Structural equality of two observed elements. `native.origin` is part of the
+ * element id (so it cannot differ here), but `native.kind` and `native.scope`
+ * are not, so they are compared explicitly alongside the digest and metadata.
+ */
 function sameElement(a: ObservedElement, b: ObservedElement): boolean {
   return (
+    a.native.kind === b.native.kind &&
+    a.native.scope === b.native.scope &&
     a.source.digest === b.source.digest &&
     canonicalJsonStringify(a.metadata) === canonicalJsonStringify(b.metadata)
   );
@@ -205,6 +218,7 @@ function effectiveDiff(a: InterpretedRun, b: InterpretedRun): DiffResult['effect
     }
   }
 
+  statusChanges.sort((x, y) => byId(x.id, y.id));
   return { newlyEffective, noLongerEffective, activationChanged, statusChanges };
 }
 
