@@ -1,19 +1,118 @@
-import { notImplemented } from './exit-codes.js';
+import { homedir } from 'node:os';
+import type { ElementId } from '../core/ids.js';
 import type { Logger } from '../util/logger.js';
+import { EXIT_CODES, PflError } from './exit-codes.js';
+import { loadInterpretation } from './read.js';
 
 export interface ShowOptions {
+  snapshot?: string;
   json?: boolean;
+  /** Injected for tests; defaults to the current user's home. */
+  home?: string;
 }
 
 /**
  * `pfl show <element-id>` (design doc §23): drill into one element's observed
- * facts, resolved facts, and derived interpretation.
+ * facts, resolved facts, and derived interpretation. This is where provenance
+ * pays off — the source path, the resolution reason, relations, and the
+ * findings that cite it are all visible at a glance.
  */
 export async function runShow(
-  _cwd: string,
-  _elementId: string,
-  _options: ShowOptions,
-  _logger: Logger,
+  cwd: string,
+  elementId: string,
+  options: ShowOptions,
+  logger: Logger,
 ): Promise<void> {
-  notImplemented('pfl show');
+  const home = options.home ?? homedir();
+  const { observed, resolved, interpretation, diagnostics } = await loadInterpretation(
+    cwd,
+    options.snapshot,
+    home,
+  );
+  for (const diagnostic of diagnostics) {
+    logger.warn(diagnostic.message, { code: diagnostic.code, path: diagnostic.path ?? undefined });
+  }
+
+  const observedElement = observed.elements.find((element) => element.id === elementId);
+  if (observedElement === undefined) {
+    throw new PflError(`unknown element id: ${elementId}`, EXIT_CODES.CONFIG_ERROR);
+  }
+  const resolvedElement = resolved.elements.find((element) => element.id === elementId);
+  const interpretationElement = interpretation.elements.find(
+    (element) => element.elementId === elementId,
+  );
+  const relations = resolved.relations.filter(
+    (relation) => relation.from === elementId || relation.to === elementId,
+  );
+  const findings = interpretation.findings.filter((finding) =>
+    finding.elementIds.includes(elementId as ElementId),
+  );
+
+  if (options.json) {
+    logger.info('show', {
+      observed: observedElement,
+      resolved: resolvedElement ?? null,
+      interpretation: interpretationElement ?? null,
+      relations,
+      findings,
+    });
+    return;
+  }
+
+  logger.info(`Element ${elementId}`);
+  logger.info(`  kind            ${observedElement.native.kind}`);
+  logger.info(
+    `  origin          ${observedElement.native.origin}${
+      observedElement.native.scope !== null ? ` (${observedElement.native.scope})` : ''
+    }`,
+  );
+  logger.info(
+    `  source          ${observedElement.source.path ?? '(none)'}${
+      observedElement.source.digest !== undefined ? `  ${observedElement.source.digest}` : ''
+    }`,
+  );
+  logger.info(`  inspectability  ${observedElement.inspectability}`);
+  logger.info(`  status          ${resolvedElement?.status ?? 'unknown'}`);
+  if (resolvedElement !== undefined) {
+    logger.info(`  activation      ${resolvedElement.activation}`);
+    logger.info(
+      `  applicability   ${resolvedElement.applicability?.type ?? 'unknown'}${
+        resolvedElement.applicability?.target !== undefined
+          ? ` (${resolvedElement.applicability.target})`
+          : ''
+      }`,
+    );
+    logger.info(
+      `  resolution      ${resolvedElement.resolution.strategy}${
+        resolvedElement.resolution.reason !== undefined
+          ? ` — ${resolvedElement.resolution.reason}`
+          : ''
+      }`,
+    );
+  }
+  if (Object.keys(observedElement.metadata).length > 0) {
+    logger.info(`  metadata        ${JSON.stringify(observedElement.metadata)}`);
+  }
+  if (interpretationElement !== undefined) {
+    logger.info(
+      `  facets          ${interpretationElement.facets.join(',') || '(none)'}  [${
+        interpretationElement.confidence
+      }] ${interpretationElement.reason}`,
+    );
+  }
+
+  if (relations.length > 0) {
+    logger.info('');
+    logger.info('Relations');
+    for (const relation of relations) {
+      logger.info(`  ${relation.type}: ${relation.from} -> ${relation.to}`);
+    }
+  }
+  if (findings.length > 0) {
+    logger.info('');
+    logger.info('Findings');
+    for (const finding of findings) {
+      logger.info(`  ${finding.message}`);
+    }
+  }
 }
