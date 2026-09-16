@@ -8,6 +8,7 @@ import { permissionsPath } from '../snapshot/store.js';
 import {
   consentScopeKey,
   grantConsent,
+  hasAnyUserConsent,
   hasConsent,
   loadConsentStore,
   renderConsentPrompt,
@@ -72,6 +73,19 @@ describe('consent store', () => {
     expect(hasConsent(store, runtimeId('claude-code'), 'user')).toBe(true);
     expect(hasConsent(store, runtimeId('codex'), 'user')).toBe(false);
     expect(hasConsent(store, runtimeId('claude-code'), 'managed')).toBe(false);
+  });
+
+  it('hasAnyUserConsent ignores install grants but accepts any runtime user grant', async () => {
+    const home = await tempHome();
+    expect(await hasAnyUserConsent(home)).toBe(false);
+
+    await grantConsent(consentScopeKey(runtimeId('claude-code'), 'install'), home);
+    expect(await hasAnyUserConsent(home)).toBe(false);
+
+    // Runtime-agnostic on purpose: read commands share a project id across
+    // runtimes. This crossing is accepted risk A3 until M8 scopes it.
+    await grantConsent(consentScopeKey(runtimeId('claude-code'), 'user'), home);
+    expect(await hasAnyUserConsent(home)).toBe(true);
   });
 });
 

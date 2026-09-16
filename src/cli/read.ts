@@ -6,6 +6,7 @@ import { generateInterpretationId } from '../core/ids.js';
 import type { Interpretation } from '../core/interpretation.js';
 import type { ObservedSnapshot } from '../core/observed.js';
 import type { ResolvedSnapshot } from '../core/resolved.js';
+import { hasAnyUserConsent } from '../discovery/consent.js';
 import { resolveProjectContext } from '../discovery/project-identity.js';
 import {
   listRuns,
@@ -37,7 +38,9 @@ export async function loadInterpretation(
   requestedId: string | undefined,
   home: string = homedir(),
 ): Promise<InterpretedRun> {
-  const project = await resolveProjectContext(cwd);
+  const project = await resolveProjectContext(cwd, {
+    allowExternalGit: await hasAnyUserConsent(home),
+  });
   const { resolvedId, diagnostics } = await resolveResolvedId(project.id, requestedId, home);
   const resolved = await readResolvedSnapshot(project.id, resolvedId, home);
   const observed = await readObservedSnapshot(project.id, resolved.observedSnapshotId, home);

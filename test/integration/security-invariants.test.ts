@@ -83,6 +83,23 @@ describe.each<FixtureRuntime>(['claude', 'codex'])('%s harness invariants', (run
     ).toBe(false);
   });
 
+  it('never follows a symlinked settings file and records it once as skipped', async () => {
+    const m = await inspect(runtime);
+    const { observed } = await latestObserved(m);
+
+    const links = observed.elements.filter(
+      (element) => element.source.path === m.settingsSymlinkRelativePath,
+    );
+    expect(links).toHaveLength(1);
+    expect(links[0]).toMatchObject({ status: 'skipped', reason: 'symlink-not-followed' });
+    // The old unguarded read parsed the symlink target into a config element.
+    expect(
+      observed.elements.some((element) =>
+        (element.source.path ?? '').startsWith(`${m.settingsSymlinkRelativePath}#`),
+      ),
+    ).toBe(false);
+  });
+
   it('records unsupported and unreadable entries and reports partial completeness', async () => {
     const m = await inspect(runtime);
     const { observed } = await latestObserved(m);

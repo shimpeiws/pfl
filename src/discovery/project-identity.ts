@@ -1,7 +1,8 @@
-import { lstat, readFile } from 'node:fs/promises';
+import { lstat } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import type { ProjectContext } from '../runtime/types.js';
-import { realpathAsFarAsExists } from '../util/fs.js';
+import { MAX_PARSE_BYTES } from '../limits.js';
+import { readTextFileGuarded, realpathAsFarAsExists } from '../util/fs.js';
 import { sha256Digest } from '../util/hash.js';
 
 /**
@@ -25,6 +26,14 @@ import { sha256Digest } from '../util/hash.js';
  * a linked worktree's common dir legitimately lives outside the worktree, so
  * containment cannot be required. Only `config` is read from the resolved dir,
  * and nothing but `remote.*.url` is taken from it.
+ *
+ * Consent boundary (roadmap S5, ADR 0002 §2). A `.git` **directory** at the
+ * project root, and its own `config`, are project-local and read implicitly. A
+ * `.git` **file**'s `gitdir:` target and any ancestor `.git` above the root are
+ * out-of-project reads: they are followed only when `allowExternalGit` is set,
+ * which callers derive from resolved consent. Before consent, a linked worktree
+ * or a run from a subdirectory falls back to the canonical path, and M8's root
+ * index is what later reclaims a snapshot written under that path-derived id.
  */
 
 /** Where `.git` and the remote configuration live for a discovered repository. */
@@ -35,10 +44,23 @@ interface GitLocation {
   configDir: string;
 }
 
-export async function resolveProjectContext(cwd: string): Promise<ProjectContext> {
+export interface ProjectContextOptions {
+  /**
+   * Whether out-of-project Git metadata may be read: a `.git` **file**'s
+   * `gitdir:` target and an ancestor `.git` above the project root. Defaults to
+   * `false` (fail closed); callers set it from resolved consent.
+   */
+  allowExternalGit?: boolean;
+}
+
+export async function resolveProjectContext(
+  cwd: string,
+  options: ProjectContextOptions = {},
+): Promise<ProjectContext> {
+  const allowExternalGit = options.allowExternalGit ?? false;
   const canonicalCwd = await realpathAsFarAsExists(resolve(cwd));
 
-  const git = await findGitLocation(canonicalCwd);
+  const git = await findGitLocation(canonicalCwd, allowExternalGit);
   if (git) {
     const canonicalRoot = await realpathAsFarAsExists(git.root);
     const remote = await readRemoteUrl(git);
@@ -65,7 +87,10 @@ export async function resolveProjectContext(cwd: string): Promise<ProjectContext
   };
 }
 
-async function findGitLocation(startDir: string): Promise<GitLocation | null> {
+async function findGitLocation(
+  startDir: string,
+  allowExternalGit: boolean,
+): Promise<GitLocation | null> {
   let dir = startDir;
   for (;;) {
     const dotGit = join(dir, '.git');
@@ -75,12 +100,15 @@ async function findGitLocation(startDir: string): Promise<GitLocation | null> {
     if (entry?.isDirectory()) {
       return { root: dir, configDir: dotGit };
     }
-    if (entry?.isFile()) {
+    if (entry?.isFile() && allowExternalGit) {
       const gitDir = await readGitDirFile(dotGit);
       if (gitDir) {
         return { root: dir, configDir: await resolveCommonDir(gitDir) };
       }
     }
+    // Before consent, only the project root itself is examined: a `.git` file's
+    // `gitdir:` and an ancestor `.git` are out-of-project reads (roadmap S5).
+    if (!allowExternalGit) return null;
     const parent = dirname(dir);
     if (parent === dir) return null;
     dir = parent;
@@ -88,22 +116,29 @@ async function findGitLocation(startDir: string): Promise<GitLocation | null> {
 }
 
 async function readGitDirFile(dotGitFile: string): Promise<string | null> {
-  const content = await readFile(dotGitFile, 'utf8').catch(() => null);
-  if (content === null) return null;
-  const match = /^gitdir:\s*(.+?)\s*$/m.exec(content);
+  const read = await readTextFileGuarded(dotGitFile, MAX_PARSE_BYTES, dirname(dotGitFile));
+  if (read.status !== 'ok') return null;
+  const match = /^gitdir:\s*(.+?)\s*$/m.exec(read.text);
   const target = match?.[1];
   return target ? resolve(dirname(dotGitFile), target) : null;
 }
 
 async function resolveCommonDir(gitDir: string): Promise<string> {
-  const content = await readFile(join(gitDir, 'commondir'), 'utf8').catch(() => null);
-  const target = content?.trim();
+  const read = await readTextFileGuarded(join(gitDir, 'commondir'), MAX_PARSE_BYTES, gitDir);
+  const target = read.status === 'ok' ? read.text.trim() : '';
   return target ? resolve(gitDir, target) : gitDir;
 }
 
 async function readRemoteUrl(location: GitLocation): Promise<string | null> {
-  const content = await readFile(join(location.configDir, 'config'), 'utf8').catch(() => null);
-  return content === null ? null : parseRemoteUrl(content);
+  // Guarded: `config` may be a symlink planted by a hostile clone, which would
+  // otherwise leak an out-of-project remote into the id before consent (and
+  // break the no-symlink-traversal invariant).
+  const read = await readTextFileGuarded(
+    join(location.configDir, 'config'),
+    MAX_PARSE_BYTES,
+    location.configDir,
+  );
+  return read.status === 'ok' ? parseRemoteUrl(read.text) : null;
 }
 
 /** Prefers `origin`; falls back to the first configured remote. */

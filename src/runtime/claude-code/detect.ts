@@ -1,9 +1,9 @@
-import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import type { Diagnostic } from '../../core/diagnostics.js';
 import { runtimeId } from '../../core/ids.js';
-import { pathExists, readDirectoryNames } from '../../util/fs.js';
+import { MAX_PARSE_BYTES } from '../../limits.js';
+import { pathExists, readDirectoryNames, readTextFileGuarded } from '../../util/fs.js';
 import type { RuntimeDetection } from '../types.js';
 import {
   formatVersion,
@@ -89,11 +89,12 @@ async function readClaudeCodeVersion(home: string): Promise<string | null> {
 }
 
 async function readUpdateResultVersion(path: string): Promise<string | null> {
-  const text = await readFile(path, 'utf8').catch(() => null);
-  if (text === null) return null;
+  // Leaf-only guard: the file must not be a symlink, and a FIFO must not hang.
+  const read = await readTextFileGuarded(path, MAX_PARSE_BYTES, dirname(path));
+  if (read.status !== 'ok') return null;
   let parsed: unknown;
   try {
-    parsed = JSON.parse(text);
+    parsed = JSON.parse(read.text);
   } catch {
     return null;
   }

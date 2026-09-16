@@ -11,6 +11,7 @@ import {
   writeObservedSnapshot,
   writeResolvedSnapshot,
 } from '../snapshot/store.js';
+import { redactingLogger } from '../redact/output.js';
 import type { Logger } from '../util/logger.js';
 
 export interface InspectOptions {
@@ -38,8 +39,8 @@ export async function runInspect(
   logger: Logger,
 ): Promise<void> {
   const adapter = getAdapter(options.runtime);
-  const project = await resolveProjectContext(cwd);
   const home = options.home ?? homedir();
+  const out = redactingLogger(logger, options.json ? 'export' : 'display', { home });
 
   const request = getConsentRequest(adapter.id());
   const interactive =
@@ -51,9 +52,15 @@ export async function runInspect(
     ...(options.io !== undefined ? { io: options.io } : {}),
   });
 
+  // Identity is resolved after consent: a `.git` file's `gitdir:` and an
+  // ancestor `.git` are out-of-project reads (roadmap S5).
+  const project = await resolveProjectContext(cwd, {
+    allowExternalGit: access.allowOutsideProject,
+  });
+
   const detection = await adapter.detect(project, access, home);
   const observed = await adapter.discover(project, access, home);
-  const resolved = await resolveHarness(adapter, observed);
+  const resolved = await resolveHarness(adapter, observed, home);
 
   await writeObservedSnapshot(project.id, observed, home);
   await writeResolvedSnapshot(project.id, resolved, home);
@@ -63,7 +70,7 @@ export async function runInspect(
     home,
   );
 
-  renderInspect(logger, request.runtimeName, observed, resolved, detection, options.json === true);
+  renderInspect(out, request.runtimeName, observed, resolved, detection, options.json === true);
 }
 
 function countStatus(resolved: ResolvedSnapshot, status: ResolvedStatus): number {
@@ -71,7 +78,7 @@ function countStatus(resolved: ResolvedSnapshot, status: ResolvedStatus): number
 }
 
 function renderInspect(
-  logger: Logger,
+  out: Logger,
   runtimeName: string,
   observed: ObservedSnapshot,
   resolved: ResolvedSnapshot,
@@ -88,7 +95,7 @@ function renderInspect(
   };
 
   if (json) {
-    logger.info('inspect', {
+    out.info('inspect', {
       runtime: observed.runtime.id,
       runtimeVersion: observed.runtime.version,
       runtimeCompatibility: observed.adapter.runtimeCompatibility,
@@ -109,31 +116,31 @@ function renderInspect(
     return;
   }
 
-  logger.info(`Inspecting ${runtimeName} harness...`);
-  logger.info('');
-  logger.info(`Observed        ${observed.elements.length} elements`);
-  logger.info(`Effective       ${counts.effective}`);
-  logger.info(`Conditional     ${counts.conditional}`);
-  logger.info(`Shadowed        ${counts.shadowed}`);
-  logger.info(`Opaque layers   ${opaqueLayers}`);
-  logger.info('');
-  logger.info('Snapshot');
-  logger.info(`  observed   ${observed.snapshotId}`);
-  logger.info(`  resolved   ${resolved.snapshotId}`);
+  out.info(`Inspecting ${runtimeName} harness...`);
+  out.info('');
+  out.info(`Observed        ${observed.elements.length} elements`);
+  out.info(`Effective       ${counts.effective}`);
+  out.info(`Conditional     ${counts.conditional}`);
+  out.info(`Shadowed        ${counts.shadowed}`);
+  out.info(`Opaque layers   ${opaqueLayers}`);
+  out.info('');
+  out.info('Snapshot');
+  out.info(`  observed   ${observed.snapshotId}`);
+  out.info(`  resolved   ${resolved.snapshotId}`);
 
   if (detection.runtimeCompatibility === 'unverified') {
-    logger.info('');
-    logger.warn(
+    out.info('');
+    out.warn(
       detection.version === null
         ? `⚠ ${runtimeName} version could not be verified against this adapter.`
         : `⚠ ${runtimeName} ${detection.version} is outside the verified adapter range.`,
     );
-    logger.info('  Resolution results are best-effort.');
+    out.info('  Resolution results are best-effort.');
   }
 
-  logger.info('');
-  logger.info('Run:');
-  logger.info('  pfl report');
-  logger.info('  pfl graph');
-  logger.info('  pfl diff');
+  out.info('');
+  out.info('Run:');
+  out.info('  pfl report');
+  out.info('  pfl graph');
+  out.info('  pfl diff');
 }

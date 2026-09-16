@@ -21,12 +21,18 @@ export type ObservedStatus = 'observed' | 'unreadable' | 'unsupported' | 'skippe
  * not a free string, so the reason is always one the model understands:
  *
  * - `symlink-not-followed` — recorded but never followed (design doc §10.3)
+ * - `hardlink-not-followed` — an inode reachable outside the walk root (roadmap S3)
+ * - `non-regular-file-not-opened` — a FIFO, socket, or device, never opened (§18)
+ * - `limit-exceeded` — a resource ceiling was hit before the element was read (§18)
  * - `unsupported-by-adapter` — unknown inside a known search area (design doc §10.2)
  * - `unreadable` — present but could not be read (for example, permissions)
  * - `unknown` — the adapter could not classify why
  */
 export const OBSERVED_REASONS = [
   'symlink-not-followed',
+  'hardlink-not-followed',
+  'non-regular-file-not-opened',
+  'limit-exceeded',
   'unsupported-by-adapter',
   'unreadable',
   'unknown',

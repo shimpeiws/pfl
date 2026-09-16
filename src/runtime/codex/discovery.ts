@@ -1,4 +1,4 @@
-import { lstat, readFile } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
 import { assembleObservedSnapshot } from '../../discovery/assemble.js';
@@ -11,9 +11,12 @@ import type {
   NativeOrigin,
   ObservedElement,
   ObservedProject,
+  ObservedReason,
   ObservedSnapshot,
   SafeMetadataValue,
 } from '../../core/observed.js';
+import { MAX_FILE_BYTES, MAX_PARSE_BYTES, limitExceededDiagnostic } from '../../limits.js';
+import { inspectFileTarget, readTextFileGuarded } from '../../util/fs.js';
 import { sha256Digest } from '../../util/hash.js';
 import { packageVersion } from '../../version.js';
 import type { AccessPolicy, ProjectContext } from '../types.js';
@@ -90,6 +93,7 @@ export async function collectCodexHarness(
     },
     elements,
     diagnostics,
+    home,
   });
 }
 
@@ -109,6 +113,7 @@ async function collectProject(
       'project',
       'project',
       kind,
+      project.root,
       elements,
       diagnostics,
     );
@@ -127,18 +132,21 @@ async function collectUser(
     'user',
     'user',
     'instructions',
+    configDir,
     elements,
     diagnostics,
   );
   await collectToml(
     join(configDir, USER_CONFIG_FILE),
     `${USER_PREFIX}/${USER_CONFIG_FILE}`,
+    configDir,
     elements,
     diagnostics,
   );
   await collectHooks(
     join(configDir, USER_HOOKS_FILE),
     `${USER_PREFIX}/${USER_HOOKS_FILE}`,
+    configDir,
     elements,
     diagnostics,
   );
@@ -160,12 +168,37 @@ async function collectUser(
 async function collectToml(
   absPath: string,
   displayPath: string,
+  baseDir: string,
   elements: ObservedElement[],
   diagnostics: Diagnostic[],
 ): Promise<void> {
-  const text = await readTextOrNull(absPath, displayPath, diagnostics);
-  if (text === null) return;
-  const facts = readTomlFacts(text);
+  const read = await readTextFileGuarded(absPath, MAX_PARSE_BYTES, baseDir);
+  if (read.status === 'missing') return;
+  if (read.status === 'symlink') {
+    elements.push(symlinkElement('user', 'user', 'config', displayPath));
+    return;
+  }
+  if (read.status === 'hardlink') {
+    diagnostics.push(hardlinkDiagnostic(displayPath));
+    elements.push(skippedElement('user', 'user', 'config', displayPath, 'hardlink-not-followed'));
+    return;
+  }
+  if (read.status === 'not-regular') {
+    diagnostics.push(nonRegularDiagnostic(displayPath));
+    elements.push(skippedNonRegularElement('user', 'user', 'config', displayPath));
+    return;
+  }
+  if (read.status === 'too-large') {
+    diagnostics.push(limitExceededDiagnostic('MAX_PARSE_BYTES', read.maxBytes, displayPath));
+    elements.push(skippedElement('user', 'user', 'config', displayPath, 'limit-exceeded'));
+    return;
+  }
+  if (read.status === 'unreadable') {
+    diagnostics.push(unreadableDiagnostic(displayPath));
+    elements.push(unreadableElement('user', 'user', 'config', displayPath));
+    return;
+  }
+  const facts = readTomlFacts(read.text);
 
   const approval: Record<string, SafeMetadataValue> = {
     ...(facts.values['approval_policy'] !== undefined
@@ -206,15 +239,40 @@ async function collectToml(
 async function collectHooks(
   absPath: string,
   displayPath: string,
+  baseDir: string,
   elements: ObservedElement[],
   diagnostics: Diagnostic[],
 ): Promise<void> {
-  const text = await readTextOrNull(absPath, displayPath, diagnostics);
-  if (text === null) return;
+  const read = await readTextFileGuarded(absPath, MAX_PARSE_BYTES, baseDir);
+  if (read.status === 'missing') return;
+  if (read.status === 'symlink') {
+    elements.push(symlinkElement('user', 'user', 'hooks', displayPath));
+    return;
+  }
+  if (read.status === 'hardlink') {
+    diagnostics.push(hardlinkDiagnostic(displayPath));
+    elements.push(skippedElement('user', 'user', 'hooks', displayPath, 'hardlink-not-followed'));
+    return;
+  }
+  if (read.status === 'not-regular') {
+    diagnostics.push(nonRegularDiagnostic(displayPath));
+    elements.push(skippedNonRegularElement('user', 'user', 'hooks', displayPath));
+    return;
+  }
+  if (read.status === 'too-large') {
+    diagnostics.push(limitExceededDiagnostic('MAX_PARSE_BYTES', read.maxBytes, displayPath));
+    elements.push(skippedElement('user', 'user', 'hooks', displayPath, 'limit-exceeded'));
+    return;
+  }
+  if (read.status === 'unreadable') {
+    diagnostics.push(unreadableDiagnostic(displayPath));
+    elements.push(unreadableElement('user', 'user', 'hooks', displayPath));
+    return;
+  }
 
   let parsed: unknown;
   try {
-    parsed = JSON.parse(text);
+    parsed = JSON.parse(read.text);
   } catch {
     diagnostics.push({
       severity: 'warning',
@@ -257,17 +315,18 @@ async function addWalkedArea(
       elements.push(symlinkElement(origin, scope, kind, displayPath));
       continue;
     }
+    if (entry.skipReason !== undefined) {
+      elements.push(
+        skippedElement(origin, scope, kind, displayPath, reasonForWalkSkip(entry.skipReason)),
+      );
+      continue;
+    }
     if (entry.kind === 'unknown') {
-      elements.push(unsupportedElement(origin, scope, displayPath));
+      elements.push(skippedNonRegularElement(origin, scope, kind, displayPath));
       continue;
     }
     if (entry.digest === undefined) {
-      diagnostics.push({
-        severity: 'warning',
-        code: 'unreadable-file',
-        message: `could not read ${displayPath}`,
-        path: displayPath,
-      });
+      diagnostics.push(unreadableDiagnostic(displayPath));
       elements.push(unreadableElement(origin, scope, kind, displayPath));
       continue;
     }
@@ -292,16 +351,36 @@ async function addKnownFile(
   origin: NativeOrigin,
   scope: string,
   kind: CodexElementKind,
+  baseDir: string,
   elements: ObservedElement[],
   diagnostics: Diagnostic[],
 ): Promise<void> {
-  const entry = await lstat(absPath).catch(() => null);
-  if (entry === null) return;
-  if (entry.isSymbolicLink()) {
+  const target = await inspectFileTarget(absPath, baseDir);
+  if (target.status === 'missing') return;
+  if (target.status === 'symlink') {
     elements.push(symlinkElement(origin, scope, kind, displayPath));
     return;
   }
-  if (!entry.isFile()) return;
+  if (target.status === 'hardlink') {
+    diagnostics.push(hardlinkDiagnostic(displayPath));
+    elements.push(skippedElement(origin, scope, kind, displayPath, 'hardlink-not-followed'));
+    return;
+  }
+  if (target.status === 'not-regular') {
+    diagnostics.push(nonRegularDiagnostic(displayPath));
+    elements.push(skippedNonRegularElement(origin, scope, kind, displayPath));
+    return;
+  }
+  if (target.status === 'unreadable') {
+    diagnostics.push(unreadableDiagnostic(displayPath));
+    elements.push(unreadableElement(origin, scope, kind, displayPath));
+    return;
+  }
+  if ((target.sizeBytes ?? 0) > MAX_FILE_BYTES) {
+    diagnostics.push(limitExceededDiagnostic('MAX_FILE_BYTES', MAX_FILE_BYTES, displayPath));
+    elements.push(skippedElement(origin, scope, kind, displayPath, 'limit-exceeded'));
+    return;
+  }
 
   try {
     const content = await readFile(absPath);
@@ -318,12 +397,7 @@ async function addKnownFile(
       }),
     );
   } catch {
-    diagnostics.push({
-      severity: 'warning',
-      code: 'unreadable-file',
-      message: `could not read ${displayPath}`,
-      path: displayPath,
-    });
+    diagnostics.push(unreadableDiagnostic(displayPath));
     elements.push(unreadableElement(origin, scope, kind, displayPath));
   }
 }
@@ -358,18 +432,6 @@ function symlinkElement(
     symlink: true,
     status: 'skipped',
     reason: 'symlink-not-followed',
-  });
-}
-
-function unsupportedElement(origin: NativeOrigin, scope: string, path: string): ObservedElement {
-  return buildObservedElement({
-    runtimeId: RUNTIME_ID,
-    origin,
-    scope,
-    kind: 'unknown',
-    path,
-    status: 'unsupported',
-    reason: 'unsupported-by-adapter',
   });
 }
 
@@ -438,28 +500,62 @@ function redactValue(value: SafeMetadataValue): SafeMetadataValue {
   return value;
 }
 
-/**
- * Reads a file that may legitimately be absent: ENOENT means "not there", any
- * other failure is recorded so an unreadable config is never mistaken for a
- * missing one.
- */
-async function readTextOrNull(
-  absPath: string,
-  displayPath: string,
-  diagnostics: Diagnostic[],
-): Promise<string | null> {
-  try {
-    return await readFile(absPath, 'utf8');
-  } catch (error) {
-    if ((error as { code?: string }).code === 'ENOENT') return null;
-    diagnostics.push({
-      severity: 'warning',
-      code: 'unreadable-file',
-      message: `could not read ${displayPath}`,
-      path: displayPath,
-    });
-    return null;
-  }
+function skippedElement(
+  origin: NativeOrigin,
+  scope: string,
+  kind: string,
+  path: string,
+  reason: ObservedReason,
+): ObservedElement {
+  return buildObservedElement({
+    runtimeId: RUNTIME_ID,
+    origin,
+    scope,
+    kind,
+    path,
+    status: 'skipped',
+    reason,
+  });
+}
+
+function skippedNonRegularElement(
+  origin: NativeOrigin,
+  scope: string,
+  kind: string,
+  path: string,
+): ObservedElement {
+  return skippedElement(origin, scope, kind, path, 'non-regular-file-not-opened');
+}
+
+function reasonForWalkSkip(skipReason: 'hardlink-not-followed' | 'file-too-large'): ObservedReason {
+  return skipReason === 'hardlink-not-followed' ? 'hardlink-not-followed' : 'limit-exceeded';
+}
+
+function unreadableDiagnostic(displayPath: string): Diagnostic {
+  return {
+    severity: 'warning',
+    code: 'unreadable-file',
+    message: `could not read ${displayPath}`,
+    path: displayPath,
+  };
+}
+
+function nonRegularDiagnostic(displayPath: string): Diagnostic {
+  return {
+    severity: 'warning',
+    code: 'non-regular-file',
+    message: `not a regular file, not opened: ${displayPath}`,
+    path: displayPath,
+  };
+}
+
+function hardlinkDiagnostic(displayPath: string): Diagnostic {
+  return {
+    severity: 'warning',
+    code: 'hardlink-not-followed',
+    message: `hardlink not followed: ${displayPath}`,
+    path: displayPath,
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

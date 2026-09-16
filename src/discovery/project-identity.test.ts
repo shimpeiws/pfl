@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -73,7 +73,19 @@ describe('resolveProjectContext', () => {
     expect(a.root).not.toBe(b.root);
   });
 
-  it('resolves a nested subdirectory to the repository root', async () => {
+  it('resolves a nested subdirectory to the repository root when external Git is allowed', async () => {
+    const dir = await tempDir();
+    await makeGitRepo(dir, 'git@github.com:o/r.git');
+    const nested = join(dir, 'src', 'deep');
+    await mkdir(nested, { recursive: true });
+
+    const project = await resolveProjectContext(nested, { allowExternalGit: true });
+
+    expect(project.displayName).toBe('o/r');
+    expect(project.id).toMatch(/^git-/);
+  });
+
+  it('does not search above the root before consent', async () => {
     const dir = await tempDir();
     await makeGitRepo(dir, 'git@github.com:o/r.git');
     const nested = join(dir, 'src', 'deep');
@@ -81,11 +93,11 @@ describe('resolveProjectContext', () => {
 
     const project = await resolveProjectContext(nested);
 
-    expect(project.displayName).toBe('o/r');
-    expect(project.id).toMatch(/^git-/);
+    expect(project.id).toMatch(/^path-/);
+    expect(project.remote).toBeUndefined();
   });
 
-  it('resolves a linked worktree through gitdir and commondir', async () => {
+  it('resolves a linked worktree through gitdir and commondir when external Git is allowed', async () => {
     const main = await tempDir();
     await makeGitRepo(main, 'git@github.com:o/r.git');
 
@@ -96,12 +108,50 @@ describe('resolveProjectContext', () => {
     await writeFile(join(worktree, '.git'), `gitdir: ${gitDir}\n`);
 
     const [mainProject, worktreeProject] = await Promise.all([
-      resolveProjectContext(main),
-      resolveProjectContext(worktree),
+      resolveProjectContext(main, { allowExternalGit: true }),
+      resolveProjectContext(worktree, { allowExternalGit: true }),
     ]);
 
     expect(worktreeProject.remote).toBe('github.com/o/r');
     expect(worktreeProject.id).toBe(mainProject.id);
+  });
+
+  it('does not follow a .git file before consent', async () => {
+    const dir = await tempDir();
+    const outside = await tempDir();
+    const outsideGit = join(outside, 'gitdir');
+    await mkdir(outsideGit, { recursive: true });
+    await writeFile(join(outsideGit, 'config'), gitConfig('git@github.com:secret/leak.git'));
+    await writeFile(join(dir, '.git'), `gitdir: ${outsideGit}\n`);
+
+    const project = await resolveProjectContext(dir);
+
+    // The gitdir target is out of project: not read, so no remote and a path id.
+    expect(project.remote).toBeUndefined();
+    expect(project.id).toMatch(/^path-/);
+  });
+
+  it('still reads a .git directory inside the root before consent', async () => {
+    const dir = await tempDir();
+    await makeGitRepo(dir, 'git@github.com:owner/repo.git');
+
+    const project = await resolveProjectContext(dir);
+
+    expect(project.remote).toBe('github.com/owner/repo');
+    expect(project.id).toMatch(/^git-/);
+  });
+
+  it('does not follow a symlinked .git/config', async () => {
+    const dir = await tempDir();
+    const outside = await tempDir();
+    await writeFile(join(outside, 'config'), gitConfig('git@github.com:secret/leak.git'));
+    await mkdir(join(dir, '.git'), { recursive: true });
+    await symlink(join(outside, 'config'), join(dir, '.git', 'config'));
+
+    const project = await resolveProjectContext(dir);
+
+    expect(project.remote).toBeUndefined();
+    expect(project.id).toMatch(/^path-/);
   });
 
   it('prefers origin over another remote', async () => {

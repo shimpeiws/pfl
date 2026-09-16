@@ -1,7 +1,9 @@
-import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
+import { chmod, link, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { MAX_FILE_BYTES, MAX_WALK_DEPTH, MAX_WALK_ENTRIES } from '../limits.js';
 import { sha256Digest } from '../util/hash.js';
 import { walkHarnessPaths } from './walk.js';
 
@@ -153,5 +155,93 @@ describe('walkHarnessPaths', () => {
     expect(first.entries.map((e) => e.relativePath)).toEqual(
       [...first.entries.map((e) => e.relativePath)].sort(),
     );
+  });
+});
+
+describe('walkHarnessPaths hostile input (S3, S7)', () => {
+  it('refuses a hardlinked regular file (nlink > 1)', async () => {
+    const fixture = await makeFixture();
+    const original = join(dirname(fixture.root), 'shared-inode.txt');
+    await writeFile(original, 'shared inode');
+    await link(original, join(fixture.root, '.claude', 'hardlinked.txt'));
+
+    const { entries, diagnostics } = await walkHarnessPaths(fixture.root, ['.claude']);
+
+    const hard = entries.find((entry) => entry.relativePath === '.claude/hardlinked.txt');
+    expect(hard?.skipReason).toBe('hardlink-not-followed');
+    expect(hard?.digest).toBeUndefined();
+    expect(diagnostics.some((diagnostic) => diagnostic.code === 'hardlink-not-followed')).toBe(
+      true,
+    );
+  });
+
+  it('refuses a file over MAX_FILE_BYTES before reading it', async () => {
+    const fixture = await makeFixture();
+    await writeFile(join(fixture.root, '.claude', 'huge.bin'), Buffer.alloc(MAX_FILE_BYTES + 1));
+
+    const { entries, diagnostics } = await walkHarnessPaths(fixture.root, ['.claude']);
+
+    const huge = entries.find((entry) => entry.relativePath === '.claude/huge.bin');
+    expect(huge?.skipReason).toBe('file-too-large');
+    expect(huge?.digest).toBeUndefined();
+    expect(
+      diagnostics.some(
+        (diagnostic) =>
+          diagnostic.code === 'limit-exceeded' && diagnostic.message.includes('MAX_FILE_BYTES'),
+      ),
+    ).toBe(true);
+  });
+
+  it('stops at MAX_WALK_ENTRIES and reports the ceiling it hit', async () => {
+    const fixture = await makeFixture();
+    const many = join(fixture.root, '.claude', 'many');
+    await mkdir(many, { recursive: true });
+    await Promise.all(
+      Array.from({ length: MAX_WALK_ENTRIES + 10 }, (_, index) =>
+        writeFile(join(many, `f${index}`), ''),
+      ),
+    );
+
+    const { entries, diagnostics } = await walkHarnessPaths(fixture.root, ['.claude']);
+
+    expect(entries.length).toBeLessThanOrEqual(MAX_WALK_ENTRIES);
+    expect(
+      diagnostics.some(
+        (diagnostic) =>
+          diagnostic.code === 'limit-exceeded' &&
+          diagnostic.message.includes('MAX_WALK_ENTRIES') &&
+          diagnostic.message.includes(String(MAX_WALK_ENTRIES)),
+      ),
+    ).toBe(true);
+  });
+
+  it('stops descending at MAX_WALK_DEPTH', async () => {
+    const fixture = await makeFixture();
+    let deep = join(fixture.root, '.claude', 'deep');
+    for (let level = 0; level <= MAX_WALK_DEPTH + 2; level += 1) {
+      deep = join(deep, `d${level}`);
+    }
+    await mkdir(deep, { recursive: true });
+
+    const { diagnostics } = await walkHarnessPaths(fixture.root, ['.claude']);
+
+    expect(
+      diagnostics.some(
+        (diagnostic) =>
+          diagnostic.code === 'limit-exceeded' && diagnostic.message.includes('MAX_WALK_DEPTH'),
+      ),
+    ).toBe(true);
+  });
+
+  it('never opens a FIFO and records it as a non-regular entry', async () => {
+    const fixture = await makeFixture();
+    execFileSync('mkfifo', [join(fixture.root, '.claude', 'pipe')]);
+
+    const { entries, diagnostics } = await walkHarnessPaths(fixture.root, ['.claude']);
+
+    const fifo = entries.find((entry) => entry.relativePath === '.claude/pipe');
+    expect(fifo?.kind).toBe('unknown');
+    expect(fifo?.digest).toBeUndefined();
+    expect(diagnostics.some((diagnostic) => diagnostic.code === 'non-regular-file')).toBe(true);
   });
 });

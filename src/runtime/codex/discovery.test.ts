@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ObservedElement } from '../../core/observed.js';
+import { MAX_PARSE_BYTES } from '../../limits.js';
 import { collectCodexHarness } from './discovery.js';
 import { userConfigDir } from './paths.js';
 
@@ -163,5 +164,95 @@ describe('collectCodexHarness', () => {
     expect(opaque).toHaveLength(1);
     expect(opaque[0]?.native.origin).toBe('builtin');
     expect(snapshot.completeness).toBe('partial');
+  });
+});
+
+describe('collectCodexHarness symlinked settings (S1)', () => {
+  interface SymlinkFixture {
+    project: { id: string; displayName: string; root: string; remote: string };
+    home: string;
+  }
+
+  async function makeSymlinkFixture(): Promise<SymlinkFixture> {
+    const base = await tempDir('pfl-codex-symlink-');
+    const root = join(base, 'project');
+    const home = join(base, 'home');
+    const outside = join(base, 'outside');
+
+    await mkdir(root, { recursive: true });
+    await mkdir(userConfigDir(home), { recursive: true });
+    await mkdir(outside, { recursive: true });
+    await writeFile(
+      join(outside, 'secret-config.toml'),
+      'approval_policy = "never"\ntoken = "sk-ant-should-not-be-read"\n',
+    );
+    await writeFile(
+      join(outside, 'secret-hooks.json'),
+      JSON.stringify({ hooks: { SessionStart: [{ matcher: 'LEAKED_HOOK_MATCHER' }] } }),
+    );
+
+    await symlink(
+      join('..', '..', 'outside', 'secret-config.toml'),
+      join(userConfigDir(home), 'config.toml'),
+    );
+    await symlink(
+      join('..', '..', 'outside', 'secret-hooks.json'),
+      join(userConfigDir(home), 'hooks.json'),
+    );
+
+    return {
+      project: { id: 'proj', displayName: 'owner/repo', root, remote: 'github.com/owner/repo' },
+      home,
+    };
+  }
+
+  it('records symlinked config.toml and hooks.json as skipped and never parses them', async () => {
+    const { project, home } = await makeSymlinkFixture();
+
+    const snapshot = await collectCodexHarness(project, CONSENTED, home);
+    const paths = byPath(snapshot.elements);
+
+    for (const path of ['~/.codex/config.toml', '~/.codex/hooks.json']) {
+      expect(paths.get(path)).toMatchObject({
+        status: 'skipped',
+        reason: 'symlink-not-followed',
+      });
+    }
+    // The old, unguarded read parsed the targets and emitted these config elements.
+    expect(paths.has('~/.codex/config.toml#approval')).toBe(false);
+    expect(paths.has('~/.codex/hooks.json#hooks')).toBe(false);
+    expect(JSON.stringify(snapshot.elements)).not.toContain('sk-ant-should-not-be-read');
+    expect(JSON.stringify(snapshot.elements)).not.toContain('LEAKED_HOOK_MATCHER');
+  });
+
+  it('skips a config.toml over MAX_PARSE_BYTES before parsing it', async () => {
+    const base = await tempDir('pfl-codex-large-');
+    const root = join(base, 'project');
+    const home = join(base, 'home');
+    await mkdir(root, { recursive: true });
+    await mkdir(userConfigDir(home), { recursive: true });
+    await writeFile(
+      join(userConfigDir(home), 'config.toml'),
+      `approval_policy = "never"\n# ${'x'.repeat(MAX_PARSE_BYTES)}`,
+    );
+
+    const snapshot = await collectCodexHarness(
+      { id: 'proj', displayName: 'owner/repo', root, remote: 'github.com/owner/repo' },
+      CONSENTED,
+      home,
+    );
+    const paths = byPath(snapshot.elements);
+
+    expect(paths.get('~/.codex/config.toml')).toMatchObject({
+      status: 'skipped',
+      reason: 'limit-exceeded',
+    });
+    expect(paths.has('~/.codex/config.toml#approval')).toBe(false);
+    expect(
+      snapshot.diagnostics.some(
+        (diagnostic) =>
+          diagnostic.code === 'limit-exceeded' && diagnostic.message.includes('MAX_PARSE_BYTES'),
+      ),
+    ).toBe(true);
   });
 });

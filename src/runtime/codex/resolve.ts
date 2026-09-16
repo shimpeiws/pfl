@@ -39,7 +39,10 @@ import { resolveElements, type ElementResolutionInput } from '../../resolution/r
  * never inferred.
  */
 
-export async function resolveCodex(observed: ObservedSnapshot): Promise<ResolvedSnapshot> {
+export async function resolveCodex(
+  observed: ObservedSnapshot,
+  home = '',
+): Promise<ResolvedSnapshot> {
   const shadowedBy = overrideShadowing(observed.elements);
 
   const inputs: ElementResolutionInput[] = observed.elements.map((element) => {
@@ -62,6 +65,7 @@ export async function resolveCodex(observed: ObservedSnapshot): Promise<Resolved
     observed,
     elements: resolveElements(inputs),
     relations,
+    home,
   });
 }
 

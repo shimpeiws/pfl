@@ -1,22 +1,14 @@
 import { randomBytes } from 'node:crypto';
-import {
-  access,
-  chmod,
-  link,
-  mkdir,
-  readFile,
-  readdir,
-  rename,
-  unlink,
-  writeFile,
-} from 'node:fs/promises';
+import { access, chmod, link, mkdir, readdir, rename, unlink, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { EXIT_CODES, PflError } from '../cli/exit-codes.js';
 import type { Completeness, Diagnostic } from '../core/diagnostics.js';
 import type { Interpretation } from '../core/interpretation.js';
-import type { ObservedSnapshot } from '../core/observed.js';
+import { OBSERVED_REASONS, type ObservedSnapshot } from '../core/observed.js';
 import type { ResolvedSnapshot } from '../core/resolved.js';
+import { MAX_ARTIFACT_BYTES } from '../limits.js';
+import { checkSymlinkAncestors, readTextFileGuarded } from '../util/fs.js';
 import { deserializeSnapshot, serializeSnapshot, type VersionedSnapshot } from './serialization.js';
 
 /**
@@ -58,6 +50,23 @@ const ARTIFACT_SUFFIX = '.json';
 const LATEST_FILE = 'latest';
 const SAFE_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const COMPLETENESS_VALUES: readonly string[] = ['complete', 'partial', 'unknown'];
+const NATIVE_ORIGIN_VALUES: readonly string[] = [
+  'project',
+  'user',
+  'managed',
+  'plugin',
+  'builtin',
+  'unknown',
+];
+const INSPECTABILITY_VALUES: readonly string[] = ['observable', 'known-runtime-provided', 'opaque'];
+const OBSERVED_STATUS_VALUES: readonly string[] = [
+  'observed',
+  'unreadable',
+  'unsupported',
+  'skipped',
+  'unknown',
+];
+const DIAGNOSTIC_SEVERITY_VALUES: readonly string[] = ['info', 'warning', 'error'];
 const RESOLVED_STATUS_VALUES: readonly string[] = [
   'effective',
   'shadowed',
@@ -169,6 +178,7 @@ export async function readObservedSnapshot(
   return readArtifact(
     artifactPath(observationsDir(projectId, home), snapshotId),
     isObservedSnapshot,
+    pflHome(home),
   );
 }
 
@@ -189,7 +199,11 @@ export async function readResolvedSnapshot(
   snapshotId: string,
   home: string = homedir(),
 ): Promise<ResolvedSnapshot> {
-  return readArtifact(artifactPath(snapshotsDir(projectId, home), snapshotId), isResolvedSnapshot);
+  return readArtifact(
+    artifactPath(snapshotsDir(projectId, home), snapshotId),
+    isResolvedSnapshot,
+    pflHome(home),
+  );
 }
 
 /** Reads a Derived Interpretation by id (`interpretations/`). */
@@ -201,6 +215,7 @@ export async function readInterpretation(
   return readArtifact(
     artifactPath(interpretationsDir(projectId, home), interpretationId),
     isInterpretation,
+    pflHome(home),
   );
 }
 
@@ -209,13 +224,16 @@ export async function readLatestPointer(
   projectId: string,
   home: string = homedir(),
 ): Promise<LatestPointer | null> {
-  let text: string;
-  try {
-    text = await readFile(latestPath(projectId, home), 'utf8');
-  } catch (error) {
-    if (isNotFound(error)) return null;
-    throw snapshotStoreError(`could not read the latest pointer: ${errorMessage(error)}`);
+  const read = await readTextFileGuarded(
+    latestPath(projectId, home),
+    MAX_ARTIFACT_BYTES,
+    pflHome(home),
+  );
+  if (read.status === 'missing') return null;
+  if (read.status !== 'ok') {
+    throw snapshotStoreError(guardedReadError(read, 'the latest pointer'));
   }
+  const text = read.text;
 
   let parsed: unknown;
   try {
@@ -267,9 +285,13 @@ export async function listRuns(
   const resolvedDir = snapshotsDir(projectId, home);
 
   const resolvedByObserved = new Map<string, string>();
-  for (const name of await artifactNames(resolvedDir, diagnostics)) {
+  for (const name of await artifactNames(resolvedDir, pflHome(home), diagnostics)) {
     try {
-      const resolved = await readArtifact(join(resolvedDir, name), isResolvedSnapshot);
+      const resolved = await readArtifact(
+        join(resolvedDir, name),
+        isResolvedSnapshot,
+        pflHome(home),
+      );
       resolvedByObserved.set(resolved.observedSnapshotId, resolved.snapshotId);
     } catch (error) {
       diagnostics.push({
@@ -282,9 +304,13 @@ export async function listRuns(
   }
 
   const runs: StoredRunSummary[] = [];
-  for (const name of await artifactNames(observedDir, diagnostics)) {
+  for (const name of await artifactNames(observedDir, pflHome(home), diagnostics)) {
     try {
-      const observed = await readArtifact(join(observedDir, name), isObservedSnapshot);
+      const observed = await readArtifact(
+        join(observedDir, name),
+        isObservedSnapshot,
+        pflHome(home),
+      );
       runs.push({
         observedId: observed.snapshotId,
         resolvedId: resolvedByObserved.get(observed.snapshotId) ?? null,
@@ -306,7 +332,20 @@ export async function listRuns(
   return { runs, diagnostics };
 }
 
-async function artifactNames(dir: string, diagnostics: Diagnostic[]): Promise<string[]> {
+async function artifactNames(
+  dir: string,
+  baseDir: string,
+  diagnostics: Diagnostic[],
+): Promise<string[]> {
+  if ((await checkSymlinkAncestors(baseDir, dir)) !== 'ok') {
+    diagnostics.push({
+      severity: 'error',
+      code: 'snapshot-store-unreadable',
+      message: `snapshot store path is reached through a symlink: ${dir}`,
+      path: dir,
+    });
+    return [];
+  }
   try {
     return (await readdir(dir)).filter((name) => name.endsWith(ARTIFACT_SUFFIX));
   } catch (error) {
@@ -329,20 +368,20 @@ function artifactPath(dir: string, id: string): string {
 async function readArtifact<T>(
   target: string,
   isValid: (value: unknown) => value is T,
+  baseDir: string,
 ): Promise<T> {
-  let text: string;
-  try {
-    text = await readFile(target, 'utf8');
-  } catch (error) {
-    if (isNotFound(error)) throw snapshotStoreError(`snapshot not found: ${basename(target)}`);
-    throw snapshotStoreError(`could not read snapshot: ${errorMessage(error)}`);
+  const read = await readTextFileGuarded(target, MAX_ARTIFACT_BYTES, baseDir);
+  if (read.status === 'missing')
+    throw snapshotStoreError(`snapshot not found: ${basename(target)}`);
+  if (read.status !== 'ok') {
+    throw snapshotStoreError(guardedReadError(read, `snapshot ${basename(target)}`));
   }
 
   let parsed: unknown;
   try {
     // The on-disk envelope always carries `schemaVersion` (ADR 0001), even when
     // the artifact type itself does not model it (for example Interpretation).
-    parsed = deserializeSnapshot<VersionedSnapshot>(text);
+    parsed = deserializeSnapshot<VersionedSnapshot>(read.text);
   } catch (error) {
     throw snapshotStoreError(errorMessage(error));
   }
@@ -351,6 +390,25 @@ async function readArtifact<T>(
     throw snapshotStoreError(`snapshot is missing required fields: ${basename(target)}`);
   }
   return parsed;
+}
+
+/** A store error for a read the guard refused, naming what was refused. */
+function guardedReadError(
+  read: Exclude<Awaited<ReturnType<typeof readTextFileGuarded>>, { status: 'ok' | 'missing' }>,
+  label: string,
+): string {
+  switch (read.status) {
+    case 'symlink':
+      return `${label} is a symlink and was not followed`;
+    case 'hardlink':
+      return `${label} is a hardlink and was not followed`;
+    case 'not-regular':
+      return `${label} is not a regular file`;
+    case 'too-large':
+      return `${label} exceeds the artifact size limit (${read.maxBytes} bytes)`;
+    case 'unreadable':
+      return `${label} could not be read`;
+  }
 }
 
 /**
@@ -415,11 +473,79 @@ function isObservedSnapshot(value: unknown): value is ObservedSnapshot {
   if (!(runtime['version'] === null || typeof runtime['version'] === 'string')) return false;
   const adapter = value['adapter'];
   if (!isRecord(adapter) || typeof adapter['id'] !== 'string') return false;
-  if (!Array.isArray(value['elements']) || !Array.isArray(value['diagnostics'])) return false;
+  if (
+    !Array.isArray(value['elements']) ||
+    !value['elements'].every(isObservedElement) ||
+    !Array.isArray(value['diagnostics']) ||
+    !value['diagnostics'].every(isDiagnostic)
+  ) {
+    return false;
+  }
   const completeness = value['completeness'];
   if (typeof completeness !== 'string' || !COMPLETENESS_VALUES.includes(completeness)) return false;
   const digests = value['digests'];
   return isRecord(digests) && typeof digests['observed'] === 'string';
+}
+
+/**
+ * Validates an observed element's contents, the way `isResolvedElement`
+ * validates a resolved one (roadmap S11). A snapshot whose elements are the
+ * wrong shape is refused rather than handed to the reader as a valid capture.
+ */
+function isObservedElement(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (typeof value['id'] !== 'string') return false;
+
+  const native = value['native'];
+  if (!isRecord(native) || typeof native['kind'] !== 'string') return false;
+  if (typeof native['origin'] !== 'string' || !NATIVE_ORIGIN_VALUES.includes(native['origin'])) {
+    return false;
+  }
+  const scope = native['scope'];
+  if (!(scope === null || typeof scope === 'string')) return false;
+
+  if (
+    typeof value['inspectability'] !== 'string' ||
+    !INSPECTABILITY_VALUES.includes(value['inspectability'])
+  ) {
+    return false;
+  }
+  if (!isRecord(value['metadata'])) return false;
+  if (typeof value['status'] !== 'string' || !OBSERVED_STATUS_VALUES.includes(value['status'])) {
+    return false;
+  }
+  const reason = value['reason'];
+  if (reason !== undefined) {
+    if (typeof reason !== 'string' || !(OBSERVED_REASONS as readonly string[]).includes(reason)) {
+      return false;
+    }
+  }
+  // A non-`observed` element must say why (design doc §10.2, §10.3); assembly
+  // enforces it, so a stored snapshot that omits it is malformed.
+  if (value['status'] !== 'observed' && reason === undefined) return false;
+  return isObservedSource(value['source']);
+}
+
+function isObservedSource(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (value['path'] !== undefined && typeof value['path'] !== 'string') return false;
+  if (value['digest'] !== undefined && typeof value['digest'] !== 'string') return false;
+  if (value['sizeBytes'] !== undefined && typeof value['sizeBytes'] !== 'number') return false;
+  if (value['symlink'] !== undefined && typeof value['symlink'] !== 'boolean') return false;
+  return true;
+}
+
+function isDiagnostic(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (
+    typeof value['severity'] !== 'string' ||
+    !DIAGNOSTIC_SEVERITY_VALUES.includes(value['severity'])
+  ) {
+    return false;
+  }
+  if (typeof value['code'] !== 'string' || typeof value['message'] !== 'string') return false;
+  if (value['path'] !== undefined && typeof value['path'] !== 'string') return false;
+  return true;
 }
 
 function isResolvedSnapshot(value: unknown): value is ResolvedSnapshot {

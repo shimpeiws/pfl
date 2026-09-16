@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { homedir } from 'node:os';
 import cac from 'cac';
 import { runDiff } from './cli/diff.js';
 import { EXIT_CODES, PflError } from './cli/exit-codes.js';
@@ -9,6 +10,7 @@ import { loggerForFlags } from './cli/output.js';
 import { runReport } from './cli/report.js';
 import { runShow } from './cli/show.js';
 import { runSnapshots } from './cli/snapshots.js';
+import { redactingLogger } from './redact/output.js';
 import { packageVersion } from './version.js';
 
 const cli = cac('pfl');
@@ -24,7 +26,10 @@ function withErrorHandling<Args extends [...unknown[], CommonFlags]>(
     try {
       await action(...args);
     } catch (error) {
-      const logger = loggerForFlags(args[args.length - 1] ?? {});
+      const flags = (args[args.length - 1] ?? {}) as CommonFlags;
+      const logger = redactingLogger(loggerForFlags(flags), flags.json ? 'export' : 'display', {
+        home: homedir(),
+      });
       if (error instanceof PflError) {
         logger.error(error.message);
         process.exitCode = error.exitCode;

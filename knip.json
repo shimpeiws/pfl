@@ -1,7 +1,7 @@
 {
   "project": ["src/**/*.ts"],
   "ignoreExportsUsedInFile": true,
-  "ignoreBinaries": ["pfl"],
+  "ignoreBinaries": ["pfl", "mkfifo"],
   "rules": {
     "files": "error",
     "exports": "error",

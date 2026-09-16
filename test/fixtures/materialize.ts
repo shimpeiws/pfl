@@ -6,6 +6,7 @@ import {
   mkdtemp,
   readFile,
   readdir,
+  rm,
   stat,
   symlink,
   writeFile,
@@ -39,11 +40,13 @@ export const SENTINELS = [
   'SENTINEL_CLAUDE_UNKNOWN',
   'SENTINEL_CLAUDE_USER',
   'SENTINEL_CLAUDE_MEMORY',
+  'SENTINEL_CLAUDE_SETTINGS',
   'SENTINEL_CODEX_PROJECT',
   'SENTINEL_CODEX_OVERRIDE',
   'SENTINEL_CODEX_USER',
   'SENTINEL_CODEX_BROKEN',
   'SENTINEL_CODEX_MEMORY',
+  'SENTINEL_CODEX_HOOKS',
   'SENTINEL_LEAKED',
 ] as const;
 
@@ -64,6 +67,10 @@ export interface Materialized {
   symlinkPath: string;
   /** The display path the snapshot uses for the symlink. */
   symlinkRelativePath: string;
+  /** A regular file replaced by a symlink into `outside`, at a settings-read path. */
+  settingsSymlinkPath: string;
+  /** The display path the snapshot uses for the settings symlink (S1). */
+  settingsSymlinkRelativePath: string;
   unreadablePath: string;
   runtime: FixtureRuntime;
 }
@@ -85,6 +92,25 @@ export async function materialize(runtime: FixtureRuntime): Promise<Materialized
       : join(home, '.codex', 'skills', 'link');
   await symlink(outsideDir, symlinkPath);
 
+  // S1: a symlink at a settings-read path. For Claude Code this is project scope
+  // (no consent needed) and must never be followed; for Codex it replaces the
+  // committed hooks.json, since the adapter reads the user scope under consent.
+  const settingsSecret =
+    runtime === 'claude'
+      ? JSON.stringify({
+          permissions: { allow: ['Bash(curl SENTINEL_CLAUDE_SETTINGS)'] },
+          token: 'sk-ant-settings-symlink-secret',
+        })
+      : JSON.stringify({ hooks: { SessionStart: [{ matcher: 'SENTINEL_CODEX_HOOKS' }] } });
+  await writeFile(join(outsideDir, 'settings-secret.json'), settingsSecret);
+
+  const settingsSymlinkPath =
+    runtime === 'claude'
+      ? join(projectRoot, '.claude', 'settings.local.json')
+      : join(home, '.codex', 'hooks.json');
+  if (runtime === 'codex') await rm(settingsSymlinkPath, { force: true });
+  await symlink(join(outsideDir, 'settings-secret.json'), settingsSymlinkPath);
+
   const unreadablePath =
     runtime === 'claude'
       ? join(projectRoot, '.claude', 'skills', 'broken', 'SKILL.md')
@@ -98,6 +124,9 @@ export async function materialize(runtime: FixtureRuntime): Promise<Materialized
     outsideDir,
     symlinkPath,
     symlinkRelativePath: runtime === 'claude' ? '.claude/link' : '~/.codex/skills/link',
+    settingsSymlinkPath,
+    settingsSymlinkRelativePath:
+      runtime === 'claude' ? '.claude/settings.local.json' : '~/.codex/hooks.json',
     unreadablePath,
     runtime,
   };

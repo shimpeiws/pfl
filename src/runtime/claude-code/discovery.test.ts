@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import { link, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -210,5 +210,117 @@ describe('collectClaudeCodeHarness', () => {
     const snapshot = await collectClaudeCodeHarness(project, CONSENTED, home);
 
     expect(snapshot.completeness).toBe('partial');
+  });
+});
+
+describe('collectClaudeCodeHarness symlinked settings (S1)', () => {
+  const SECRET_SETTINGS = JSON.stringify({
+    permissions: { allow: ['Bash(curl LEAKED_SETTINGS_TOKEN)'], deny: [], ask: [] },
+    hooks: { SessionStart: [] },
+    token: 'sk-ant-should-not-be-read',
+  });
+
+  interface SymlinkFixture {
+    project: { id: string; displayName: string; root: string; remote: string };
+    home: string;
+  }
+
+  async function makeSymlinkFixture(): Promise<SymlinkFixture> {
+    const base = await tempDir('pfl-claude-symlink-');
+    const root = join(base, 'project');
+    const home = join(base, 'home');
+    const outside = join(base, 'outside');
+
+    await mkdir(join(root, '.claude'), { recursive: true });
+    await mkdir(join(home, '.claude'), { recursive: true });
+    await mkdir(outside, { recursive: true });
+    await writeFile(join(outside, 'secret-settings.json'), SECRET_SETTINGS);
+
+    // A symlinked project settings file needs no consent and must never be read.
+    await symlink(
+      join('..', '..', 'outside', 'secret-settings.json'),
+      join(root, '.claude', 'settings.json'),
+    );
+    // The same for the user scope and the user MCP file.
+    await symlink(
+      join('..', '..', 'outside', 'secret-settings.json'),
+      join(home, '.claude', 'settings.json'),
+    );
+    await symlink(join('..', 'outside', 'secret-settings.json'), join(home, '.claude.json'));
+
+    return {
+      project: { id: 'proj', displayName: 'owner/repo', root, remote: 'github.com/owner/repo' },
+      home,
+    };
+  }
+
+  it('records each symlinked settings file as skipped and never parses its target', async () => {
+    const { project, home } = await makeSymlinkFixture();
+
+    const snapshot = await collectClaudeCodeHarness(project, CONSENTED, home);
+    const paths = byPath(snapshot.elements);
+
+    for (const path of ['.claude/settings.json', '~/.claude/settings.json', '~/.claude.json']) {
+      expect(paths.get(path)).toMatchObject({
+        status: 'skipped',
+        reason: 'symlink-not-followed',
+      });
+    }
+    // The old, unguarded read parsed the target and emitted these config elements.
+    expect(paths.has('.claude/settings.json#permissions')).toBe(false);
+    expect(paths.has('~/.claude/settings.json#permissions')).toBe(false);
+    expect(JSON.stringify(snapshot.elements)).not.toContain('sk-ant-should-not-be-read');
+    expect(JSON.stringify(snapshot.elements)).not.toContain('LEAKED_SETTINGS_TOKEN');
+  });
+
+  it('does not read a fixed path through a symlinked ancestor directory', async () => {
+    const base = await tempDir('pfl-claude-ancestor-');
+    const root = join(base, 'project');
+    const home = join(base, 'home');
+    const outside = join(base, 'outside');
+    await mkdir(join(outside, 'claude-dir'), { recursive: true });
+    await mkdir(root, { recursive: true });
+    await mkdir(home, { recursive: true });
+    await writeFile(join(outside, 'claude-dir', 'settings.json'), SECRET_SETTINGS);
+    // `.claude` itself is a symlink: lstat on the leaf would see a regular file.
+    await symlink(join(outside, 'claude-dir'), join(root, '.claude'));
+
+    const snapshot = await collectClaudeCodeHarness(
+      { id: 'proj', displayName: 'owner/repo', root, remote: 'github.com/owner/repo' },
+      CONSENTED,
+      home,
+    );
+    const paths = byPath(snapshot.elements);
+
+    expect(paths.get('.claude/settings.json')).toMatchObject({
+      status: 'skipped',
+      reason: 'symlink-not-followed',
+    });
+    expect(paths.has('.claude/settings.json#permissions')).toBe(false);
+    expect(JSON.stringify(snapshot.elements)).not.toContain('LEAKED_SETTINGS_TOKEN');
+  });
+
+  it('does not read a hardlinked settings file', async () => {
+    const base = await tempDir('pfl-claude-hardlink-');
+    const root = join(base, 'project');
+    const home = join(base, 'home');
+    await mkdir(join(root, '.claude'), { recursive: true });
+    await mkdir(home, { recursive: true });
+    const shared = join(base, 'shared-settings.json');
+    await writeFile(shared, SECRET_SETTINGS);
+    await link(shared, join(root, '.claude', 'settings.json'));
+
+    const snapshot = await collectClaudeCodeHarness(
+      { id: 'proj', displayName: 'owner/repo', root, remote: 'github.com/owner/repo' },
+      CONSENTED,
+      home,
+    );
+    const paths = byPath(snapshot.elements);
+
+    expect(paths.get('.claude/settings.json')).toMatchObject({
+      status: 'skipped',
+      reason: 'hardlink-not-followed',
+    });
+    expect(paths.has('.claude/settings.json#permissions')).toBe(false);
   });
 });

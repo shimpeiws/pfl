@@ -3,6 +3,7 @@ import { HARNESS_FACETS, type HarnessFacet } from '../core/facets.js';
 import type { ObservedElement } from '../core/observed.js';
 import type { ResolvedElement, ResolvedStatus } from '../core/resolved.js';
 import { canonicalJsonStringify } from '../util/json.js';
+import { redactingLogger } from '../redact/output.js';
 import type { Logger } from '../util/logger.js';
 import { EXIT_CODES, PflError } from './exit-codes.js';
 import { loadInterpretation, type InterpretedRun } from './read.js';
@@ -61,15 +62,16 @@ export async function runDiff(
   logger: Logger,
 ): Promise<void> {
   const home = options.home ?? homedir();
+  const out = redactingLogger(logger, options.json ? 'export' : 'display', { home });
   const runA = await loadInterpretation(cwd, snapshotA, home);
   const runB = await loadInterpretation(cwd, snapshotB, home);
   for (const diagnostic of [...runA.diagnostics, ...runB.diagnostics]) {
-    logger.warn(diagnostic.message, { code: diagnostic.code, path: diagnostic.path ?? undefined });
+    out.warn(diagnostic.message, { code: diagnostic.code, path: diagnostic.path ?? undefined });
   }
 
   const result = computeDiff(runA, runB);
   if (options.json) {
-    logger.info('diff', {
+    out.info('diff', {
       runtime: result.runtimeId,
       resolvedSnapshotIdA: result.resolvedSnapshotIdA,
       resolvedSnapshotIdB: result.resolvedSnapshotIdB,
@@ -81,28 +83,28 @@ export async function runDiff(
     return;
   }
 
-  logger.info('Harness Diff');
-  logger.info(`Snapshot ${result.resolvedSnapshotIdA} → ${result.resolvedSnapshotIdB}`);
-  logger.info('');
-  logger.info('Changes');
-  logger.info(`  + ${result.structural.added} added`);
-  logger.info(`  - ${result.structural.removed} removed`);
-  logger.info(`  ~ ${result.structural.changed} changed`);
-  logger.info('');
-  logger.info('Effective changes');
-  logger.info(`  + ${result.effective.newlyEffective} newly effective`);
-  logger.info(`  - ${result.effective.noLongerEffective} no longer effective`);
-  logger.info(`  ~ ${result.effective.activationChanged} activation changed`);
-  logger.info('');
-  logger.info('Semantic impact');
+  out.info('Harness Diff');
+  out.info(`Snapshot ${result.resolvedSnapshotIdA} → ${result.resolvedSnapshotIdB}`);
+  out.info('');
+  out.info('Changes');
+  out.info(`  + ${result.structural.added} added`);
+  out.info(`  - ${result.structural.removed} removed`);
+  out.info(`  ~ ${result.structural.changed} changed`);
+  out.info('');
+  out.info('Effective changes');
+  out.info(`  + ${result.effective.newlyEffective} newly effective`);
+  out.info(`  - ${result.effective.noLongerEffective} no longer effective`);
+  out.info(`  ~ ${result.effective.activationChanged} activation changed`);
+  out.info('');
+  out.info('Semantic impact');
   for (const facet of HARNESS_FACETS) {
     const delta = result.facetDeltas[facet];
-    logger.info(`  ${capitalize(facet).padEnd(14, ' ')}${delta > 0 ? `+${delta}` : `${delta}`}`);
+    out.info(`  ${capitalize(facet).padEnd(14, ' ')}${delta > 0 ? `+${delta}` : `${delta}`}`);
   }
   if (result.versionNotes.length > 0) {
-    logger.info('');
+    out.info('');
     for (const note of result.versionNotes) {
-      logger.warn(`⚠ ${note}`);
+      out.warn(`⚠ ${note}`);
     }
   }
 }

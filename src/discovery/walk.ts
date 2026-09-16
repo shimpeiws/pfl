@@ -1,6 +1,13 @@
-import { lstat, readdir, readFile } from 'node:fs/promises';
+import type { Dir } from 'node:fs';
+import { lstat, opendir, readFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import type { Diagnostic } from '../core/diagnostics.js';
+import {
+  MAX_FILE_BYTES,
+  MAX_WALK_DEPTH,
+  MAX_WALK_ENTRIES,
+  limitExceededDiagnostic,
+} from '../limits.js';
 import { isPathWithin } from '../util/fs.js';
 import { sha256Digest } from '../util/hash.js';
 
@@ -17,32 +24,59 @@ export interface DiscoveredPath {
   /** `sha256:` digest of the file contents, when the file could be read. */
   digest?: string;
   sizeBytes?: number;
+  /**
+   * A regular file the walk refused to read: an inode reachable from outside
+   * the root (`nlink > 1`, roadmap S3) or one over the per-file byte ceiling
+   * (roadmap S7). The caller records it as skipped.
+   */
+  skipReason?: WalkSkipReason;
 }
+
+export type WalkSkipReason = 'hardlink-not-followed' | 'file-too-large';
 
 export interface WalkResult {
   entries: DiscoveredPath[];
   diagnostics: Diagnostic[];
 }
 
+interface WalkState {
+  root: string;
+  entries: Map<string, DiscoveredPath>;
+  diagnostics: Diagnostic[];
+  /** Entries examined so far, across every subpath, against `MAX_WALK_ENTRIES`. */
+  walked: number;
+  /** Set once the entry ceiling is hit, so the walk stops instead of roaming. */
+  entryLimitHit: boolean;
+}
+
 /**
  * Walks known runtime search areas read-only, recording symlinks instead of
  * following them. Unknown items inside a known area are preserved, not silently
  * ignored (design doc §10.2). The walker never roams beyond the given subpaths,
- * never follows a symlink, and never aborts on an unreadable entry — it records
- * a diagnostic and continues (design doc §18).
+ * never follows a symlink, never opens a non-regular file, and never aborts on
+ * an unreadable entry — it records a diagnostic and continues (design doc §18).
+ *
+ * Hardlinks (`nlink > 1`) are refused because their inode is reachable from
+ * outside the walked root, and resource ceilings bound the bytes read, the
+ * number of entries, and the recursion depth (roadmap S3, S7).
  */
 export async function walkHarnessPaths(
   root: string,
   subpaths: readonly string[],
 ): Promise<WalkResult> {
-  const entries = new Map<string, DiscoveredPath>();
-  const diagnostics: Diagnostic[] = [];
-  const canonicalRoot = resolve(root);
+  const state: WalkState = {
+    root: resolve(root),
+    entries: new Map(),
+    diagnostics: [],
+    walked: 0,
+    entryLimitHit: false,
+  };
 
   for (const subpath of subpaths) {
-    const target = resolveSubpath(canonicalRoot, subpath);
+    if (state.entryLimitHit) break;
+    const target = resolveSubpath(state.root, subpath);
     if (target === null) {
-      diagnostics.push({
+      state.diagnostics.push({
         severity: 'error',
         code: 'path-outside-root',
         message: `search area escapes the project root: ${subpath}`,
@@ -53,7 +87,7 @@ export async function walkHarnessPaths(
 
     const entry = await lstat(target).catch(() => null);
     if (entry === null) {
-      diagnostics.push({
+      state.diagnostics.push({
         severity: 'info',
         code: 'path-not-found',
         message: `search area does not exist: ${subpath}`,
@@ -62,38 +96,49 @@ export async function walkHarnessPaths(
       continue;
     }
 
-    const relativePath = toRelative(canonicalRoot, target);
-    if (!(await staysWithinRoot(canonicalRoot, target, entry.isSymbolicLink()))) {
-      diagnostics.push(outsideRoot(relativePath));
+    const relativePath = toRelative(state.root, target);
+    if (!(await staysWithinRoot(state.root, target, entry.isSymbolicLink()))) {
+      state.diagnostics.push(outsideRoot(relativePath));
       continue;
     }
+    if (!consumeBudget(state, relativePath)) break;
 
     if (entry.isSymbolicLink()) {
-      record(entries, { relativePath, kind: 'symlink' });
+      record(state, { relativePath, kind: 'symlink' });
     } else if (entry.isDirectory()) {
-      record(entries, { relativePath, kind: 'directory' });
-      await walkDirectory(canonicalRoot, target, entries, diagnostics);
+      record(state, { relativePath, kind: 'directory' });
+      await walkDirectory(state, target, 0);
     } else if (entry.isFile()) {
-      record(entries, await fileEntry(canonicalRoot, target, diagnostics));
+      record(state, await fileEntry(state, target));
     } else {
-      diagnostics.push(unsupportedEntry(relativePath));
-      record(entries, { relativePath, kind: 'unknown' });
+      state.diagnostics.push(nonRegularFile(relativePath));
+      record(state, { relativePath, kind: 'unknown' });
     }
   }
 
-  return { entries: [...entries.values()].sort(byRelativePath), diagnostics };
+  return {
+    entries: [...state.entries.values()].sort(byRelativePath),
+    diagnostics: state.diagnostics,
+  };
 }
 
-async function walkDirectory(
-  root: string,
-  dir: string,
-  entries: Map<string, DiscoveredPath>,
-  diagnostics: Diagnostic[],
-): Promise<void> {
-  const dirents = await readdir(dir, { withFileTypes: true }).catch(() => null);
-  if (dirents === null) {
-    const relativePath = toRelative(root, dir);
-    diagnostics.push({
+async function walkDirectory(state: WalkState, dir: string, depth: number): Promise<void> {
+  if (depth >= MAX_WALK_DEPTH) {
+    state.diagnostics.push(
+      limitExceededDiagnostic('MAX_WALK_DEPTH', MAX_WALK_DEPTH, toRelative(state.root, dir)),
+    );
+    return;
+  }
+
+  // Streamed with `opendir`, not `readdir`: a hostile directory with millions of
+  // entries must not be materialized as an array before the entry ceiling can
+  // stop the walk (roadmap S7).
+  let handle: Dir;
+  try {
+    handle = await opendir(dir);
+  } catch {
+    const relativePath = toRelative(state.root, dir);
+    state.diagnostics.push({
       severity: 'warning',
       code: 'unreadable-directory',
       message: `could not read directory: ${relativePath}`,
@@ -102,56 +147,107 @@ async function walkDirectory(
     return;
   }
 
-  for (const dirent of dirents) {
-    const full = join(dir, dirent.name);
-    const relativePath = toRelative(root, full);
+  try {
+    for await (const dirent of handle) {
+      if (state.entryLimitHit) return;
+      const full = join(dir, dirent.name);
+      const relativePath = toRelative(state.root, full);
+      // Charge the budget before any further work (containment realpath, lstat,
+      // read), so the ceiling bounds the work done, not just what is recorded.
+      if (!consumeBudget(state, relativePath)) return;
 
-    if (!(await staysWithinRoot(root, full, dirent.isSymbolicLink()))) {
-      diagnostics.push(outsideRoot(relativePath));
-      continue;
-    }
+      if (!(await staysWithinRoot(state.root, full, dirent.isSymbolicLink()))) {
+        state.diagnostics.push(outsideRoot(relativePath));
+        continue;
+      }
 
-    if (dirent.isSymbolicLink()) {
-      record(entries, { relativePath, kind: 'symlink' });
-      continue;
-    }
+      if (dirent.isSymbolicLink()) {
+        record(state, { relativePath, kind: 'symlink' });
+        continue;
+      }
 
-    if (dirent.isDirectory()) {
-      record(entries, { relativePath, kind: 'directory' });
-      await walkDirectory(root, full, entries, diagnostics);
-    } else if (dirent.isFile()) {
-      record(entries, await fileEntry(root, full, diagnostics));
-    } else {
-      diagnostics.push(unsupportedEntry(relativePath));
-      record(entries, { relativePath, kind: 'unknown' });
+      if (dirent.isDirectory()) {
+        record(state, { relativePath, kind: 'directory' });
+        await walkDirectory(state, full, depth + 1);
+      } else if (dirent.isFile()) {
+        record(state, await fileEntry(state, full));
+      } else {
+        state.diagnostics.push(nonRegularFile(relativePath));
+        record(state, { relativePath, kind: 'unknown' });
+      }
     }
+  } finally {
+    await handle.close().catch(() => undefined);
   }
 }
 
-async function fileEntry(
-  root: string,
-  full: string,
-  diagnostics: Diagnostic[],
-): Promise<DiscoveredPath> {
-  const relativePath = toRelative(root, full);
+async function fileEntry(state: WalkState, full: string): Promise<DiscoveredPath> {
+  const relativePath = toRelative(state.root, full);
+
+  const entry = await lstat(full).catch(() => null);
+  if (entry === null) {
+    state.diagnostics.push(unreadableFile(relativePath));
+    return { relativePath, kind: 'file' };
+  }
+  // The type is re-read from `lstat` rather than trusted from the directory
+  // entry, so a file swapped for a link between the two is not followed
+  // (roadmap S9: the residual TOCTOU is accepted; this narrows it).
+  if (entry.isSymbolicLink()) return { relativePath, kind: 'symlink' };
+  if (!entry.isFile()) {
+    state.diagnostics.push(nonRegularFile(relativePath));
+    return { relativePath, kind: 'unknown' };
+  }
+  if (entry.nlink > 1) {
+    state.diagnostics.push({
+      severity: 'warning',
+      code: 'hardlink-not-followed',
+      message: `hardlink not followed: ${relativePath}`,
+      path: relativePath,
+    });
+    return {
+      relativePath,
+      kind: 'file',
+      sizeBytes: entry.size,
+      skipReason: 'hardlink-not-followed',
+    };
+  }
+  if (entry.size > MAX_FILE_BYTES) {
+    state.diagnostics.push(limitExceededDiagnostic('MAX_FILE_BYTES', MAX_FILE_BYTES, relativePath));
+    return { relativePath, kind: 'file', sizeBytes: entry.size, skipReason: 'file-too-large' };
+  }
+
   try {
     const content = await readFile(full);
     return { relativePath, kind: 'file', digest: sha256Digest(content), sizeBytes: content.length };
   } catch {
-    diagnostics.push({
-      severity: 'warning',
-      code: 'unreadable-file',
-      message: `could not read file: ${relativePath}`,
-      path: relativePath,
-    });
+    state.diagnostics.push(unreadableFile(relativePath));
     return { relativePath, kind: 'file' };
   }
 }
 
-function record(entries: Map<string, DiscoveredPath>, entry: DiscoveredPath): void {
-  if (!entries.has(entry.relativePath)) {
-    entries.set(entry.relativePath, entry);
+function record(state: WalkState, entry: DiscoveredPath): void {
+  if (!state.entries.has(entry.relativePath)) {
+    state.entries.set(entry.relativePath, entry);
   }
+}
+
+/**
+ * Charges one entry against `MAX_WALK_ENTRIES`. Returns false once the ceiling
+ * is exceeded, after recording a single naming diagnostic, so the caller stops
+ * before doing any further work on that entry.
+ */
+function consumeBudget(state: WalkState, relativePath: string): boolean {
+  state.walked += 1;
+  if (state.walked > MAX_WALK_ENTRIES) {
+    if (!state.entryLimitHit) {
+      state.entryLimitHit = true;
+      state.diagnostics.push(
+        limitExceededDiagnostic('MAX_WALK_ENTRIES', MAX_WALK_ENTRIES, relativePath),
+      );
+    }
+    return false;
+  }
+  return true;
 }
 
 /**
@@ -190,11 +286,20 @@ function outsideRoot(path: string): Diagnostic {
   };
 }
 
-function unsupportedEntry(path: string): Diagnostic {
+function nonRegularFile(path: string): Diagnostic {
   return {
     severity: 'warning',
-    code: 'unsupported-entry',
-    message: `unsupported filesystem entry: ${path}`,
+    code: 'non-regular-file',
+    message: `not a regular file, not opened: ${path}`,
+    path,
+  };
+}
+
+function unreadableFile(path: string): Diagnostic {
+  return {
+    severity: 'warning',
+    code: 'unreadable-file',
+    message: `could not read file: ${path}`,
     path,
   };
 }

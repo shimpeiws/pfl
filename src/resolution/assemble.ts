@@ -6,6 +6,7 @@ import {
 } from '../core/ids.js';
 import type { ObservedSnapshot } from '../core/observed.js';
 import type { Relation, ResolvedElement, ResolvedSnapshot } from '../core/resolved.js';
+import { redactDiagnostic, type RedactionContext } from '../redact/output.js';
 import { harnessContentDigest, resolvedSnapshotDigest } from '../snapshot/digest.js';
 import { SNAPSHOT_SCHEMA_VERSION } from '../snapshot/serialization.js';
 
@@ -32,6 +33,8 @@ export interface ResolvedSnapshotInput {
   /** Explicit, statically resolvable edges (design doc §14). */
   relations?: readonly Relation[];
   diagnostics?: readonly Diagnostic[];
+  /** Home directory for persistence redaction of diagnostics; empty means none. */
+  home?: string;
   /** Overridable for deterministic tests; defaults to a fresh id. */
   snapshotId?: ResolvedSnapshotId;
 }
@@ -43,7 +46,10 @@ export function assembleResolvedSnapshot(input: ResolvedSnapshotInput): Resolved
     input.relations ?? [],
     accumulatesWithRelations(observed, elements),
   );
-  const diagnostics = [...(input.diagnostics ?? [])];
+  const ctx: RedactionContext = { home: input.home ?? '' };
+  const diagnostics = (input.diagnostics ?? []).map((diagnostic) =>
+    redactDiagnostic(diagnostic, 'persistence', ctx),
+  );
 
   const confidence: ResolvedSnapshot['resolution']['confidence'] =
     observed.adapter.runtimeCompatibility === 'verified'

@@ -45,7 +45,7 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
     return discoverClaudeCode(project, access, home ?? homedir());
   }
 
-  async resolve(observed: ObservedSnapshot): Promise<ResolvedSnapshot> {
-    return resolveClaudeCode(observed);
+  async resolve(observed: ObservedSnapshot, home?: string): Promise<ResolvedSnapshot> {
+    return resolveClaudeCode(observed, home ?? '');
   }
 }

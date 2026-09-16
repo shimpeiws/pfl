@@ -60,5 +60,5 @@ export interface RuntimeAdapter {
 
   discover(project: ProjectContext, access: AccessPolicy, home?: string): Promise<ObservedSnapshot>;
 
-  resolve(observed: ObservedSnapshot): Promise<ResolvedSnapshot>;
+  resolve(observed: ObservedSnapshot, home?: string): Promise<ResolvedSnapshot>;
 }
