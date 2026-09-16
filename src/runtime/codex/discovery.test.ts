@@ -80,7 +80,7 @@ async function makeFixture(): Promise<Fixture> {
   };
 }
 
-function byPath(elements: ObservedElement[]): Map<string, ObservedElement> {
+function byPath(elements: readonly ObservedElement[]): Map<string, ObservedElement> {
   return new Map(elements.map((element) => [element.source.path ?? '', element]));
 }
 

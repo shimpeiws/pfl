@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { EXIT_CODES, PflError, notImplemented, type ExitCode } from './exit-codes.js';
 
-function exitCodeOf(fn: () => never): ExitCode | undefined {
+function exitCodeOf(fn: () => void): ExitCode | undefined {
   try {
     fn();
   } catch (error) {
