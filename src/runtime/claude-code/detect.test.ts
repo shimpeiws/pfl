@@ -1,4 +1,5 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { execFileSync } from 'node:child_process';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -93,5 +94,30 @@ describe('detectClaudeCode', () => {
 
     expect(detection.version).toBe('2.1.60');
     expect(detection.runtimeCompatibility).toBe('verified');
+  });
+
+  it('does not follow a symlinked versions directory', async () => {
+    const home = await tempHome();
+    const outside = join(home, 'outside-versions');
+    await mkdir(join(home, '.local', 'share', 'claude'), { recursive: true });
+    await mkdir(outside, { recursive: true });
+    await writeFile(join(outside, '2.1.100'), '');
+    await symlink(outside, join(home, '.local', 'share', 'claude', 'versions'));
+
+    const detection = await detectClaudeCode(home);
+
+    expect(detection.installed).toBe(true);
+    expect(detection.version).toBeNull();
+  });
+
+  it('does not hang on a FIFO last-update-result file', async () => {
+    const home = await tempHome();
+    await mkdir(join(home, '.claude'), { recursive: true });
+    await mkdir(join(home, '.local', 'share', 'claude'), { recursive: true });
+    execFileSync('mkfifo', [join(home, '.claude', '.last-update-result.json')]);
+
+    const detection = await detectClaudeCode(home);
+
+    expect(detection.version).toBeNull();
   });
 });

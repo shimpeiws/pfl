@@ -1,8 +1,19 @@
-import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  readdir,
+  rm,
+  stat,
+  symlink,
+  truncate,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { EXIT_CODES, PflError } from '../cli/exit-codes.js';
+import { MAX_ARTIFACT_BYTES } from '../limits.js';
 import {
   generateObservedSnapshotId,
   generateResolvedSnapshotId,
@@ -141,6 +152,124 @@ describe('observed snapshots', () => {
     );
 
     await expect(readObservedSnapshot('proj', 'obs_sparse', home)).rejects.toThrowError(PflError);
+  });
+});
+
+describe('artifact read guards (S7, S11)', () => {
+  it('rejects an observation whose element contents are the wrong shape', async () => {
+    const home = await tempHome();
+    await mkdir(observationsDir('proj', home), { recursive: true });
+    const broken = {
+      ...makeObserved({ snapshotId: 'obs_badelement' as ObservedSnapshotId }),
+      elements: [{ id: 'el_x', native: 'not-an-object' }],
+    };
+    await writeFile(
+      join(observationsDir('proj', home), 'obs_badelement.json'),
+      JSON.stringify(broken),
+    );
+
+    await expect(readObservedSnapshot('proj', 'obs_badelement', home)).rejects.toThrowError(
+      PflError,
+    );
+  });
+
+  it('rejects an observation carrying a reason the model does not understand', async () => {
+    const home = await tempHome();
+    await mkdir(observationsDir('proj', home), { recursive: true });
+    const broken = {
+      ...makeObserved({ snapshotId: 'obs_badreason' as ObservedSnapshotId }),
+      elements: [
+        {
+          id: 'el_x',
+          native: { kind: 'skills', origin: 'user', scope: 'user' },
+          source: { path: '~/.claude/skills/x/SKILL.md' },
+          inspectability: 'observable',
+          metadata: {},
+          status: 'skipped',
+          reason: 'made-up-reason',
+        },
+      ],
+    };
+    await writeFile(
+      join(observationsDir('proj', home), 'obs_badreason.json'),
+      JSON.stringify(broken),
+    );
+
+    await expect(readObservedSnapshot('proj', 'obs_badreason', home)).rejects.toThrowError(
+      PflError,
+    );
+  });
+
+  it('refuses an artifact larger than MAX_ARTIFACT_BYTES without reading it', async () => {
+    const home = await tempHome();
+    await mkdir(observationsDir('proj', home), { recursive: true });
+    const target = join(observationsDir('proj', home), 'obs_huge.json');
+    await writeFile(target, '');
+    await truncate(target, MAX_ARTIFACT_BYTES + 1);
+
+    // The message, not just the exit code: a sparse zero file would also fail
+    // JSON parsing, so the exit code alone does not prove the size guard ran.
+    await expect(readObservedSnapshot('proj', 'obs_huge', home)).rejects.toThrowError(
+      /artifact size limit/,
+    );
+  });
+
+  it('rejects an observation whose non-observed element has no reason', async () => {
+    const home = await tempHome();
+    await mkdir(observationsDir('proj', home), { recursive: true });
+    const broken = {
+      ...makeObserved({ snapshotId: 'obs_noreason' as ObservedSnapshotId }),
+      elements: [
+        {
+          id: 'el_x',
+          native: { kind: 'skills', origin: 'user', scope: 'user' },
+          source: { path: '~/.claude/skills/x/SKILL.md' },
+          inspectability: 'observable',
+          metadata: {},
+          status: 'skipped',
+        },
+      ],
+    };
+    await writeFile(
+      join(observationsDir('proj', home), 'obs_noreason.json'),
+      JSON.stringify(broken),
+    );
+
+    await expect(readObservedSnapshot('proj', 'obs_noreason', home)).rejects.toThrowError(PflError);
+  });
+
+  it('refuses an artifact directory reached through a symlink', async () => {
+    const home = await tempHome();
+    const outside = join(home, 'outside-observations');
+    await mkdir(outside, { recursive: true });
+    await writeFile(
+      join(outside, 'obs_outside.json'),
+      JSON.stringify(makeObserved({ snapshotId: 'obs_outside' as ObservedSnapshotId })),
+    );
+    await mkdir(projectDir('proj', home), { recursive: true });
+    await symlink(outside, observationsDir('proj', home));
+
+    await expect(readObservedSnapshot('proj', 'obs_outside', home)).rejects.toThrowError(PflError);
+  });
+
+  it('refuses a symlinked artifact instead of following it', async () => {
+    const home = await tempHome();
+    await mkdir(observationsDir('proj', home), { recursive: true });
+    const outside = join(home, 'outside.json');
+    await writeFile(outside, JSON.stringify(makeObserved()));
+    await symlink(outside, join(observationsDir('proj', home), 'obs_link.json'));
+
+    await expect(readObservedSnapshot('proj', 'obs_link', home)).rejects.toThrowError(PflError);
+  });
+
+  it('refuses a symlinked latest pointer', async () => {
+    const home = await tempHome();
+    await mkdir(projectDir('proj', home), { recursive: true });
+    const outside = join(home, 'outside-latest');
+    await writeFile(outside, '{"observed":"obs_a","resolved":"res_a"}');
+    await symlink(outside, latestPath('proj', home));
+
+    await expect(readLatestPointer('proj', home)).rejects.toThrowError(PflError);
   });
 });
 
