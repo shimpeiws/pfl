@@ -6,6 +6,6 @@ export default defineConfig({
     globals: true,
     include: ['src/**/*.test.ts', 'test/integration/**/*.test.ts', 'test/e2e/**/*.test.ts'],
     pool: 'forks',
-    passWithNoTests: true,
+    testTimeout: 30_000,
   },
 });

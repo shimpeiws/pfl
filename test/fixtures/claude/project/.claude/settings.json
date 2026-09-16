@@ -1,0 +1,6 @@
+{
+  "permissions": { "allow": ["Bash(ls:*)"], "deny": [], "ask": [] },
+  "hooks": { "SessionStart": [{ "hooks": [{ "type": "command", "command": "echo hi" }] }] },
+  "outputStyle": "default",
+  "secretToken": "sk-ant-should-not-persist"
+}

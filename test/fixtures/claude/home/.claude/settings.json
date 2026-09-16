@@ -1,0 +1,4 @@
+{
+  "permissions": { "allow": ["Bash(git status)"], "deny": [], "ask": [] },
+  "model": "opus"
+}
