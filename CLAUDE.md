@@ -10,10 +10,11 @@ disagree, the design doc is right.
 
 ## Status
 
-Scaffold. The domain model from the design document is encoded as types with
-real file/directory layout, and the CLI commands exist but throw
-`not implemented` (`PflError` with the config-error exit code). Discovery,
-resolution, classification, storage, and rendering are not implemented yet.
+v0.1. Static inspection is implemented end to end for `claude-code` and `codex`:
+discovery, four-dimension resolution, the deterministic facet classifier and
+descriptive findings, immutable snapshot storage, and rendering (`inspect`,
+`report`, `list`, `show`, `graph`, `diff`, `snapshots`). M4b (inferred graph) and
+M5 (Analyzer integration) remain deferred; see `docs/design/pfl-design-v0.1.md`.
 
 ## Commands
 
