@@ -39,7 +39,6 @@ export async function runInspect(
   logger: Logger,
 ): Promise<void> {
   const adapter = getAdapter(options.runtime);
-  const project = await resolveProjectContext(cwd);
   const home = options.home ?? homedir();
   const out = redactingLogger(logger, options.json ? 'export' : 'display', { home });
 
@@ -51,6 +50,12 @@ export async function runInspect(
     home,
     interactive,
     ...(options.io !== undefined ? { io: options.io } : {}),
+  });
+
+  // Identity is resolved after consent: a `.git` file's `gitdir:` and an
+  // ancestor `.git` are out-of-project reads (roadmap S5).
+  const project = await resolveProjectContext(cwd, {
+    allowExternalGit: access.allowOutsideProject,
   });
 
   const detection = await adapter.detect(project, access, home);

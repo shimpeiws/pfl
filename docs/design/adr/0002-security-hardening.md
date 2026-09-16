@@ -75,6 +75,21 @@ Decision:
   resolves outside the project root, and walking above the root to find an
   ancestor `.git`.
 
+`resolveProjectContext(cwd, { allowExternalGit })` takes the flag and defaults
+to `false` (fail closed): pre-consent it examines only `.git` at the project
+root, and a `.git` file is never followed. `runInspect` resolves consent first
+and passes `access.allowOutsideProject`; the runtime-agnostic read commands pass
+`hasAnyUserConsent(home)`, a provisional approximation M8's scope taxonomy
+replaces (recorded as accepted risk A3).
+
+Two consequences of the gated ancestor search are accepted and stated rather
+than discovered later. Pre-consent, a run from a subdirectory treats the
+subdirectory as the project root, so `project.root` and any project-scoped
+discovery reflect the subdirectory rather than the repository root. And a
+snapshot written under a path-derived id while unconsented is not found by the
+read commands once a grant switches them to the remote-derived id until M8's
+root index reclaims it.
+
 Before consent is resolved, a linked worktree therefore has no git-derived
 identity and `projectId` falls back to the canonical path. On a resolved run
 that later derives a remote, a project **must not** be stranded under its

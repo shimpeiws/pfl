@@ -1,4 +1,5 @@
 import { homedir } from 'node:os';
+import { hasAnyUserConsent } from '../discovery/consent.js';
 import { resolveProjectContext } from '../discovery/project-identity.js';
 import { redactingLogger } from '../redact/output.js';
 import { listRuns, type StoredRunSummary } from '../snapshot/store.js';
@@ -22,7 +23,9 @@ export async function runSnapshots(
 ): Promise<void> {
   const home = options.home ?? homedir();
   const out = redactingLogger(logger, options.json ? 'export' : 'display', { home });
-  const project = await resolveProjectContext(cwd);
+  const project = await resolveProjectContext(cwd, {
+    allowExternalGit: await hasAnyUserConsent(home),
+  });
   const { runs, diagnostics } = await listRuns(project.id, home);
 
   for (const diagnostic of diagnostics) {

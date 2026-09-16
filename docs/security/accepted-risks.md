@@ -30,3 +30,21 @@ absent from both this register and the code as a fix is a defect.
 - **Reopens if:** `pfl` supports multi-user or elevated execution where a
   same-uid assumption no longer holds.
 - **Recorded:** 2026-09-16 (M6 Phase 0).
+
+## A3 — A user grant for one runtime enables Git-metadata reads for all (roadmap S5)
+
+- **Risk:** the read commands (`report`, `list`, `show`, `graph`, `diff`,
+  `snapshots`) are runtime-agnostic — a project id is shared across runtimes —
+  so they gate out-of-project Git metadata on `hasAnyUserConsent`, which is true
+  when _any_ runtime holds a `*:user` grant. A user who granted `claude-code`
+  therefore lets a read command follow a `.git` file's `gitdir:` even in a
+  Codex-only checkout.
+- **Why accepted:** consent is a statement that `pfl` may read outside the
+  project; the runtime scope selects which harness files are read, not the
+  runtime-independent Git metadata that establishes project identity. Gating it
+  per runtime would require the runtime before the project id is known, which is
+  circular without the store's root index. M6 fixes the pre-consent read (S5);
+  M8's scope taxonomy and root index give read commands a runtime-specific
+  context and remove the approximation.
+- **Reopens if:** M8 lands, or a read command gains a runtime argument.
+- **Recorded:** 2026-09-17 (M6 Phase 4).

@@ -41,18 +41,23 @@ per-file-byte limits (S7).
 
 ### `discovery/project-identity.ts`
 
-| Line   | Read                                              | Guard                | Classification        |
-| ------ | ------------------------------------------------- | -------------------- | --------------------- |
-| 39, 43 | `realpath` of cwd / git root                      | — (canonicalisation) | implicit-git          |
-| 74     | `lstat` of a candidate `.git`                     | lstat, not stat      | implicit-git          |
-| 91     | `readFile` a `.git` file                          | lstat + isFile       | implicit-git          |
-| 99     | `readFile` `commondir`                            | —                    | **gated-git** (M6/S5) |
-| 105    | `readFile` `config` under the resolved common dir | —                    | **gated-git** (M6/S5) |
+| Read                                                     | Guard                               | Classification |
+| -------------------------------------------------------- | ----------------------------------- | -------------- |
+| `realpath` of cwd / git root                             | — (canonicalisation)                | implicit       |
+| `lstat` of `.git` at the project root                    | lstat, not stat                     | implicit-git   |
+| `readFile` a `.git` **directory**'s `config` at the root | lstat + isDirectory                 | implicit-git   |
+| `lstat` of an ancestor `.git` above the root             | lstat, not stat                     | **gated-git**  |
+| `readFile` a `.git` **file**                             | lstat + isFile + `allowExternalGit` | **gated-git**  |
+| `readFile` `commondir`                                   | `allowExternalGit`                  | **gated-git**  |
+| `readFile` `config` under the resolved common dir        | `allowExternalGit`                  | **gated-git**  |
 
-The gated reads are content-derived (the `gitdir:` line), unconfined, and occur
-before consent. ADR 0002 §2 fixes the boundary: a `gitdir:` that resolves
-outside the root, and ancestor search above the root, are not read before a
-grant. Reclamation of a path-derived history is M8's root index.
+`resolveProjectContext(cwd, { allowExternalGit })` defaults to `false` (fail
+closed). `runInspect` resolves consent first and passes
+`access.allowOutsideProject`; read commands pass `hasAnyUserConsent(home)`,
+because a project id is shared across runtimes. Before consent, a `.git` file's
+`gitdir:` and any ancestor `.git` are not read, so a linked worktree or a run
+from a subdirectory falls back to the canonical path. Reclamation of a
+path-derived history is M8's root index (ADR 0002 §2).
 
 ### `discovery/consent.ts`
 
