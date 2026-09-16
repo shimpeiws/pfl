@@ -11,7 +11,8 @@ import type { ResolvedSnapshot } from '../core/resolved.js';
  *
  * Thresholds are named constants so a `conditional-heavy` or `broad-tool-access`
  * call is auditable and adjustable, and the message states the observation
- * (numbers) rather than a verdict.
+ * (numbers) rather than a verdict. Each finding is scoped to the native kind it
+ * actually applies to, so a finding never relabels an unrelated element.
  */
 
 export const CONDITIONAL_HEAVY_MIN_COUNT = 5;
@@ -19,6 +20,9 @@ export const CONDITIONAL_HEAVY_MIN_RATIO = 0.4;
 export const BROAD_TOOL_ACCESS_MIN_ALLOW = 10;
 
 export function deriveFindings(observed: ObservedSnapshot, resolved: ResolvedSnapshot): Finding[] {
+  const observedById = new Map<string, ObservedElement>(
+    observed.elements.map((element) => [element.id, element]),
+  );
   const findings: Finding[] = [
     ...shadowedElement(resolved),
     ...conflictingScope(observed),
@@ -26,9 +30,16 @@ export function deriveFindings(observed: ObservedSnapshot, resolved: ResolvedSna
     ...broadToolAccess(observed),
     ...conditionalHeavy(resolved),
     ...memoryEnabled(observed),
-    ...subtreeSpecificInstruction(resolved),
+    ...subtreeSpecificInstruction(observedById, resolved),
   ];
+  for (const finding of findings) {
+    finding.elementIds.sort(byId);
+  }
   return findings;
+}
+
+function byId(a: ElementId, b: ElementId): number {
+  return a < b ? -1 : a > b ? 1 : 0;
 }
 
 function shadowedElement(resolved: ResolvedSnapshot): Finding[] {
@@ -52,7 +63,7 @@ function conflictingScope(observed: ObservedSnapshot): Finding[] {
     if (key === null) continue;
     const entry = scopesByKey.get(key) ?? { ids: [], scopes: new Set<string>() };
     entry.ids.push(element.id);
-    entry.scopes.add(element.native.origin);
+    entry.scopes.add(element.native.scope ?? element.native.origin);
     scopesByKey.set(key, entry);
   }
 
@@ -67,7 +78,11 @@ function conflictingScope(observed: ObservedSnapshot): Finding[] {
 
 function opaqueRuntimeLayer(observed: ObservedSnapshot): Finding[] {
   const ids = observed.elements
-    .filter((element) => element.inspectability === 'opaque')
+    .filter(
+      (element) =>
+        element.inspectability === 'opaque' &&
+        element.native.kind === 'runtime-provided-instructions',
+    )
     .map((element) => element.id);
   if (ids.length === 0) return [];
   return [
@@ -82,6 +97,7 @@ function opaqueRuntimeLayer(observed: ObservedSnapshot): Finding[] {
 function broadToolAccess(observed: ObservedSnapshot): Finding[] {
   const findings: Finding[] = [];
   for (const element of observed.elements) {
+    if (element.native.kind !== 'permissions') continue;
     const allowCount = element.metadata['allowCount'];
     if (typeof allowCount === 'number' && allowCount >= BROAD_TOOL_ACCESS_MIN_ALLOW) {
       findings.push({
@@ -125,9 +141,16 @@ function memoryEnabled(observed: ObservedSnapshot): Finding[] {
   ];
 }
 
-function subtreeSpecificInstruction(resolved: ResolvedSnapshot): Finding[] {
+function subtreeSpecificInstruction(
+  observedById: ReadonlyMap<string, ObservedElement>,
+  resolved: ResolvedSnapshot,
+): Finding[] {
   const ids = resolved.elements
-    .filter((element) => element.applicability?.type === 'directory-subtree')
+    .filter(
+      (element) =>
+        element.applicability?.type === 'directory-subtree' &&
+        observedById.get(element.id)?.native.kind === 'instructions',
+    )
     .map((element) => element.id);
   if (ids.length === 0) return [];
   return [

@@ -179,6 +179,49 @@ describe('deriveFindings', () => {
     expect(rules(findings)).toContain('subtree-specific-instruction');
   });
 
+  it('does not flag an unrelated kind that happens to carry allowCount', () => {
+    const skill = makePair('skills', '.claude/skills/a/SKILL.md', {
+      metadata: { allowCount: 99 },
+    });
+
+    const { observed, resolved } = snapshots([skill]);
+
+    expect(rules(deriveFindings(observed, resolved))).not.toContain('broad-tool-access');
+  });
+
+  it('does not relabel an opaque non-instruction layer or a subtree skill', () => {
+    const opaqueUnknown = makePair('mystery', '.claude/x', {
+      inspectability: 'opaque',
+      origin: 'builtin',
+    });
+    const subtreeSkill = makePair('skills', '.claude/skills/a/SKILL.md', {
+      applicability: { type: 'directory-subtree', target: 'docs' },
+    });
+
+    const { observed, resolved } = snapshots([opaqueUnknown, subtreeSkill]);
+    const found = rules(deriveFindings(observed, resolved));
+
+    expect(found).not.toContain('opaque-runtime-layer');
+    expect(found).not.toContain('subtree-specific-instruction');
+  });
+
+  it('is deterministic and independent of input order', () => {
+    const a = makePair('permissions', '.claude/settings.json#permissions', {
+      resolvedStatus: 'shadowed',
+    });
+    const b = makePair('permissions', '~/.claude/settings.json#permissions', { origin: 'user' });
+    const c = makePair('runtime-provided-instructions', '(builtin)', {
+      origin: 'builtin',
+      inspectability: 'opaque',
+    });
+    const forward = snapshots([a, b, c]);
+    const reversed = snapshots([c, b, a]);
+
+    expect(deriveFindings(forward.observed, forward.resolved)).toEqual(
+      deriveFindings(reversed.observed, reversed.resolved),
+    );
+  });
+
   it('never uses evaluative vocabulary', () => {
     const pairs = [
       makePair('permissions', '.claude/settings.json#permissions', {
