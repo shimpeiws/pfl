@@ -3,6 +3,7 @@ import type { ObservedElement, ObservedSnapshot } from '../../core/observed.js';
 import type {
   Activation,
   Applicability,
+  Relation,
   ResolvedSnapshot,
   ResolutionStrategy,
 } from '../../core/resolved.js';
@@ -54,9 +55,16 @@ export async function resolveClaudeCode(observed: ObservedSnapshot): Promise<Res
     };
   });
 
+  const relations: Relation[] = [...shadowedBy.entries()].map(([loser, winner]) => ({
+    type: 'shadows',
+    from: winner,
+    to: loser,
+  }));
+
   return assembleResolvedSnapshot({
     observed,
     elements: resolveElements(inputs),
+    relations,
   });
 }
 

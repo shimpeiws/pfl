@@ -4,6 +4,7 @@ import type { ObservedElement, ObservedSnapshot } from '../../core/observed.js';
 import type {
   Activation,
   Applicability,
+  Relation,
   ResolvedSnapshot,
   ResolutionStrategy,
 } from '../../core/resolved.js';
@@ -51,9 +52,16 @@ export async function resolveCodex(observed: ObservedSnapshot): Promise<Resolved
     };
   });
 
+  const relations: Relation[] = [];
+  for (const [loser, winner] of shadowedBy) {
+    relations.push({ type: 'overrides', from: winner, to: loser });
+    relations.push({ type: 'shadows', from: winner, to: loser });
+  }
+
   return assembleResolvedSnapshot({
     observed,
     elements: resolveElements(inputs),
+    relations,
   });
 }
 

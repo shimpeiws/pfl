@@ -83,6 +83,16 @@ describe('resolveCodex', () => {
     const shadowed = find(resolved.elements, base);
     expect(shadowed.status).toBe('shadowed');
     expect(shadowed.resolution.reason).toContain(override.id);
+    expect(resolved.relations).toContainEqual({
+      type: 'overrides',
+      from: override.id,
+      to: base.id,
+    });
+    expect(resolved.relations).toContainEqual({
+      type: 'shadows',
+      from: override.id,
+      to: base.id,
+    });
   });
 
   it('only shadows the base in the same directory as the override', async () => {

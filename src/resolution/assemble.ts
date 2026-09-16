@@ -1,5 +1,9 @@
 import type { Diagnostic } from '../core/diagnostics.js';
-import { generateResolvedSnapshotId, type ResolvedSnapshotId } from '../core/ids.js';
+import {
+  generateResolvedSnapshotId,
+  type ElementId,
+  type ResolvedSnapshotId,
+} from '../core/ids.js';
 import type { ObservedSnapshot } from '../core/observed.js';
 import type { Relation, ResolvedElement, ResolvedSnapshot } from '../core/resolved.js';
 import { harnessContentDigest, resolvedSnapshotDigest } from '../snapshot/digest.js';
@@ -35,7 +39,10 @@ export interface ResolvedSnapshotInput {
 export function assembleResolvedSnapshot(input: ResolvedSnapshotInput): ResolvedSnapshot {
   const { observed } = input;
   const elements = [...input.elements];
-  const relations = [...(input.relations ?? [])];
+  const relations = mergeRelations(
+    input.relations ?? [],
+    accumulatesWithRelations(observed, elements),
+  );
   const diagnostics = [...(input.diagnostics ?? [])];
 
   const confidence: ResolvedSnapshot['resolution']['confidence'] =
@@ -76,4 +83,50 @@ export function assembleResolvedSnapshot(input: ResolvedSnapshotInput): Resolved
     diagnostics,
     digests: { harnessContent, resolvedSnapshot },
   };
+}
+
+function mergeRelations(explicit: readonly Relation[], derived: readonly Relation[]): Relation[] {
+  const merged: Relation[] = [];
+  const seen = new Set<string>();
+  for (const relation of [...explicit, ...derived]) {
+    const key = `${relation.type}\0${relation.from}\0${relation.to}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(relation);
+  }
+  return merged;
+}
+
+/**
+ * Elements that accumulate (design doc §11) form an explicit edge per kind: the
+ * layers combine rather than override. Derived from the resolved strategy and
+ * the observed kind, so it stays a statically provable relation.
+ */
+function accumulatesWithRelations(
+  observed: ObservedSnapshot,
+  elements: readonly ResolvedElement[],
+): Relation[] {
+  const strategyById = new Map(
+    elements.map((element) => [element.id, element.resolution.strategy]),
+  );
+  const groups = new Map<string, ElementId[]>();
+  for (const element of observed.elements) {
+    if (strategyById.get(element.id) !== 'accumulate') continue;
+    const list = groups.get(element.native.kind) ?? [];
+    list.push(element.id);
+    groups.set(element.native.kind, list);
+  }
+
+  const relations: Relation[] = [];
+  for (const ids of groups.values()) {
+    const anchor = ids[0];
+    if (anchor === undefined) continue;
+    for (let index = 1; index < ids.length; index += 1) {
+      const other = ids[index];
+      if (other !== undefined) {
+        relations.push({ type: 'accumulates-with', from: anchor, to: other });
+      }
+    }
+  }
+  return relations;
 }

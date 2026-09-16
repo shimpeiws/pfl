@@ -5,7 +5,7 @@ import {
   runtimeId,
   type ResolvedSnapshotId,
 } from '../core/ids.js';
-import type { ObservedSnapshot } from '../core/observed.js';
+import type { ObservedElement, ObservedSnapshot } from '../core/observed.js';
 import type { ResolvedElement, ResolvedStatus } from '../core/resolved.js';
 import { harnessContentDigest } from '../snapshot/digest.js';
 import { RESOLUTION_SEMANTICS_VERSION, assembleResolvedSnapshot } from './assemble.js';
@@ -17,6 +17,18 @@ function resolvedElement(path: string, status: ResolvedStatus): ResolvedElement 
     applicability: { type: 'project' },
     activation: 'always',
     resolution: { strategy: 'accumulate', reason: 'test' },
+  };
+}
+
+function observedElement(path: string, kind: string): ObservedElement {
+  const origin = path.startsWith('~/') ? 'user' : 'project';
+  return {
+    id: elementIdFor({ runtimeId: runtimeId('claude-code'), origin, path }),
+    native: { kind, origin, scope: origin },
+    source: { path },
+    inspectability: 'observable',
+    metadata: {},
+    status: 'observed',
   };
 }
 
@@ -70,6 +82,52 @@ describe('assembleResolvedSnapshot', () => {
     expect(resolved.resolution.confidence).toBe('unverified-runtime-version');
     expect(resolved.diagnostics.map((entry) => entry.code)).toContain('runtime-version-unverified');
     expect(resolved.effectiveElementIds).toHaveLength(1);
+  });
+
+  it('derives accumulates-with edges for accumulating layers', () => {
+    const project = observedElement('CLAUDE.md', 'instructions');
+    const user = observedElement('~/.claude/CLAUDE.md', 'instructions');
+    const observed = { ...observedSnapshot(), elements: [project, user] };
+
+    const resolved = assembleResolvedSnapshot({
+      observed,
+      elements: [project, user].map((element) => ({
+        id: element.id,
+        status: 'effective',
+        applicability: { type: 'project' },
+        activation: 'always',
+        resolution: { strategy: 'accumulate' },
+      })),
+    });
+
+    expect(resolved.relations).toContainEqual({
+      type: 'accumulates-with',
+      from: project.id,
+      to: user.id,
+    });
+  });
+
+  it('keeps the content digest while the resolved digest changes with the runtime version', () => {
+    const elements = [observedElement('CLAUDE.md', 'instructions')];
+    const older = assembleResolvedSnapshot({
+      observed: {
+        ...observedSnapshot(),
+        elements,
+        runtime: { id: runtimeId('claude-code'), version: '0.150.0' },
+      },
+      elements: [],
+    });
+    const newer = assembleResolvedSnapshot({
+      observed: {
+        ...observedSnapshot(),
+        elements,
+        runtime: { id: runtimeId('claude-code'), version: '0.154.0' },
+      },
+      elements: [],
+    });
+
+    expect(older.digests.harnessContent).toBe(newer.digests.harnessContent);
+    expect(older.digests.resolvedSnapshot).not.toBe(newer.digests.resolvedSnapshot);
   });
 
   it('keeps a verified version at full confidence', () => {
