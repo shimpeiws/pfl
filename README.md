@@ -1,6 +1,6 @@
 # pfl
 
-![pfl](docs/assets/header.png)
+![pfl](docs/assets/pfl-top.webp)
 
 > pfl — Pre-Flight Listen for coding-agent harnesses
 
