@@ -1,0 +1,3 @@
+# Memory
+
+SENTINEL_CLAUDE_MEMORY

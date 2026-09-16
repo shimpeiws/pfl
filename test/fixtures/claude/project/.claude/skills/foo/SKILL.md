@@ -1,0 +1,3 @@
+# Foo skill
+
+SENTINEL_CLAUDE_SKILL
