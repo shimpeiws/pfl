@@ -81,8 +81,33 @@ pnpm test              # vitest run
 pnpm run check         # oxlint --deny-warnings
 pnpm run format        # oxfmt --check
 pnpm run build         # tsc --build (type check)
+pnpm run typecheck:test # tsc -p tsconfig.test.json
 pnpm run knip          # unused exports
 ```
+
+## Releasing
+
+Publishing is tag-driven and runs only from CI
+(`.github/workflows/release.yml`), never from a developer machine.
+
+Prerequisites, once:
+
+1. The repository is public (npm provenance is generated from a public source).
+2. A **trusted publisher** is configured for `@shimpeiws/pfl` on npmjs.com:
+   GitHub user `shimpeiws`, repository `pfl`, workflow `release.yml`,
+   environment `npm`. No npm token is stored — publishing uses GitHub OIDC.
+
+To cut a release:
+
+```sh
+# bump "version" in package.json, then:
+git tag v<version>
+git push origin v<version>
+```
+
+The workflow re-runs every gate, checks that the tag matches the package
+version, inspects and smoke-installs the tarball, then publishes with
+`npm publish --access public` (provenance attached automatically).
 
 ## Learn more
 

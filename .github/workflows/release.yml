@@ -1,0 +1,61 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: npm
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm run check
+      - run: pnpm run format
+      - run: pnpm run build
+      - run: pnpm run typecheck:test
+      - run: pnpm test
+      - run: pnpm run knip
+
+      - name: Verify the tag matches the package version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          version=$(node -p "require('./package.json').version")
+          if [ "$tag" != "$version" ]; then
+            echo "tag $tag does not match package.json version $version" >&2
+            exit 1
+          fi
+
+      - name: Inspect the tarball contents
+        run: npm pack --dry-run
+
+      - name: Smoke-test the packed tarball
+        run: |
+          npm pack
+          tarball="$(ls ./*.tgz)"
+          smoke="$(mktemp -d)"
+          cd "$smoke"
+          npm init -y >/dev/null
+          npm install "$GITHUB_WORKSPACE/$tarball" >/dev/null
+          ./node_modules/.bin/pfl --help >/dev/null
+          ./node_modules/.bin/pfl --version
+
+      # Trusted publishing (npm OIDC): no token, provenance attached automatically.
+      # Requires the trusted publisher configured on npmjs.com and npm >= 11.5.1.
+      - name: Publish
+        run: npm publish --access public
