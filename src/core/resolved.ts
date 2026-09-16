@@ -1,5 +1,5 @@
 import type { Diagnostic } from './diagnostics.js';
-import type { ElementId, ObservedSnapshotId, RuntimeId } from './ids.js';
+import type { ElementId, ObservedSnapshotId, ResolvedSnapshotId, RuntimeId } from './ids.js';
 
 /**
  * Resolved Facts: facts produced by applying deterministic runtime semantics
@@ -77,9 +77,10 @@ export interface Relation {
   to: ElementId;
 }
 
-/** Design doc §13.3. */
+/** Design doc §13.3, plus the id §25 shows (`res_…`) and storage needs. */
 export interface ResolvedSnapshot {
   schemaVersion: string;
+  snapshotId: ResolvedSnapshotId;
   observedSnapshotId: ObservedSnapshotId;
 
   runtime: {
