@@ -72,24 +72,51 @@ cli
 
 cli
   .command('list', 'List elements from the latest (or named) snapshot')
+  .option('--snapshot <id>', 'Snapshot id (default: latest)')
   .option('--facet <facet>', 'Filter by semantic facet')
   .option('--origin <origin>', 'Filter by native origin')
   .option('--status <status>', 'Filter by resolved status')
   .option('--json', 'Output as JSON')
   .action(
     withErrorHandling(
-      async (flags: { facet?: string; origin?: string; status?: string } & CommonFlags) => {
-        await runList(process.cwd(), { ...flags }, loggerForFlags(flags));
+      async (
+        flags: {
+          snapshot?: string;
+          facet?: string;
+          origin?: string;
+          status?: string;
+        } & CommonFlags,
+      ) => {
+        await runList(
+          process.cwd(),
+          {
+            ...(flags.snapshot !== undefined ? { snapshot: flags.snapshot } : {}),
+            ...(flags.facet !== undefined ? { facet: flags.facet } : {}),
+            ...(flags.origin !== undefined ? { origin: flags.origin } : {}),
+            ...(flags.status !== undefined ? { status: flags.status } : {}),
+            json: flags.json ?? false,
+          },
+          loggerForFlags(flags),
+        );
       },
     ),
   );
 
 cli
   .command('show <element-id>', 'Drill into one element')
+  .option('--snapshot <id>', 'Snapshot id (default: latest)')
   .option('--json', 'Output as JSON')
   .action(
-    withErrorHandling(async (elementId: string, flags: CommonFlags) => {
-      await runShow(process.cwd(), elementId, { json: flags.json ?? false }, loggerForFlags(flags));
+    withErrorHandling(async (elementId: string, flags: { snapshot?: string } & CommonFlags) => {
+      await runShow(
+        process.cwd(),
+        elementId,
+        {
+          ...(flags.snapshot !== undefined ? { snapshot: flags.snapshot } : {}),
+          json: flags.json ?? false,
+        },
+        loggerForFlags(flags),
+      );
     }),
   );
 

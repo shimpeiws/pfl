@@ -7,6 +7,7 @@ import { EXIT_CODES, PflError } from './exit-codes.js';
 import { loadInterpretation } from './read.js';
 
 export interface ListOptions {
+  snapshot?: string;
   facet?: string;
   origin?: string;
   status?: string;
@@ -51,11 +52,14 @@ export async function runList(cwd: string, options: ListOptions, logger: Logger)
   const origin = validateOrigin(options.origin);
   const status = validateStatus(options.status);
 
-  const { observed, resolved, interpretation } = await loadInterpretation(
+  const { observed, resolved, interpretation, diagnostics } = await loadInterpretation(
     cwd,
-    undefined,
+    options.snapshot,
     options.home ?? homedir(),
   );
+  for (const diagnostic of diagnostics) {
+    logger.warn(diagnostic.message, { code: diagnostic.code, path: diagnostic.path ?? undefined });
+  }
   const resolvedById = new Map(resolved.elements.map((element) => [element.id, element]));
   const interpretationById = new Map(
     interpretation.elements.map((element) => [element.elementId, element]),

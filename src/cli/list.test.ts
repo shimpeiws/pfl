@@ -61,7 +61,7 @@ export async function seed(
   home: string,
   pairs: Pair[],
   relations: ResolvedSnapshot['relations'] = [],
-): Promise<void> {
+): Promise<{ observedSnapshotId: string }> {
   const projectId = (await resolveProjectContext(projectRoot)).id;
   const observed: ObservedSnapshot = {
     schemaVersion: '1',
@@ -94,6 +94,7 @@ export async function seed(
     { observed: observed.snapshotId, resolved: resolved.snapshotId },
     home,
   );
+  return { observedSnapshotId: observed.snapshotId };
 }
 
 const tempDirs: string[] = [];
@@ -177,6 +178,21 @@ describe('runList', () => {
     await runList(projectRoot, { home, origin: 'user' }, byOrigin.logger);
     expect(byOrigin.lines).toHaveLength(1);
     expect(byOrigin.lines[0]).toContain(ids.memory ?? '');
+  });
+
+  it('accepts an explicit snapshot id, observation or resolved', async () => {
+    const projectRoot = await tempDir('pfl-list-project-');
+    const home = await tempDir('pfl-list-home-');
+    const instructions = pair('instructions', 'CLAUDE.md');
+    const { observedSnapshotId } = await seed(projectRoot, home, [instructions]);
+
+    const byResolved = fakeLogger();
+    await runList(projectRoot, { home, snapshot: 'res_test' }, byResolved.logger);
+    expect(byResolved.lines).toHaveLength(1);
+
+    const byObserved = fakeLogger();
+    await runList(projectRoot, { home, snapshot: observedSnapshotId }, byObserved.logger);
+    expect(byObserved.lines).toHaveLength(1);
   });
 
   it('emits JSON', async () => {

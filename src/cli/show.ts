@@ -5,6 +5,7 @@ import { EXIT_CODES, PflError } from './exit-codes.js';
 import { loadInterpretation } from './read.js';
 
 export interface ShowOptions {
+  snapshot?: string;
   json?: boolean;
   /** Injected for tests; defaults to the current user's home. */
   home?: string;
@@ -23,7 +24,14 @@ export async function runShow(
   logger: Logger,
 ): Promise<void> {
   const home = options.home ?? homedir();
-  const { observed, resolved, interpretation } = await loadInterpretation(cwd, undefined, home);
+  const { observed, resolved, interpretation, diagnostics } = await loadInterpretation(
+    cwd,
+    options.snapshot,
+    home,
+  );
+  for (const diagnostic of diagnostics) {
+    logger.warn(diagnostic.message, { code: diagnostic.code, path: diagnostic.path ?? undefined });
+  }
 
   const observedElement = observed.elements.find((element) => element.id === elementId);
   if (observedElement === undefined) {
