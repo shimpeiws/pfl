@@ -16,6 +16,7 @@ import { EXIT_CODES, PflError } from '../cli/exit-codes.js';
 import type { Completeness, Diagnostic } from '../core/diagnostics.js';
 import type { Interpretation } from '../core/interpretation.js';
 import type { ObservedSnapshot } from '../core/observed.js';
+import type { ResolvedSnapshot } from '../core/resolved.js';
 import { deserializeSnapshot, serializeSnapshot, type VersionedSnapshot } from './serialization.js';
 
 /**
@@ -34,19 +35,21 @@ import { deserializeSnapshot, serializeSnapshot, type VersionedSnapshot } from '
  *       latest
  * ```
  *
- * `snapshots/` holds the ObservedSnapshot produced by `inspect` — the artifact
- * `pfl snapshots` lists and `latest` points at, and the one carrying
- * `capturedAt` and `completeness`. `observations/` and `interpretations/` are
- * read targets for the other data-model layers (design doc §7); no writer fills
- * them in v0.1. This module writes exactly what it is handed and never reaches
- * back into the filesystem for content.
+ * The layout mirrors the data model (design doc §15 distinguishes an observation
+ * event from harness state):
  *
- * Snapshots are immutable: an existing id is a conflict, not an update, and a
- * new snapshot is linked into place atomically. The `latest` pointer is the one
- * mutable artifact and is replaced atomically.
+ * - `observations/` holds the ObservedSnapshot an `inspect` run captured — the
+ *   observation event, with `capturedAt` and `completeness`.
+ * - `snapshots/` holds the ResolvedSnapshot — the resolved harness state.
+ * - `interpretations/` holds a Derived Interpretation (M3).
+ * - `latest` is a small `{"observed": "obs_…", "resolved": "res_…"}` pointer:
+ *   the one mutable artifact, replaced atomically.
  *
- * The project id and artifact ids are treated as boundary input: they become
- * path segments, so each is validated against a safe charset before use.
+ * This module writes exactly what it is handed and never reaches back into the
+ * filesystem for content. Snapshots are immutable: an existing id is a conflict,
+ * not an update, and a new snapshot is linked into place atomically. The project
+ * id and artifact ids are boundary input, so each is validated against a safe
+ * charset before it becomes a path segment.
  */
 
 const DIR_MODE = 0o700;
@@ -55,6 +58,47 @@ const ARTIFACT_SUFFIX = '.json';
 const LATEST_FILE = 'latest';
 const SAFE_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const COMPLETENESS_VALUES: readonly string[] = ['complete', 'partial', 'unknown'];
+const RESOLVED_STATUS_VALUES: readonly string[] = [
+  'effective',
+  'shadowed',
+  'conditional',
+  'unresolved',
+  'unknown',
+];
+const ACTIVATION_VALUES: readonly string[] = [
+  'always',
+  'conditional',
+  'on-demand',
+  'event-driven',
+  'unknown',
+];
+const STRATEGY_VALUES: readonly string[] = [
+  'override',
+  'accumulate',
+  'available',
+  'policy',
+  'event-pipeline',
+  'runtime-defined',
+  'unknown',
+];
+const APPLICABILITY_VALUES: readonly string[] = [
+  'global',
+  'project',
+  'directory-subtree',
+  'tool-event',
+  'config-rule',
+  'runtime-defined',
+  'unknown',
+];
+const RELATION_TYPE_VALUES: readonly string[] = [
+  'contains',
+  'discovered-from',
+  'accumulates-with',
+  'overrides',
+  'shadows',
+  'resolves-to',
+  'applies-to',
+];
 
 export function pflHome(home: string = homedir()): string {
   return join(home, '.pfl');
@@ -85,26 +129,53 @@ export function latestPath(projectId: string, home: string = homedir()): string 
   return join(projectDir(projectId, home), LATEST_FILE);
 }
 
-/** A listed snapshot's stable facts (design doc §23). */
-export interface StoredSnapshotSummary {
-  id: string;
+/** A run's stable facts: one observation event and its resolved snapshot (§23). */
+export interface StoredRunSummary {
+  observedId: string;
+  resolvedId: string | null;
   capturedAt: string;
   runtime: { id: string; version: string | null };
   completeness: Completeness;
 }
 
-export interface SnapshotListResult {
-  snapshots: StoredSnapshotSummary[];
+export interface RunListResult {
+  runs: StoredRunSummary[];
   diagnostics: Diagnostic[];
 }
 
-/**
- * Persists an ObservedSnapshot. Snapshots are immutable; writing an existing id
- * is a conflict, not an update.
- */
-export async function writeSnapshot(
+/** The `latest` pointer: the ids read commands default to (design doc §23). */
+export interface LatestPointer {
+  observed: string;
+  resolved: string;
+}
+
+/** Persists an ObservedSnapshot (an observation event). */
+export async function writeObservedSnapshot(
   projectId: string,
   snapshot: ObservedSnapshot,
+  home: string = homedir(),
+): Promise<void> {
+  await writeArtifact(
+    artifactPath(observationsDir(projectId, home), snapshot.snapshotId),
+    serializeSnapshot(snapshot),
+  );
+}
+
+export async function readObservedSnapshot(
+  projectId: string,
+  snapshotId: string,
+  home: string = homedir(),
+): Promise<ObservedSnapshot> {
+  return readArtifact(
+    artifactPath(observationsDir(projectId, home), snapshotId),
+    isObservedSnapshot,
+  );
+}
+
+/** Persists a ResolvedSnapshot (the resolved harness state). */
+export async function writeResolvedSnapshot(
+  projectId: string,
+  snapshot: ResolvedSnapshot,
   home: string = homedir(),
 ): Promise<void> {
   await writeArtifact(
@@ -113,25 +184,12 @@ export async function writeSnapshot(
   );
 }
 
-/** Reads an ObservedSnapshot by id. */
-export async function readSnapshot(
+export async function readResolvedSnapshot(
   projectId: string,
   snapshotId: string,
   home: string = homedir(),
-): Promise<ObservedSnapshot> {
-  return readArtifact(artifactPath(snapshotsDir(projectId, home), snapshotId), isObservedSnapshot);
-}
-
-/** Reads an observation event by id (`observations/`). */
-export async function readObservation(
-  projectId: string,
-  observationId: string,
-  home: string = homedir(),
-): Promise<ObservedSnapshot> {
-  return readArtifact(
-    artifactPath(observationsDir(projectId, home), observationId),
-    isObservedSnapshot,
-  );
+): Promise<ResolvedSnapshot> {
+  return readArtifact(artifactPath(snapshotsDir(projectId, home), snapshotId), isResolvedSnapshot);
 }
 
 /** Reads a Derived Interpretation by id (`interpretations/`). */
@@ -146,11 +204,11 @@ export async function readInterpretation(
   );
 }
 
-/** The default snapshot for read commands: no `--snapshot` means `latest`. */
-export async function readLatestSnapshotId(
+/** The default for read commands: no `--snapshot` means `latest` (design doc §23). */
+export async function readLatestPointer(
   projectId: string,
   home: string = homedir(),
-): Promise<string | null> {
+): Promise<LatestPointer | null> {
   let text: string;
   try {
     text = await readFile(latestPath(projectId, home), 'utf8');
@@ -158,22 +216,38 @@ export async function readLatestSnapshotId(
     if (isNotFound(error)) return null;
     throw snapshotStoreError(`could not read the latest pointer: ${errorMessage(error)}`);
   }
-  const id = text.trim();
-  return id ? id : null;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw snapshotStoreError('the latest pointer is not valid JSON');
+  }
+  if (!isRecord(parsed)) {
+    throw snapshotStoreError('the latest pointer is not a JSON object');
+  }
+  const observed = parsed['observed'];
+  const resolved = parsed['resolved'];
+  if (typeof observed !== 'string' || typeof resolved !== 'string') {
+    throw snapshotStoreError('the latest pointer is missing an id');
+  }
+  return { observed, resolved };
 }
 
-/** Points `latest` at a snapshot id. The pointer is mutable and replaced atomically. */
-export async function writeLatestSnapshotId(
+/** Points `latest` at a run. The pointer is mutable and replaced atomically. */
+export async function writeLatestPointer(
   projectId: string,
-  snapshotId: string,
+  pointer: LatestPointer,
   home: string = homedir(),
 ): Promise<void> {
-  assertSafeSegment(snapshotId, 'snapshot id');
+  assertSafeSegment(pointer.observed, 'snapshot id');
+  assertSafeSegment(pointer.resolved, 'snapshot id');
+
   const target = latestPath(projectId, home);
   await ensureDir(dirname(target));
   const temp = tempPath(target);
   try {
-    await writeFile(temp, `${snapshotId}\n`, { mode: FILE_MODE });
+    await writeFile(temp, `${JSON.stringify(pointer)}\n`, { mode: FILE_MODE });
     await chmod(temp, FILE_MODE);
     await rename(temp, target);
   } catch (error) {
@@ -183,44 +257,20 @@ export async function writeLatestSnapshotId(
   }
 }
 
-/** Lists stored snapshots, newest first, recording unreadable ones as diagnostics. */
-export async function listSnapshots(
+/** Lists runs (observation + its resolved snapshot), newest first. */
+export async function listRuns(
   projectId: string,
   home: string = homedir(),
-): Promise<SnapshotListResult> {
-  const dir = snapshotsDir(projectId, home);
-
-  let names: string[];
-  try {
-    names = await readdir(dir);
-  } catch (error) {
-    if (isNotFound(error)) return { snapshots: [], diagnostics: [] };
-    return {
-      snapshots: [],
-      diagnostics: [
-        {
-          severity: 'error',
-          code: 'snapshot-store-unreadable',
-          message: `could not read the snapshot store: ${errorMessage(error)}`,
-          path: dir,
-        },
-      ],
-    };
-  }
-
-  const snapshots: StoredSnapshotSummary[] = [];
+): Promise<RunListResult> {
   const diagnostics: Diagnostic[] = [];
+  const observedDir = observationsDir(projectId, home);
+  const resolvedDir = snapshotsDir(projectId, home);
 
-  for (const name of names) {
-    if (!name.endsWith(ARTIFACT_SUFFIX)) continue;
+  const resolvedByObserved = new Map<string, string>();
+  for (const name of await artifactNames(resolvedDir, diagnostics)) {
     try {
-      const snapshot = await readArtifact(join(dir, name), isObservedSnapshot);
-      snapshots.push({
-        id: snapshot.snapshotId,
-        capturedAt: snapshot.capturedAt,
-        runtime: { id: snapshot.runtime.id, version: snapshot.runtime.version },
-        completeness: snapshot.completeness,
-      });
+      const resolved = await readArtifact(join(resolvedDir, name), isResolvedSnapshot);
+      resolvedByObserved.set(resolved.observedSnapshotId, resolved.snapshotId);
     } catch (error) {
       diagnostics.push({
         severity: 'warning',
@@ -231,10 +281,44 @@ export async function listSnapshots(
     }
   }
 
-  snapshots.sort((a, b) =>
-    a.capturedAt < b.capturedAt ? 1 : a.capturedAt > b.capturedAt ? -1 : 0,
-  );
-  return { snapshots, diagnostics };
+  const runs: StoredRunSummary[] = [];
+  for (const name of await artifactNames(observedDir, diagnostics)) {
+    try {
+      const observed = await readArtifact(join(observedDir, name), isObservedSnapshot);
+      runs.push({
+        observedId: observed.snapshotId,
+        resolvedId: resolvedByObserved.get(observed.snapshotId) ?? null,
+        capturedAt: observed.capturedAt,
+        runtime: { id: observed.runtime.id, version: observed.runtime.version },
+        completeness: observed.completeness,
+      });
+    } catch (error) {
+      diagnostics.push({
+        severity: 'warning',
+        code: 'unreadable-observation',
+        message: errorMessage(error),
+        path: name,
+      });
+    }
+  }
+
+  runs.sort((a, b) => (a.capturedAt < b.capturedAt ? 1 : a.capturedAt > b.capturedAt ? -1 : 0));
+  return { runs, diagnostics };
+}
+
+async function artifactNames(dir: string, diagnostics: Diagnostic[]): Promise<string[]> {
+  try {
+    return (await readdir(dir)).filter((name) => name.endsWith(ARTIFACT_SUFFIX));
+  } catch (error) {
+    if (isNotFound(error)) return [];
+    diagnostics.push({
+      severity: 'error',
+      code: 'snapshot-store-unreadable',
+      message: `could not read the snapshot store: ${errorMessage(error)}`,
+      path: dir,
+    });
+    return [];
+  }
 }
 
 function artifactPath(dir: string, id: string): string {
@@ -336,6 +420,71 @@ function isObservedSnapshot(value: unknown): value is ObservedSnapshot {
   if (typeof completeness !== 'string' || !COMPLETENESS_VALUES.includes(completeness)) return false;
   const digests = value['digests'];
   return isRecord(digests) && typeof digests['observed'] === 'string';
+}
+
+function isResolvedSnapshot(value: unknown): value is ResolvedSnapshot {
+  if (!isRecord(value)) return false;
+  if (typeof value['snapshotId'] !== 'string' || typeof value['observedSnapshotId'] !== 'string') {
+    return false;
+  }
+  const runtime = value['runtime'];
+  if (!isRecord(runtime) || typeof runtime['id'] !== 'string') return false;
+
+  const resolution = value['resolution'];
+  if (!isRecord(resolution) || typeof resolution['semanticsVersion'] !== 'string') return false;
+  const confidence = resolution['confidence'];
+  if (confidence !== 'verified' && confidence !== 'unverified-runtime-version') return false;
+
+  if (
+    !Array.isArray(value['elements']) ||
+    !value['elements'].every(isResolvedElement) ||
+    !Array.isArray(value['relations']) ||
+    !value['relations'].every(isRelation) ||
+    !Array.isArray(value['effectiveElementIds']) ||
+    !value['effectiveElementIds'].every((id) => typeof id === 'string') ||
+    !Array.isArray(value['diagnostics'])
+  ) {
+    return false;
+  }
+
+  const digests = value['digests'];
+  return (
+    isRecord(digests) &&
+    typeof digests['harnessContent'] === 'string' &&
+    typeof digests['resolvedSnapshot'] === 'string'
+  );
+}
+
+function isResolvedElement(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (typeof value['id'] !== 'string') return false;
+  if (typeof value['status'] !== 'string' || !RESOLVED_STATUS_VALUES.includes(value['status'])) {
+    return false;
+  }
+  const activation = value['activation'];
+  if (typeof activation !== 'string' || !ACTIVATION_VALUES.includes(activation)) return false;
+  const resolution = value['resolution'];
+  if (!isRecord(resolution)) return false;
+  const strategy = resolution['strategy'];
+  if (typeof strategy !== 'string' || !STRATEGY_VALUES.includes(strategy)) return false;
+  const applicability = value['applicability'];
+  if (applicability !== undefined) {
+    if (!isRecord(applicability)) return false;
+    const type = applicability['type'];
+    if (typeof type !== 'string' || !APPLICABILITY_VALUES.includes(type)) return false;
+  }
+  return true;
+}
+
+function isRelation(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  const type = value['type'];
+  return (
+    typeof type === 'string' &&
+    RELATION_TYPE_VALUES.includes(type) &&
+    typeof value['from'] === 'string' &&
+    typeof value['to'] === 'string'
+  );
 }
 
 function isInterpretation(value: unknown): value is Interpretation {
