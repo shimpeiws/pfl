@@ -25,6 +25,9 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      # Trusted publishing (OIDC) needs npm >= 11.5.1 and a recent CLI.
+      - run: npm install -g npm@latest
+
       - run: pnpm run check
       - run: pnpm run format
       - run: pnpm run build
@@ -55,7 +58,8 @@ jobs:
           ./node_modules/.bin/pfl --help >/dev/null
           ./node_modules/.bin/pfl --version
 
-      # Trusted publishing (npm OIDC): no token, provenance attached automatically.
-      # Requires the trusted publisher configured on npmjs.com and npm >= 11.5.1.
+      # Trusted publishing (npm OIDC): no token. Provenance is requested
+      # explicitly, since it is not always attached automatically.
+      # Requires the trusted publisher configured on npmjs.com (see the README).
       - name: Publish
-        run: npm publish --access public
+        run: npm publish --provenance --access public
