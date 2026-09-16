@@ -1,4 +1,5 @@
 import { homedir } from 'node:os';
+import { redactingLogger } from '../redact/output.js';
 import type { Logger } from '../util/logger.js';
 import { buildGraphModel } from './graph-model.js';
 import { loadInterpretation } from './read.js';
@@ -19,18 +20,19 @@ export interface GraphOptions {
  */
 export async function runGraph(cwd: string, options: GraphOptions, logger: Logger): Promise<void> {
   const home = options.home ?? homedir();
+  const out = redactingLogger(logger, options.json ? 'export' : 'display', { home });
   const { observed, resolved, interpretation, diagnostics } = await loadInterpretation(
     cwd,
     options.snapshot,
     home,
   );
   for (const diagnostic of diagnostics) {
-    logger.warn(diagnostic.message, { code: diagnostic.code, path: diagnostic.path ?? undefined });
+    out.warn(diagnostic.message, { code: diagnostic.code, path: diagnostic.path ?? undefined });
   }
 
   const model = buildGraphModel(observed, resolved, interpretation);
   if (options.json) {
-    logger.info('graph', {
+    out.info('graph', {
       observedSnapshotId: model.observedSnapshotId,
       resolvedSnapshotId: model.resolvedSnapshotId,
       nodes: model.nodes,
@@ -40,6 +42,6 @@ export async function runGraph(cwd: string, options: GraphOptions, logger: Logge
   }
 
   for (const line of renderGraph(model, detectTreeStyle())) {
-    logger.info(line);
+    out.info(line);
   }
 }

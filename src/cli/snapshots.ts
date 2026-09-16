@@ -1,9 +1,13 @@
+import { homedir } from 'node:os';
 import { resolveProjectContext } from '../discovery/project-identity.js';
+import { redactingLogger } from '../redact/output.js';
 import { listRuns, type StoredRunSummary } from '../snapshot/store.js';
 import type { Logger } from '../util/logger.js';
 
 export interface SnapshotsOptions {
   json?: boolean;
+  /** Injected for tests; defaults to the current user's home. */
+  home?: string;
 }
 
 /**
@@ -16,26 +20,28 @@ export async function runSnapshots(
   options: SnapshotsOptions,
   logger: Logger,
 ): Promise<void> {
+  const home = options.home ?? homedir();
+  const out = redactingLogger(logger, options.json ? 'export' : 'display', { home });
   const project = await resolveProjectContext(cwd);
-  const { runs, diagnostics } = await listRuns(project.id);
+  const { runs, diagnostics } = await listRuns(project.id, home);
 
   for (const diagnostic of diagnostics) {
-    logger.warn(diagnostic.message, { code: diagnostic.code, path: diagnostic.path });
+    out.warn(diagnostic.message, { code: diagnostic.code, path: diagnostic.path });
   }
 
   if (options.json) {
-    logger.info('snapshots', { project: project.id, runs });
+    out.info('snapshots', { project: project.id, runs });
     return;
   }
 
   if (runs.length === 0) {
-    logger.info(`No snapshots stored for ${project.displayName}.`);
+    out.info(`No snapshots stored for ${project.displayName}.`);
     return;
   }
 
-  logger.info(`${runs.length} snapshot(s) for ${project.displayName}:`);
+  out.info(`${runs.length} snapshot(s) for ${project.displayName}:`);
   for (const run of runs) {
-    logger.info(formatRun(run));
+    out.info(formatRun(run));
   }
 }
 

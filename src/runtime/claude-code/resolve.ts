@@ -42,7 +42,10 @@ const USER_SETTINGS_RANK = 1;
 const PROJECT_SETTINGS_RANK = 2;
 const PROJECT_LOCAL_SETTINGS_RANK = 3;
 
-export async function resolveClaudeCode(observed: ObservedSnapshot): Promise<ResolvedSnapshot> {
+export async function resolveClaudeCode(
+  observed: ObservedSnapshot,
+  home = '',
+): Promise<ResolvedSnapshot> {
   const shadowedBy = settingsShadowing(observed.elements);
 
   const inputs: ElementResolutionInput[] = observed.elements.map((element) => {
@@ -65,6 +68,7 @@ export async function resolveClaudeCode(observed: ObservedSnapshot): Promise<Res
     observed,
     elements: resolveElements(inputs),
     relations,
+    home,
   });
 }
 

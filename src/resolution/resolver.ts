@@ -37,8 +37,9 @@ export interface ElementResolutionInput {
 export async function resolveHarness(
   adapter: RuntimeAdapter,
   observed: ObservedSnapshot,
+  home?: string,
 ): Promise<ResolvedSnapshot> {
-  return adapter.resolve(observed);
+  return adapter.resolve(observed, home);
 }
 
 export function resolveElements(inputs: readonly ElementResolutionInput[]): ResolvedElement[] {

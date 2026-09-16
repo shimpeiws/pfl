@@ -73,6 +73,27 @@ describe('assembleResolvedSnapshot', () => {
     expect(resolved.digests.harnessContent).toBe(harnessContentDigest(observed.elements));
   });
 
+  it('redacts resolved diagnostics at persistence', () => {
+    const home = '/Users/alice';
+    const resolved = assembleResolvedSnapshot({
+      observed: observedSnapshot(),
+      elements: [],
+      home,
+      diagnostics: [
+        {
+          severity: 'warning',
+          code: 'example',
+          message: `could not read ${home}/project/sess-abcdefghijklmnop`,
+          path: `${home}/project/file`,
+        },
+      ],
+    });
+
+    expect(resolved.diagnostics[0]?.path).toBe('~/project/file');
+    expect(resolved.diagnostics[0]?.message).not.toContain(home);
+    expect(resolved.diagnostics[0]?.message).not.toContain('sess-abcdefghijklmnop');
+  });
+
   it('downgrades confidence and warns on an unverified version without blocking', () => {
     const resolved = assembleResolvedSnapshot({
       observed: observedSnapshot('unverified', null),

@@ -1,5 +1,6 @@
 import { homedir } from 'node:os';
 import type { ElementId } from '../core/ids.js';
+import { redactingLogger } from '../redact/output.js';
 import type { Logger } from '../util/logger.js';
 import { EXIT_CODES, PflError } from './exit-codes.js';
 import { loadInterpretation } from './read.js';
@@ -24,13 +25,14 @@ export async function runShow(
   logger: Logger,
 ): Promise<void> {
   const home = options.home ?? homedir();
+  const out = redactingLogger(logger, options.json ? 'export' : 'display', { home });
   const { observed, resolved, interpretation, diagnostics } = await loadInterpretation(
     cwd,
     options.snapshot,
     home,
   );
   for (const diagnostic of diagnostics) {
-    logger.warn(diagnostic.message, { code: diagnostic.code, path: diagnostic.path ?? undefined });
+    out.warn(diagnostic.message, { code: diagnostic.code, path: diagnostic.path ?? undefined });
   }
 
   const observedElement = observed.elements.find((element) => element.id === elementId);
@@ -49,7 +51,7 @@ export async function runShow(
   );
 
   if (options.json) {
-    logger.info('show', {
+    out.info('show', {
       observed: observedElement,
       resolved: resolvedElement ?? null,
       interpretation: interpretationElement ?? null,
@@ -59,30 +61,30 @@ export async function runShow(
     return;
   }
 
-  logger.info(`Element ${elementId}`);
-  logger.info(`  kind            ${observedElement.native.kind}`);
-  logger.info(
+  out.info(`Element ${elementId}`);
+  out.info(`  kind            ${observedElement.native.kind}`);
+  out.info(
     `  origin          ${observedElement.native.origin}${
       observedElement.native.scope !== null ? ` (${observedElement.native.scope})` : ''
     }`,
   );
-  logger.info(
+  out.info(
     `  source          ${observedElement.source.path ?? '(none)'}${
       observedElement.source.digest !== undefined ? `  ${observedElement.source.digest}` : ''
     }`,
   );
-  logger.info(`  inspectability  ${observedElement.inspectability}`);
-  logger.info(`  status          ${resolvedElement?.status ?? 'unknown'}`);
+  out.info(`  inspectability  ${observedElement.inspectability}`);
+  out.info(`  status          ${resolvedElement?.status ?? 'unknown'}`);
   if (resolvedElement !== undefined) {
-    logger.info(`  activation      ${resolvedElement.activation}`);
-    logger.info(
+    out.info(`  activation      ${resolvedElement.activation}`);
+    out.info(
       `  applicability   ${resolvedElement.applicability?.type ?? 'unknown'}${
         resolvedElement.applicability?.target !== undefined
           ? ` (${resolvedElement.applicability.target})`
           : ''
       }`,
     );
-    logger.info(
+    out.info(
       `  resolution      ${resolvedElement.resolution.strategy}${
         resolvedElement.resolution.reason !== undefined
           ? ` — ${resolvedElement.resolution.reason}`
@@ -91,10 +93,10 @@ export async function runShow(
     );
   }
   if (Object.keys(observedElement.metadata).length > 0) {
-    logger.info(`  metadata        ${JSON.stringify(observedElement.metadata)}`);
+    out.info(`  metadata        ${JSON.stringify(observedElement.metadata)}`);
   }
   if (interpretationElement !== undefined) {
-    logger.info(
+    out.info(
       `  facets          ${interpretationElement.facets.join(',') || '(none)'}  [${
         interpretationElement.confidence
       }] ${interpretationElement.reason}`,
@@ -102,17 +104,17 @@ export async function runShow(
   }
 
   if (relations.length > 0) {
-    logger.info('');
-    logger.info('Relations');
+    out.info('');
+    out.info('Relations');
     for (const relation of relations) {
-      logger.info(`  ${relation.type}: ${relation.from} -> ${relation.to}`);
+      out.info(`  ${relation.type}: ${relation.from} -> ${relation.to}`);
     }
   }
   if (findings.length > 0) {
-    logger.info('');
-    logger.info('Findings');
+    out.info('');
+    out.info('Findings');
     for (const finding of findings) {
-      logger.info(`  ${finding.message}`);
+      out.info(`  ${finding.message}`);
     }
   }
 }

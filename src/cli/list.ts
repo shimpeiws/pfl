@@ -2,6 +2,7 @@ import { homedir } from 'node:os';
 import { HARNESS_FACETS, isHarnessFacet, type HarnessFacet } from '../core/facets.js';
 import type { NativeOrigin } from '../core/observed.js';
 import type { ResolvedStatus } from '../core/resolved.js';
+import { redactingLogger } from '../redact/output.js';
 import type { Logger } from '../util/logger.js';
 import { EXIT_CODES, PflError } from './exit-codes.js';
 import { loadInterpretation } from './read.js';
@@ -51,14 +52,16 @@ export async function runList(cwd: string, options: ListOptions, logger: Logger)
   const facet = validateFacet(options.facet);
   const origin = validateOrigin(options.origin);
   const status = validateStatus(options.status);
+  const home = options.home ?? homedir();
+  const out = redactingLogger(logger, options.json ? 'export' : 'display', { home });
 
   const { observed, resolved, interpretation, diagnostics } = await loadInterpretation(
     cwd,
     options.snapshot,
-    options.home ?? homedir(),
+    home,
   );
   for (const diagnostic of diagnostics) {
-    logger.warn(diagnostic.message, { code: diagnostic.code, path: diagnostic.path ?? undefined });
+    out.warn(diagnostic.message, { code: diagnostic.code, path: diagnostic.path ?? undefined });
   }
   const resolvedById = new Map(resolved.elements.map((element) => [element.id, element]));
   const interpretationById = new Map(
@@ -81,15 +84,15 @@ export async function runList(cwd: string, options: ListOptions, logger: Logger)
     );
 
   if (options.json) {
-    logger.info('list', { count: rows.length, elements: rows });
+    out.info('list', { count: rows.length, elements: rows });
     return;
   }
   if (rows.length === 0) {
-    logger.info('No elements match.');
+    out.info('No elements match.');
     return;
   }
   for (const row of rows) {
-    logger.info(`${row.id}  ${row.kind}  ${row.origin}  ${row.status}  ${row.facets.join(',')}`);
+    out.info(`${row.id}  ${row.kind}  ${row.origin}  ${row.status}  ${row.facets.join(',')}`);
   }
 }
 

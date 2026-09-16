@@ -93,6 +93,7 @@ export async function collectCodexHarness(
     },
     elements,
     diagnostics,
+    home,
   });
 }
 

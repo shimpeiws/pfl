@@ -153,9 +153,40 @@ Both treatments are declared in the schema, so the property test ("every
 persisted or displayed field passes through the allowlist, the redaction layer,
 or both") has something to assert against. `source.path` and `diagnostics`
 (message and path, including the raw `Error.message` the store embeds) are
-redacted on both persistence and display. The `display` / `export` /
-`persistence` tiers in `redact/common.ts` are wired to their actual call sites;
-display stops being a strict superset of persistence by accident.
+redacted on both persistence and display.
+
+The mechanism has two choke points, so the tiers are wired rather than defined
+and unused:
+
+- **Persistence** (`assembleObservedSnapshot`): the project root, every element
+  source path, and every diagnostic pass through `redact/output.ts` at the
+  `persistence` level before the snapshot is frozen and digested. This is the
+  one point every adapter funnels through, and it covers every read command
+  because they read stored snapshots.
+- **Display / export** (`redactingLogger`): the CLI wraps its logger per command
+  at `display` (terminal) or `export` (`--json`), redacting each message and any
+  string `path` in structured data. This covers text produced at read time —
+  store diagnostics and the error path in `index.ts` — that was never persisted.
+
+Paths and free text are treated differently on purpose: a path gets the home
+directory (raw and `/`→`-` encoded) replaced by `~` plus the token/secret rules,
+but **not** the high-entropy heuristic, which would redact a legitimate long
+path segment such as an encoded project directory. Free text gets the full
+common policy at the channel's level. Structural fields (ids, digests, counts)
+are never passed through redaction.
+
+Three details the review tightened:
+
+- The rules are the **union of the common policy and every runtime's**
+  (`src/redact/rules.ts`), so a runtime-specific credential shape (`sk-ant-…`,
+  `sess-…`) is masked in paths and diagnostics, not only in adapter metadata.
+  Applying another runtime's rules can only over-mask, which is safe.
+- The home replacement is **boundary-aware**: it matches the home only when a
+  path separator or the end of string follows, so `/Users/alice2` is not
+  mistaken for home `/Users/alice`.
+- `ResolvedSnapshot` diagnostics are redacted at persistence too, so the
+  guarantee holds for both snapshots even though no adapter passes diagnostics
+  to resolution today.
 
 ### 7. Kind of a skipped settings/config element
 

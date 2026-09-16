@@ -1,6 +1,7 @@
 import { homedir } from 'node:os';
 import { HARNESS_FACETS } from '../core/facets.js';
 import { getRuntimeName } from '../runtime/registry.js';
+import { redactingLogger } from '../redact/output.js';
 import type { Logger } from '../util/logger.js';
 import { loadInterpretation } from './read.js';
 
@@ -22,19 +23,20 @@ export async function runReport(
   logger: Logger,
 ): Promise<void> {
   const home = options.home ?? homedir();
+  const out = redactingLogger(logger, options.json ? 'export' : 'display', { home });
   const { observed, resolved, interpretation, diagnostics } = await loadInterpretation(
     cwd,
     options.snapshot,
     home,
   );
   for (const diagnostic of diagnostics) {
-    logger.warn(diagnostic.message, { code: diagnostic.code, path: diagnostic.path ?? undefined });
+    out.warn(diagnostic.message, { code: diagnostic.code, path: diagnostic.path ?? undefined });
   }
   const stats = interpretation.stats;
   const runtimeName = getRuntimeName(observed.runtime.id);
 
   if (options.json) {
-    logger.info('report', {
+    out.info('report', {
       runtime: observed.runtime.id,
       runtimeName,
       project: { id: observed.project.id, displayName: observed.project.displayName },
@@ -48,37 +50,37 @@ export async function runReport(
     return;
   }
 
-  logger.info('Harness Report');
-  logger.info(`${runtimeName} · ${observed.project.displayName}`);
-  logger.info('');
-  logger.info(`Effective elements      ${stats.effective}`);
-  logger.info(`Shadowed                ${stats.shadowed}`);
-  logger.info(`Conditional             ${stats.conditional}`);
-  logger.info(`Opaque runtime layers   ${stats.opaque}`);
-  logger.info('');
-  logger.info('Semantic facets');
+  out.info('Harness Report');
+  out.info(`${runtimeName} · ${observed.project.displayName}`);
+  out.info('');
+  out.info(`Effective elements      ${stats.effective}`);
+  out.info(`Shadowed                ${stats.shadowed}`);
+  out.info(`Conditional             ${stats.conditional}`);
+  out.info(`Opaque runtime layers   ${stats.opaque}`);
+  out.info('');
+  out.info('Semantic facets');
   for (const facet of HARNESS_FACETS) {
-    logger.info(`  ${capitalize(facet).padEnd(14, ' ')}${stats.byFacet[facet] ?? 0}`);
+    out.info(`  ${capitalize(facet).padEnd(14, ' ')}${stats.byFacet[facet] ?? 0}`);
   }
-  logger.info('');
-  logger.info('Notable');
+  out.info('');
+  out.info('Notable');
   if (interpretation.findings.length === 0) {
-    logger.info('  (none)');
+    out.info('  (none)');
   } else {
     for (const finding of interpretation.findings) {
-      logger.info(`  ${finding.message}`);
+      out.info(`  ${finding.message}`);
     }
   }
 
   if (resolved.resolution.confidence === 'unverified-runtime-version') {
-    logger.info('');
-    logger.warn(
+    out.info('');
+    out.warn(
       '⚠ the runtime version is outside the verified adapter range; interpretation is best-effort.',
     );
   }
   if (observed.completeness !== 'complete') {
-    logger.info('');
-    logger.warn(`⚠ scan completeness: ${observed.completeness}`);
+    out.info('');
+    out.warn(`⚠ scan completeness: ${observed.completeness}`);
   }
 }
 

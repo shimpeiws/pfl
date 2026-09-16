@@ -45,7 +45,7 @@ export class CodexAdapter implements RuntimeAdapter {
     return discoverCodex(project, access, home ?? homedir());
   }
 
-  async resolve(observed: ObservedSnapshot): Promise<ResolvedSnapshot> {
-    return resolveCodex(observed);
+  async resolve(observed: ObservedSnapshot, home?: string): Promise<ResolvedSnapshot> {
+    return resolveCodex(observed, home ?? '');
   }
 }

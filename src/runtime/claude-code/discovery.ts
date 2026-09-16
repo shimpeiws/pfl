@@ -118,6 +118,7 @@ export async function collectClaudeCodeHarness(
     },
     elements,
     diagnostics,
+    home,
   });
 }
 
