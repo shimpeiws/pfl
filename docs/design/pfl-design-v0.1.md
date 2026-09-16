@@ -1453,7 +1453,7 @@ v0.1 is usable when all of the following are true:
 - ~~exact snapshot serialization format~~ — decided in [ADR 0001](adr/0001-snapshot-serialization-and-ids.md)
 - ~~exact schema versioning policy~~ — decided in [ADR 0001](adr/0001-snapshot-serialization-and-ids.md)
 - exact snapshot retention / garbage collection
-- exact terminal graph renderer
+- ~~exact terminal graph renderer~~ — decided: plain box-drawing, UTF-8 by default with an ASCII fallback, no width truncation (`src/cli/tree.ts`, issue #21)
 - exact export format policy
 - optional project aliases
 - optional future LLM enrichment
