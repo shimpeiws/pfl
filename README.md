@@ -1,5 +1,7 @@
 # pfl
 
+![pfl](docs/assets/pfl-top.webp)
+
 > pfl — Pre-Flight Listen for coding-agent harnesses
 
 Inspect a coding-agent harness before it runs: what's registered as
