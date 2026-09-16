@@ -22,11 +22,14 @@ export async function runReport(
   logger: Logger,
 ): Promise<void> {
   const home = options.home ?? homedir();
-  const { observed, resolved, interpretation } = await loadInterpretation(
+  const { observed, resolved, interpretation, diagnostics } = await loadInterpretation(
     cwd,
     options.snapshot,
     home,
   );
+  for (const diagnostic of diagnostics) {
+    logger.warn(diagnostic.message, { code: diagnostic.code, path: diagnostic.path ?? undefined });
+  }
   const stats = interpretation.stats;
   const runtimeName = getRuntimeName(observed.runtime.id);
 

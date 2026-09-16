@@ -1,6 +1,7 @@
 import { homedir } from 'node:os';
 import { classify } from '../classify/classifier.js';
 import { deriveFindings } from '../classify/findings.js';
+import type { Diagnostic } from '../core/diagnostics.js';
 import { generateInterpretationId } from '../core/ids.js';
 import type { Interpretation } from '../core/interpretation.js';
 import type { ObservedSnapshot } from '../core/observed.js';
@@ -27,6 +28,8 @@ export interface InterpretedRun {
   observed: ObservedSnapshot;
   resolved: ResolvedSnapshot;
   interpretation: Interpretation;
+  /** Store-level diagnostics encountered while resolving the snapshot. */
+  diagnostics: Diagnostic[];
 }
 
 export async function loadInterpretation(
@@ -35,7 +38,7 @@ export async function loadInterpretation(
   home: string = homedir(),
 ): Promise<InterpretedRun> {
   const project = await resolveProjectContext(cwd);
-  const resolvedId = await resolveResolvedId(project.id, requestedId, home);
+  const { resolvedId, diagnostics } = await resolveResolvedId(project.id, requestedId, home);
   const resolved = await readResolvedSnapshot(project.id, resolvedId, home);
   const observed = await readObservedSnapshot(project.id, resolved.observedSnapshotId, home);
 
@@ -45,14 +48,14 @@ export async function loadInterpretation(
     ...classify(observed, resolved),
     findings: deriveFindings(observed, resolved),
   };
-  return { observed, resolved, interpretation };
+  return { observed, resolved, interpretation, diagnostics };
 }
 
 async function resolveResolvedId(
   projectId: string,
   requestedId: string | undefined,
   home: string,
-): Promise<string> {
+): Promise<{ resolvedId: string; diagnostics: Diagnostic[] }> {
   if (requestedId === undefined) {
     const pointer = await readLatestPointer(projectId, home);
     if (pointer === null) {
@@ -61,15 +64,15 @@ async function resolveResolvedId(
         EXIT_CODES.CONFIG_ERROR,
       );
     }
-    return pointer.resolved;
+    return { resolvedId: pointer.resolved, diagnostics: [] };
   }
 
-  const { runs } = await listRuns(projectId, home);
+  const { runs, diagnostics } = await listRuns(projectId, home);
   const run = runs.find(
     (entry) => entry.resolvedId === requestedId || entry.observedId === requestedId,
   );
   if (run === undefined || run.resolvedId === null) {
     throw new PflError(`unknown snapshot: ${requestedId}`, EXIT_CODES.CONFIG_ERROR);
   }
-  return run.resolvedId;
+  return { resolvedId: run.resolvedId, diagnostics };
 }

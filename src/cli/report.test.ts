@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -13,6 +13,7 @@ import type { ObservedElement, ObservedSnapshot } from '../core/observed.js';
 import type { ResolvedElement, ResolvedSnapshot, ResolvedStatus } from '../core/resolved.js';
 import { resolveProjectContext } from '../discovery/project-identity.js';
 import {
+  snapshotsDir,
   writeLatestPointer,
   writeObservedSnapshot,
   writeResolvedSnapshot,
@@ -177,6 +178,19 @@ describe('runReport', () => {
     ).rejects.toMatchObject({
       exitCode: EXIT_CODES.CONFIG_ERROR,
     });
+  });
+
+  it('surfaces store diagnostics encountered while resolving a named snapshot', async () => {
+    const projectRoot = await tempDir('pfl-report-project-');
+    const home = await tempDir('pfl-report-home-');
+    await seedSnapshot(projectRoot, home, [pair('instructions', 'CLAUDE.md')]);
+    const projectId = (await resolveProjectContext(projectRoot)).id;
+    await writeFile(join(snapshotsDir(projectId, home), 'res_corrupt.json'), '{ not json');
+    const { warns, logger } = fakeLogger();
+
+    await runReport(projectRoot, { home, snapshot: 'res_test' }, logger);
+
+    expect(warns.join('\n')).toContain('unreadable-snapshot');
   });
 
   it('fails clearly when no snapshot is stored', async () => {
