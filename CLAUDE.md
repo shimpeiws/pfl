@@ -16,6 +16,16 @@ descriptive findings, immutable snapshot storage, and rendering (`inspect`,
 `report`, `list`, `show`, `graph`, `diff`, `snapshots`). M4b (inferred graph) and
 M5 (Analyzer integration) remain deferred; see `docs/design/pfl-design-v0.1.md`.
 
+v1.0's security-hardening milestone (**M6**) is complete: reads outside the
+project are consent-gated and fail closed, symlinks and hardlinks are never
+followed, resource ceilings bound every walk and parse, every persisted or
+displayed field passes the allowlist or the redaction layer, the consent wording
+is derived from the read-path inventory, and the security-ops baseline (CI
+scans, the `security-review` required check, the `security-auditor` agent, and
+`docs/security/`) is in place. M7 (harness depth), M8 (interfaces and schema
+freeze), M9 (OpenCode adapter), and M10 (release preparation) remain; M8 and M10
+carry the items M6 deferred. See `docs/design/pfl-roadmap-v1.0.md`.
+
 ## Commands
 
 ```sh
