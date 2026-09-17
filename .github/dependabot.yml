@@ -1,0 +1,27 @@
+version: 2
+updates:
+  # Application and dev dependencies. pfl ships one runtime dependency (cac);
+  # the rest are tooling.
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    # Let a compromised or broken release age before it is proposed.
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5
+    groups:
+      dev-dependencies:
+        dependency-type: development
+      production-dependencies:
+        dependency-type: production
+
+  # Keep the pinned GitHub Actions current; Dependabot understands SHA pins
+  # written as `owner/repo@<sha> # vX`.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    open-pull-requests-limit: 5

@@ -31,8 +31,25 @@ export interface RedactionContext {
 /** Rules that apply to paths: everything except the high-entropy heuristic. */
 const PATH_RULES = ALL_REDACTION_RULES.filter((rule) => rule.from !== 'export');
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+/**
+ * Replaces `needle` with `~` only where it is followed by `boundary` or the end
+ * of the string. A literal scan rather than a constructed regular expression, so
+ * a value here cannot become a pattern.
+ */
+function replaceAtBoundary(value: string, needle: string, boundary: string): string {
+  const parts: string[] = [];
+  let cursor = 0;
+  for (;;) {
+    const at = value.indexOf(needle, cursor);
+    if (at === -1) {
+      parts.push(value.slice(cursor));
+      return parts.join('');
+    }
+    parts.push(value.slice(cursor, at));
+    const after = value[at + needle.length];
+    parts.push(after === undefined || after === boundary ? '~' : needle);
+    cursor = at + needle.length;
+  }
 }
 
 /**
@@ -42,10 +59,8 @@ function escapeRegExp(value: string): string {
  * matching a longer `-Users-alice2` run.
  */
 function replaceHomeSegment(value: string, home: string): string {
-  const raw = new RegExp(`${escapeRegExp(home)}(?=/|$)`, 'g');
   const encodedHome = home.replaceAll('/', '-');
-  const encoded = new RegExp(`${escapeRegExp(encodedHome)}(?=-|$)`, 'g');
-  return value.replace(raw, '~').replace(encoded, '~');
+  return replaceAtBoundary(replaceAtBoundary(value, home, '/'), encodedHome, '-');
 }
 
 /**
