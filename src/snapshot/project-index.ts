@@ -224,9 +224,11 @@ async function mostRecentLatest(ids: string[], home: string): Promise<string> {
   return best;
 }
 
-function indexError(message: string, home: string): PflError {
+function indexError(message: string, _home: string): PflError {
+  // A home-relative display path, so the message names no account even before
+  // it passes the export redaction.
   return new PflError(
-    `${message}: ${projectIndexPath(home)} (move it aside to rebuild the index)`,
+    `${message}: ${join('~/.pfl', INDEX_FILE)} (move it aside to rebuild the index)`,
     EXIT_CODES.SNAPSHOT_STORE_FAILED,
   );
 }

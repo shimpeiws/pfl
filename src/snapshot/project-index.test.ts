@@ -121,7 +121,7 @@ describe('project index', () => {
     const error = await resolveStoredProjectId(gitContext('/repo'), home).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(PflError);
     expect((error as PflError).exitCode).toBe(EXIT_CODES.SNAPSHOT_STORE_FAILED);
-    expect((error as PflError).message).toContain(projectIndexPath(home));
+    expect((error as PflError).message).toContain('~/.pfl/index.json');
   });
 
   it('refuses an unsupported index version or an unsafe id', async () => {

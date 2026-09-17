@@ -103,3 +103,16 @@ absent from both this register and the code as a fix is a defect.
 - **Reopens if:** a repair path (for example `--prune-incomplete`) is added, or
   the leak grows without bound in practice.
 - **Recorded:** 2026-09-18 (M8 #87).
+
+## A8 — An unavailable root looks gone, so `--prune-orphans` can reclaim it (roadmap #87)
+
+- **Risk:** a project on a removable or network volume whose mount is absent
+  makes every one of its roots `ENOENT`, so `gc --prune-orphans` treats its
+  history as orphaned and deletes it.
+- **Why accepted:** the snapshot is derived data, `--prune-orphans` is opt-in,
+  and the README tells the user to dry-run it first. Distinguishing "unmounted"
+  from "deleted" would need a mount/volume check that is not portable across
+  POSIX filesystems.
+- **Reopens if:** `gc` gains a scheduled or non-interactive mode, or a root can
+  be shown to be a mount point.
+- **Recorded:** 2026-09-18 (M8 #87).

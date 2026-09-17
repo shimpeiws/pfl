@@ -6,7 +6,7 @@
 - Trigger: `src/snapshot/store.ts` and `src/discovery/project-identity.ts`
   changed; the store gains its first deletion path.
 - Result: one data-loss class and several smaller issues found and remediated;
-  four residual risks recorded as accepted (A4–A7)
+  five residual risks recorded as accepted (A4–A8)
 
 ## What changed
 
@@ -124,8 +124,9 @@ were remediated in this pull request:
 ## Accepted residuals
 
 A4 (no index lock), A5 (a corrupt index fails closed with no rebuild command),
-A6 (a partial `gc` failure is a diagnostic, exit 0), and A7 (an interrupted
-`inspect` leaves a small uncollectable observation) are recorded in
+A6 (a partial `gc` failure is a diagnostic, exit 0), A7 (an interrupted
+`inspect` leaves a small uncollectable observation), and A8 (an unavailable root
+looks gone, so `--prune-orphans` can reclaim it) are recorded in
 `accepted-risks.md` with their reopening conditions.
 
 The comment that a path-derived sibling is "reported by `pfl gc` as reclaimable"
@@ -134,7 +135,7 @@ deleted automatically, because its root is unknown.
 
 ## Verification
 
-- Full gate green: `test` (55 files, 478 tests), `check`, `format`, `build`,
+- Full gate green: `test` (55 files, 479 tests), `check`, `format`, `build`,
   `typecheck:test`, `knip`.
 - New tests: retention keeps the newest and the latest (including a dangling
   pointer); a dry run deletes nothing; an unparseable artifact is kept and

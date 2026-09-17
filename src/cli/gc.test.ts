@@ -135,6 +135,20 @@ describe('planRetention', () => {
     const result = planRetention(runs, 'obs_missing', 1);
     expect(result.retained.map((entry) => entry.observedId)).toEqual(['obs_1']);
   });
+
+  it('does not let an incomplete run consume the retention budget', () => {
+    const incomplete: StoredRunSummary = {
+      ...run('obs_incomplete'),
+      resolvedId: null,
+      interpretationId: null,
+    };
+    const runs = [incomplete, run('obs_2'), run('obs_3')];
+
+    const result = planRetention(runs, undefined, 1);
+
+    expect(result.retained.map((entry) => entry.observedId)).toEqual(['obs_2']);
+    expect(result.reclaimed.map((entry) => entry.observedId)).toEqual(['obs_3']);
+  });
 });
 
 describe('runGc', () => {

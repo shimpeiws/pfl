@@ -250,8 +250,8 @@ with `--dry-run` and `--keep <n>` deciding what that is:
 ```text
 {
   dryRun, keep,
-  retained:  [{ observedId, resolvedId, interpretationId }],
-  reclaimed: [{ observedId, resolvedId, interpretationId }],
+  retained:  [{ observedId, resolvedId: string|null, interpretationId: string|null }],
+  reclaimed: [{ observedId, resolvedId: string|null, interpretationId: string|null }],
   orphans:   [{ id, path, reason }],
   reclaimedOrphans: [{ id, path, reason }],
   unreferenced: [{ id, path, reason }]
