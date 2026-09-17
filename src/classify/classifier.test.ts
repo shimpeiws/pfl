@@ -123,6 +123,29 @@ describe('classify', () => {
     expect(result.elements[0]?.reason).toContain('mystery-kind');
   });
 
+  it('classifies model configuration and drops the withdrawn Codex rows', () => {
+    const model = makePair('model-configuration', '~/.codex/config.toml#model');
+    const multi = makePair('multi-agent-configuration', '~/.codex/agents');
+    const dependencies = makePair('skill-dependencies', '~/.codex/skills/x/SKILL.md');
+    const all = [model, multi, dependencies];
+    const { observed, resolved } = snapshots(
+      all.map((pair) => pair.observed),
+      all.map((pair) => pair.resolved),
+    );
+
+    const result = classify(observed, resolved);
+    const byId = new Map(result.elements.map((element) => [element.elementId, element]));
+
+    expect(byId.get(model.observed.id)).toMatchObject({
+      facets: ['controls'],
+      confidence: 'medium',
+    });
+    // Withdrawn for the verified range, so no row remains and the kind is
+    // recorded as unclassified rather than guessed.
+    expect(byId.get(multi.observed.id)).toMatchObject({ facets: [], confidence: 'unknown' });
+    expect(byId.get(dependencies.observed.id)).toMatchObject({ facets: [], confidence: 'unknown' });
+  });
+
   it('computes stats: counts and per-facet totals', () => {
     const effective = makePair('instructions', 'CLAUDE.md', 'effective');
     const shadowed = makePair('permissions', '.claude/settings.json#permissions', 'shadowed');

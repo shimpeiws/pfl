@@ -197,6 +197,59 @@ describe('pfl CLI end to end', () => {
     expect(nested.resolved.status).toBe('effective');
   });
 
+  it('stores the corrected Codex kinds and the permission counts', async () => {
+    const m = await fixture('codex');
+    const inspect = await runCli(m, ['inspect', '--runtime', 'codex']);
+    expect(inspect.code, inspect.stderr).toBe(EXIT_CODES.SUCCESS);
+
+    const idFor = (path: string): string =>
+      elementIdFor({ runtimeId: runtimeId('codex'), origin: 'user', path });
+    const show = async (path: string) => {
+      const result = await runCli(m, ['show', idFor(path), '--json']);
+      expect(result.code, `${path}: ${result.stderr}`).toBe(EXIT_CODES.SUCCESS);
+      return JSON.parse(result.stdout.trim().split('\n').at(-1) ?? '{}') as {
+        observed: {
+          native: { kind: string; origin: string; scope: string };
+          metadata: Record<string, unknown>;
+        };
+      };
+    };
+
+    // `model` and its behavior siblings are model configuration, not compaction
+    // controls; the real context controls live on the `#context` element.
+    const model = await show('~/.codex/config.toml#model');
+    expect(model.observed.native.kind).toBe('model-configuration');
+    expect(model.observed.metadata).toMatchObject({
+      model: 'gpt-5.6-luna',
+      reasoningEffort: 'medium',
+      serviceTier: 'flex',
+    });
+    const context = await show('~/.codex/config.toml#context');
+    expect(context.observed.native.kind).toBe('compaction-controls');
+    expect(context.observed.metadata).toMatchObject({
+      contextWindow: 272000,
+      maxOutputTokens: 128000,
+      autoCompactTokenLimit: 200000,
+    });
+    expect(context.observed.metadata).not.toHaveProperty('model');
+
+    // `rules/**` is instructional content; its permission counts are a second
+    // element, and only the counts are stored.
+    const rules = await show('~/.codex/rules/default.rules');
+    expect(rules.observed.native.kind).toBe('rules');
+    expect(rules.observed.metadata).not.toHaveProperty('allowCount');
+    const permissions = await show('~/.codex/rules/default.rules#permissions');
+    expect(permissions.observed.native.kind).toBe('permissions');
+    expect(permissions.observed.metadata).toMatchObject({ allowCount: 3, denyCount: 1 });
+
+    // `skill-dependencies` rides on the `skills` kind as frontmatter metadata.
+    const skill = await show('~/.codex/skills/tool.md');
+    expect(skill.observed.native.kind).toBe('skills');
+    expect(skill.observed.metadata).toMatchObject({
+      dependencyNames: ['fixture-foundation', 'fixture-formatting'],
+    });
+  });
+
   it('reports the package version from the packed layout', async () => {
     const m = await fixture();
     const manifest = JSON.parse(await readFile(join(repoRoot, 'package.json'), 'utf8')) as {

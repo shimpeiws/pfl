@@ -10,7 +10,7 @@ import { frontmatterMetadata, readFrontmatter } from './frontmatter.js';
 describe('readFrontmatter', () => {
   it('reports absence when the file does not open with a fence', () => {
     expect(readFrontmatter('# Just a heading\nname: nope\n')).toEqual({
-      facts: { hasFrontmatter: false, keys: [], toolNames: [] },
+      facts: { hasFrontmatter: false, keys: [], toolNames: [], dependencyNames: [] },
       malformed: false,
     });
   });
@@ -46,6 +46,24 @@ describe('readFrontmatter', () => {
     const read = readFrontmatter(['---', 'allowed-tools: Read, Write, Edit', '---'].join('\n'));
 
     expect(read.facts.toolNames).toEqual(['Read', 'Write', 'Edit']);
+  });
+
+  it('reads inline and block dependency lists as identifiers', () => {
+    const inline = readFrontmatter(['---', 'dependencies: [alpha, beta]', '---'].join('\n'));
+    const block = readFrontmatter(
+      ['---', 'name: foo', 'dependencies:', '  - alpha', '  - beta', '---'].join('\n'),
+    );
+
+    expect(inline.facts.dependencyNames).toEqual(['alpha', 'beta']);
+    expect(block.facts.dependencyNames).toEqual(['alpha', 'beta']);
+  });
+
+  it('drops non-identifier dependency fragments', () => {
+    const read = readFrontmatter(
+      ['---', 'dependencies: [ok, "has space", a:b:c, one,two]', '---'].join('\n'),
+    );
+
+    expect(read.facts.dependencyNames).toEqual(['ok', 'one', 'two']);
   });
 
   it('accepts a parenthesized tool specifier', () => {
@@ -134,6 +152,7 @@ describe('readFrontmatter', () => {
       hasFrontmatter: true,
       keys: ['__proto__', 'constructor', 'name'],
       toolNames: [],
+      dependencyNames: [],
     });
     expect(Object.prototype).not.toHaveProperty('polluted');
     expect(({} as Record<string, unknown>)['polluted']).toBeUndefined();
@@ -160,6 +179,20 @@ describe('frontmatterMetadata', () => {
       toolNames: ['Read'],
       descriptionLength: 'a description'.length,
     });
-    expect(frontmatterMetadata({ hasFrontmatter: false, keys: [], toolNames: [] })).toEqual({});
+    expect(
+      frontmatterMetadata({ hasFrontmatter: false, keys: [], toolNames: [], dependencyNames: [] }),
+    ).toEqual({});
+  });
+
+  it('maps dependency names when declared', () => {
+    const read = readFrontmatter(
+      ['---', 'name: foo', 'dependencies: [foundation, formatting]', '---'].join('\n'),
+    );
+
+    expect(frontmatterMetadata(read.facts)).toEqual({
+      hasFrontmatter: true,
+      frontmatterKeys: ['name', 'dependencies'],
+      dependencyNames: ['foundation', 'formatting'],
+    });
   });
 });

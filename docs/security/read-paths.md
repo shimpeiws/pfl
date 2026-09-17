@@ -141,6 +141,17 @@ a symlink (`inspectFileTarget` refuses one at the leaf). A project deeper than
 the ceiling reports a `limit-exceeded` diagnostic naming `MAX_ANCESTOR_DIRS`
 rather than silently dropping its ancestors.
 
+M7 Phase 4 adds **no new read path**. `~/.codex/rules/**` is already inside the
+walked `~/.codex/<element-dirs>/**` area recorded above, so a `.rules` file is
+read by the same guarded walk. The walk's `describeFile` now derives
+`{ allowCount, denyCount }` from the bytes it already read to hash, and only
+those counts leave the walk — a rule pattern, command, or argument is never
+persisted. The `config.toml` read is unchanged: the same single guarded
+`readFile` now also records `model_context_window`,
+`model_max_output_tokens`, and `model_auto_compact_token_limit` as integers.
+Project-scoped skills are unchanged; `dependencies` frontmatter is read from the
+same skill files and stored only as redacted, allowlisted names.
+
 ### `snapshot/store.ts`
 
 | Line | Read                               | Guard                                       | Classification |
