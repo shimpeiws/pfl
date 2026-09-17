@@ -1,11 +1,12 @@
 import { randomBytes } from 'node:crypto';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, rename, unlink, writeFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 import { EXIT_CODES, PflError } from '../cli/exit-codes.js';
 import type { RuntimeId } from '../core/ids.js';
 import type { AccessPolicy } from '../runtime/types.js';
+import { checkSymlinkAncestors } from '../util/fs.js';
 import { permissionsPath } from '../snapshot/store.js';
 
 /**
@@ -31,6 +32,12 @@ export interface ConsentStore {
 }
 
 export async function loadConsentStore(home: string = homedir()): Promise<ConsentStore> {
+  // `~/.pfl` and `permissions.json` are pfl's own store: a symlink at either is
+  // refused rather than followed, so a redirected store is not read from or
+  // written to (S10).
+  if ((await checkSymlinkAncestors(home, permissionsPath(home))) !== 'ok') {
+    return { grantedScopes: [] };
+  }
   const text = await readFile(permissionsPath(home), 'utf8').catch(() => null);
   if (text === null) return { grantedScopes: [] };
 
@@ -45,16 +52,45 @@ export async function loadConsentStore(home: string = homedir()): Promise<Consen
   return { grantedScopes: granted.filter((value): value is string => typeof value === 'string') };
 }
 
+const DIR_MODE = 0o700;
+const FILE_MODE = 0o600;
+
+/**
+ * Records a grant, writing `~/.pfl/permissions.json` the way the snapshot
+ * store writes its artifacts (roadmap S10): the directory and file modes are
+ * re-asserted rather than trusted to `umask`, and the temp file is cleaned up
+ * in a `finally` even when the rename fails. That the file is tamperable by
+ * anything running as the same user is an accepted risk (A2).
+ */
 export async function grantConsent(scopeKey: string, home: string = homedir()): Promise<void> {
   const store = await loadConsentStore(home);
   if (!store.grantedScopes.includes(scopeKey)) {
     store.grantedScopes.push(scopeKey);
   }
   const target = permissionsPath(home);
-  await mkdir(dirname(target), { recursive: true, mode: 0o700 });
+  if ((await checkSymlinkAncestors(home, target)) !== 'ok') {
+    throw new PflError(
+      'the consent store path is a symlink and was not written',
+      EXIT_CODES.SNAPSHOT_STORE_FAILED,
+    );
+  }
+  const dir = dirname(target);
   const temp = `${target}.${randomBytes(6).toString('hex')}.tmp`;
-  await writeFile(temp, `${JSON.stringify(store, null, 2)}\n`, { mode: 0o600 });
-  await rename(temp, target);
+  try {
+    await mkdir(dir, { recursive: true, mode: DIR_MODE });
+    await chmod(dir, DIR_MODE);
+    await writeFile(temp, `${JSON.stringify(store, null, 2)}\n`, { mode: FILE_MODE });
+    await chmod(temp, FILE_MODE);
+    await rename(temp, target);
+    await chmod(target, FILE_MODE);
+  } catch (error) {
+    throw new PflError(
+      `could not write the consent store: ${error instanceof Error ? error.message : String(error)}`,
+      EXIT_CODES.SNAPSHOT_STORE_FAILED,
+    );
+  } finally {
+    await unlink(temp).catch(() => undefined);
+  }
 }
 
 export function hasConsent(store: ConsentStore, runtimeId: RuntimeId, scope: string): boolean {
@@ -153,7 +189,7 @@ export function renderConsentPrompt(request: ConsentRequest): string {
     '  ✗ Store file contents',
     '  ✗ Store environment values or credentials',
     `  ✗ Execute ${request.runtimeName} or any discovered tool`,
-    '  ✗ Follow symlinks',
+    '  ✗ Follow symlinks inside the listed locations',
     '',
     'Allow this runtime scope? [y/N] ',
   );

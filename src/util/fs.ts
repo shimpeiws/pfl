@@ -142,21 +142,24 @@ export async function readTextFileGuarded(
 }
 
 /**
- * Whether `path` itself exists and is not a symlink. A symlinked ancestor is
- * not resolved here; the caller that needs scope-wide ancestor checks uses
- * `inspectFileTarget` with a base directory.
+ * Whether `path` exists, without following a symlink at any component between
+ * `baseDir` (exclusive) and the target (inclusive). A symlinked component, or a
+ * symlinked leaf, counts as absent.
  */
-export async function pathExists(path: string): Promise<boolean> {
+export async function pathExists(baseDir: string, path: string): Promise<boolean> {
+  if ((await checkSymlinkAncestors(baseDir, path)) !== 'ok') return false;
   const entry = await lstat(path).catch(() => null);
   return entry !== null && !entry.isSymbolicLink();
 }
 
 /**
  * Directory entry names, or an empty list when `path` is missing, is not a real
- * directory, or is a symlink. Non-following so a symlinked install directory is
- * not traversed (ADR 0002 §1).
+ * directory, or is reached through a symlink. Non-following at every component
+ * under `baseDir`, so neither a symlinked install directory nor a symlinked
+ * ancestor is traversed (ADR 0002 §1).
  */
-export async function readDirectoryNames(path: string): Promise<string[]> {
+export async function readDirectoryNames(baseDir: string, path: string): Promise<string[]> {
+  if ((await checkSymlinkAncestors(baseDir, path)) !== 'ok') return [];
   const entry = await lstat(path).catch(() => null);
   if (entry === null || !entry.isDirectory()) return [];
   return readdir(path).catch(() => []);
