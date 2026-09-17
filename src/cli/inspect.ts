@@ -1,4 +1,8 @@
 import { homedir } from 'node:os';
+import { classify } from '../classify/classifier.js';
+import { deriveFindings } from '../classify/findings.js';
+import { generateInterpretationId } from '../core/ids.js';
+import type { Interpretation } from '../core/interpretation.js';
 import type { ObservedSnapshot } from '../core/observed.js';
 import type { ResolvedSnapshot, ResolvedStatus } from '../core/resolved.js';
 import { resolveAccessPolicy, type ConsentIO } from '../discovery/consent.js';
@@ -6,7 +10,9 @@ import { resolveProjectContext } from '../discovery/project-identity.js';
 import { resolveHarness } from '../resolution/resolver.js';
 import { getAdapter, getConsentRequest } from '../runtime/registry.js';
 import type { RuntimeDetection } from '../runtime/types.js';
+import { SNAPSHOT_SCHEMA_VERSION } from '../snapshot/serialization.js';
 import {
+  writeInterpretation,
   writeLatestPointer,
   writeObservedSnapshot,
   writeResolvedSnapshot,
@@ -85,11 +91,26 @@ export async function runInspect(
   const observed = await adapter.discover(project, access, home, options.pathValue);
   const resolved = await resolveHarness(adapter, observed, home);
 
+  // The interpretation is a run artifact, persisted with its siblings so a
+  // report reproduces and can name the classifier that produced it (#84).
+  const interpretation: Interpretation = {
+    schemaVersion: SNAPSHOT_SCHEMA_VERSION,
+    interpretationId: generateInterpretationId(),
+    resolvedSnapshotId: resolved.snapshotId,
+    ...classify(observed, resolved),
+    findings: deriveFindings(observed, resolved),
+  };
+
   await writeObservedSnapshot(project.id, observed, home);
   await writeResolvedSnapshot(project.id, resolved, home);
+  await writeInterpretation(project.id, interpretation, home);
   await writeLatestPointer(
     project.id,
-    { observed: observed.snapshotId, resolved: resolved.snapshotId },
+    {
+      observed: observed.snapshotId,
+      resolved: resolved.snapshotId,
+      interpretation: interpretation.interpretationId,
+    },
     home,
   );
 

@@ -136,6 +136,7 @@ function makeRun(options: {
     },
   };
   const interpretation: Interpretation = {
+    schemaVersion: '1',
     interpretationId: generateInterpretationId(),
     resolvedSnapshotId,
     classifier: { id: 'pfl-native', version: options.classifierVersion ?? '1' },
@@ -155,7 +156,7 @@ function makeRun(options: {
     },
     findings: options.findings ?? [],
   };
-  return { observed, resolved, interpretation, diagnostics: [] };
+  return { observed, resolved, interpretation, interpretationOrigin: 'stored', diagnostics: [] };
 }
 
 describe('computeDiff', () => {

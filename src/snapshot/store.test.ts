@@ -15,11 +15,14 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { EXIT_CODES, PflError } from '../cli/exit-codes.js';
 import { MAX_ARTIFACT_BYTES } from '../limits.js';
 import {
+  generateInterpretationId,
   generateObservedSnapshotId,
   generateResolvedSnapshotId,
   runtimeId,
   type ObservedSnapshotId,
+  type ResolvedSnapshotId,
 } from '../core/ids.js';
+import type { Interpretation } from '../core/interpretation.js';
 import type { ObservedSnapshot } from '../core/observed.js';
 import type { ResolvedSnapshot } from '../core/resolved.js';
 import { serializeSnapshot } from './serialization.js';
@@ -32,10 +35,12 @@ import {
   pflHome,
   projectDir,
   readInterpretation,
+  readInterpretationIfPresent,
   readLatestPointer,
   readObservedSnapshot,
   readResolvedSnapshot,
   snapshotsDir,
+  writeInterpretation,
   writeLatestPointer,
   writeObservedSnapshot,
   writeResolvedSnapshot,
@@ -342,6 +347,53 @@ describe('resolved snapshots', () => {
   });
 });
 
+describe('uninterpretable artifacts (schema, #82)', () => {
+  it('reports an unsupported schema version as a diagnostic, not a store failure', async () => {
+    const home = await tempHome();
+    await mkdir(snapshotsDir('proj', home), { recursive: true });
+    await writeFile(
+      join(snapshotsDir('proj', home), 'res_future.json'),
+      '{"schemaVersion":"2","snapshotId":"res_future"}\n',
+    );
+
+    const error = await readResolvedSnapshot('proj', 'res_future', home).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(PflError);
+    expect((error as PflError).exitCode).toBe(EXIT_CODES.CONFIG_ERROR);
+    const diagnostic = (error as PflError).data?.diagnostics?.[0];
+    expect(diagnostic?.code).toBe('unsupported-snapshot-schema');
+    // The message must name the version found and the versions supported.
+    expect(diagnostic?.message).toContain('2');
+    expect(diagnostic?.message).toContain('1');
+  });
+
+  it('reports malformed JSON consistently with an unsupported version', async () => {
+    const home = await tempHome();
+    await mkdir(observationsDir('proj', home), { recursive: true });
+    await writeFile(join(observationsDir('proj', home), 'obs_bad.json'), 'not json\n');
+
+    const error = await readObservedSnapshot('proj', 'obs_bad', home).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(PflError);
+    expect((error as PflError).exitCode).toBe(EXIT_CODES.CONFIG_ERROR);
+    expect((error as PflError).data?.diagnostics?.[0]?.code).toBe('invalid-snapshot');
+  });
+
+  it('surfaces the same diagnostic through listRuns instead of failing the scan', async () => {
+    const home = await tempHome();
+    const observed = makeObserved();
+    await writeObservedSnapshot('proj', observed, home);
+    await mkdir(snapshotsDir('proj', home), { recursive: true });
+    await writeFile(
+      join(snapshotsDir('proj', home), 'res_future.json'),
+      '{"schemaVersion":"2","snapshotId":"res_future"}\n',
+    );
+
+    const { runs, diagnostics } = await listRuns('proj', home);
+
+    expect(runs.map((run) => run.observedId)).toContain(observed.snapshotId);
+    expect(diagnostics.map((entry) => entry.code)).toContain('unsupported-snapshot-schema');
+  });
+});
+
 describe('latest pointer', () => {
   it('is null until written, then resolves to both ids', async () => {
     const home = await tempHome();
@@ -390,11 +442,41 @@ describe('listRuns', () => {
     const { runs, diagnostics } = await listRuns('proj', home);
 
     expect(runs).toEqual([]);
-    expect(diagnostics.map((entry) => entry.code)).toContain('unreadable-observation');
+    // #82: a malformed artifact reports its specific diagnostic, the same one a
+    // direct read surfaces, rather than a generic scan code.
+    expect(diagnostics.map((entry) => entry.code)).toContain('invalid-snapshot');
   });
 });
 
 describe('readInterpretation', () => {
+  it('round-trips through writeInterpretation and reports absence as null', async () => {
+    const home = await tempHome();
+    const interpretation: Interpretation = {
+      schemaVersion: '1',
+      interpretationId: generateInterpretationId(),
+      resolvedSnapshotId: 'res_y' as ResolvedSnapshotId,
+      classifier: { id: 'pfl-native', version: '4' },
+      elements: [],
+      stats: {
+        observed: 0,
+        effective: 0,
+        shadowed: 0,
+        conditional: 0,
+        opaque: 0,
+        byFacet: {},
+      },
+      findings: [],
+    };
+
+    await writeInterpretation('proj', interpretation, home);
+    await expect(
+      readInterpretation('proj', interpretation.interpretationId, home),
+    ).resolves.toMatchObject({ classifier: { version: '4' } });
+
+    // A run captured before v1.0 carries no interpretation; absence is not an error.
+    await expect(readInterpretationIfPresent('proj', 'int_absent', home)).resolves.toBeNull();
+  });
+
   it('reads from interpretations/', async () => {
     const home = await tempHome();
     await mkdir(interpretationsDir('proj', home), { recursive: true });

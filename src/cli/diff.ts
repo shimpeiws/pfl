@@ -8,7 +8,12 @@ import { redactingLogger } from '../redact/output.js';
 import type { Logger } from '../util/logger.js';
 import { type CommandOutcome } from './document.js';
 import { EXIT_CODES, PflError } from './exit-codes.js';
-import { loadInterpretation, type InterpretedRun } from './read.js';
+import {
+  interpretationProvenance,
+  loadInterpretation,
+  type InterpretedRun,
+  type InterpretationProvenance,
+} from './read.js';
 
 export interface DiffOptions {
   json?: boolean;
@@ -40,6 +45,8 @@ export interface DiffData {
   relations: { added: RelationRef[]; removed: RelationRef[] };
   findings: { added: Finding[]; removed: Finding[] };
   versionNotes: string[];
+  /** Each side's classifier version and whether it was stored or recomputed (#84). */
+  interpretation: { a: InterpretationProvenance; b: InterpretationProvenance };
 }
 
 export interface DiffResult {
@@ -109,6 +116,10 @@ export async function runDiff(
     relations: result.relations,
     findings: result.findings,
     versionNotes: result.versionNotes,
+    interpretation: {
+      a: interpretationProvenance(runA),
+      b: interpretationProvenance(runB),
+    },
   };
   const outcome = {
     data,

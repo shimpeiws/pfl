@@ -47,9 +47,21 @@ export interface Finding {
 }
 
 export interface Interpretation {
+  /**
+   * The on-disk schema of the interpretation artifact, governed by
+   * `SNAPSHOT_SCHEMA_VERSION` like every other stored artifact. Persisted since
+   * v1.0, when interpretations stopped being recomputed on every read.
+   */
+  schemaVersion: string;
+
   interpretationId: InterpretationId;
   resolvedSnapshotId: ResolvedSnapshotId;
 
+  /**
+   * The classifier that produced this interpretation. `version` is the
+   * `CLASSIFIER_VERSION` constant; it does not feed any digest, so a classifier
+   * change never invalidates a stored snapshot.
+   */
   classifier: {
     id: string;
     version: string;

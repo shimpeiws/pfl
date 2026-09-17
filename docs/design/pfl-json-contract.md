@@ -110,6 +110,14 @@ same shape, exiting 5 with the missing scope keys in `missingScopes`:
 
 So a caller acts on the document rather than parsing prose from stderr.
 
+A failure may also carry `diagnostics` when its cause is a recorded condition
+rather than a bare error. An artifact whose schema this binary does not support
+is the v1.0 case: a direct read of it fails with exit 2 (`CONFIG_ERROR`) and a
+diagnostic whose `code` is `unsupported-snapshot-schema` and whose `message`
+names the version found and the versions supported, instead of a store failure.
+A malformed artifact is the same shape with `invalid-snapshot`. A scan
+(`snapshots`) skips such an artifact and succeeds with the diagnostic.
+
 Argument errors are the same envelope, even though they are rejected before the
 command runs: an unknown option or a missing required argument exits 2 with
 `CONFIG_ERROR`, so a `--json` run never falls back to a stack trace. An unknown
@@ -146,14 +154,15 @@ nested under `data`.
   project: { id, displayName },
   observedSnapshotId, resolvedSnapshotId,
   confidence,
-  stats, findings
+  stats, findings,
+  interpretation: { classifierVersion, origin }
 }
 ```
 
 ### `list`
 
 ```text
-{ count, elements: [{ id, kind, origin, status, facets }] }
+{ count, elements: [{ id, kind, origin, status, facets }], interpretation: { classifierVersion, origin } }
 ```
 
 `elements` is ordered by `id`.
@@ -161,15 +170,17 @@ nested under `data`.
 ### `show`
 
 ```text
-{ observed, resolved, interpretation, relations, findings }
+{ observed, resolved, interpretation, relations, findings, interpretationProvenance: { classifierVersion, origin } }
 ```
 
 `resolved` and `interpretation` are `null` when the element has no such layer.
+`interpretationProvenance` is named apart from `interpretation`, which this
+command already uses for the element's interpretation.
 
 ### `graph`
 
 ```text
-{ observedSnapshotId, resolvedSnapshotId, nodes, edges }
+{ observedSnapshotId, resolvedSnapshotId, nodes, edges, interpretation: { classifierVersion, origin } }
 ```
 
 `nodes` is ordered by `id`; `edges` carry `{ type, from, to }`.
@@ -192,7 +203,8 @@ nested under `data`.
   structural, effective, facetDeltas,
   relations: { added: [{ type, from, to }], removed: [{ type, from, to }] },
   findings: { added: [...], removed: [...] },
-  versionNotes
+  versionNotes,
+  interpretation: { a: { classifierVersion, origin }, b: { classifierVersion, origin } }
 }
 ```
 
@@ -200,6 +212,16 @@ Both sides are diffed. When the two sides' interpretations came from different
 classifier versions the difference is named in `versionNotes`, exactly as a
 runtime-version or resolution-semantics difference is. `relations` and
 `findings` are ordered as the "Array order" section states.
+
+### Interpretation provenance
+
+The read commands report `interpretation: { classifierVersion, origin }` —
+`show` calls it `interpretationProvenance`, and `diff` reports each side's.
+`classifierVersion` is the classifier that produced the interpretation; `origin`
+is `stored` or `recomputed`. Since v1.0 `inspect` persists the interpretation, so
+a report on a fixed snapshot reproduces; a snapshot captured before v1.0 carries
+none and is recomputed, and the document says so. Absence of a stored
+interpretation is never an error.
 
 ### `gc` (implemented under issue #87)
 

@@ -6,7 +6,11 @@ import { redactingLogger } from '../redact/output.js';
 import type { Logger } from '../util/logger.js';
 import { type CommandOutcome } from './document.js';
 import { EXIT_CODES, PflError } from './exit-codes.js';
-import { loadInterpretation } from './read.js';
+import {
+  interpretationProvenance,
+  loadInterpretation,
+  type InterpretationProvenance,
+} from './read.js';
 
 export interface ListOptions {
   snapshot?: string;
@@ -46,6 +50,8 @@ interface ListRow {
 export interface ListData {
   count: number;
   elements: ListRow[];
+  /** Which classifier produced the interpretation, and where it came from (#84). */
+  interpretation: InterpretationProvenance;
 }
 
 /**
@@ -65,11 +71,8 @@ export async function runList(
   const home = options.home ?? homedir();
   const out = redactingLogger(logger, options.json ? 'export' : 'display', { home });
 
-  const { observed, resolved, interpretation, diagnostics } = await loadInterpretation(
-    cwd,
-    options.snapshot,
-    home,
-  );
+  const run = await loadInterpretation(cwd, options.snapshot, home);
+  const { observed, resolved, interpretation, diagnostics } = run;
   for (const diagnostic of diagnostics) {
     out.warn(diagnostic.message, { code: diagnostic.code, path: diagnostic.path ?? undefined });
   }
@@ -96,7 +99,11 @@ export async function runList(
   // Elements are ordered by id, as the document contract states; the human
   // listing keeps discovery order.
   const elements = [...rows].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
-  const data: ListData = { count: elements.length, elements };
+  const data: ListData = {
+    count: elements.length,
+    elements,
+    interpretation: interpretationProvenance(run),
+  };
   const outcome = { data, diagnostics, completeness: observed.completeness };
 
   if (options.json) return outcome;

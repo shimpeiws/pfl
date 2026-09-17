@@ -7,7 +7,11 @@ import { redactElementSource, redactingLogger } from '../redact/output.js';
 import type { Logger } from '../util/logger.js';
 import { type CommandOutcome } from './document.js';
 import { EXIT_CODES, PflError } from './exit-codes.js';
-import { loadInterpretation } from './read.js';
+import {
+  interpretationProvenance,
+  loadInterpretation,
+  type InterpretationProvenance,
+} from './read.js';
 
 export interface ShowOptions {
   snapshot?: string;
@@ -22,6 +26,12 @@ export interface ShowData {
   interpretation: Interpretation['elements'][number] | null;
   relations: Relation[];
   findings: Interpretation['findings'];
+  /**
+   * Which classifier produced the interpretation, and where it came from (#84).
+   * Named `interpretationProvenance` because `interpretation` is already this
+   * command's per-element interpretation.
+   */
+  interpretationProvenance: InterpretationProvenance;
 }
 
 /**
@@ -38,11 +48,8 @@ export async function runShow(
 ): Promise<CommandOutcome<ShowData>> {
   const home = options.home ?? homedir();
   const out = redactingLogger(logger, options.json ? 'export' : 'display', { home });
-  const { observed, resolved, interpretation, diagnostics } = await loadInterpretation(
-    cwd,
-    options.snapshot,
-    home,
-  );
+  const run = await loadInterpretation(cwd, options.snapshot, home);
+  const { observed, resolved, interpretation, diagnostics } = run;
   for (const diagnostic of diagnostics) {
     out.warn(diagnostic.message, { code: diagnostic.code, path: diagnostic.path ?? undefined });
   }
@@ -71,6 +78,7 @@ export async function runShow(
     interpretation: interpretationElement ?? null,
     relations,
     findings,
+    interpretationProvenance: interpretationProvenance(run),
   };
   if (options.json) {
     return { data, diagnostics, completeness: observed.completeness };

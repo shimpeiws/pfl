@@ -70,10 +70,11 @@ pfl graph --snapshot <id>
 
 pfl snapshots
 
-pfl diff <snapshot-a> <snapshot-b>
+pfl diff <snapshot-a> [snapshot-b]
 ```
 
-The default snapshot for read commands is `latest`.
+The default snapshot for read commands is `latest`; `diff`'s second operand
+defaults to it, and the literal `latest` is accepted anywhere an id is.
 
 ## Machine-readable output (`--json`)
 
@@ -83,6 +84,16 @@ envelope — `pflVersion`, `command`, `ok`, `completeness`, `diagnostics`, `data
 so a consumer parses it without knowing which command produced it, and failures
 emit the same envelope with `ok: false`. The full contract is in
 [`docs/design/pfl-json-contract.md`](docs/design/pfl-json-contract.md).
+
+## Versions
+
+Four version values are independent: the package version, the on-disk snapshot
+schema, the resolution semantics, and the classifier. A snapshot's schema
+governs readability (an unknown one is refused, not guessed); the semantics
+version feeds the resolved digest and is diff-visible; the classifier version
+feeds no digest but is stored with the interpretation, so a report reproduces
+and names the classifier that produced it. See
+[`docs/design/versions.md`](docs/design/versions.md).
 
 ## Exit codes
 
