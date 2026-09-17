@@ -157,6 +157,16 @@ a truncated fragment. A declared tool candidate that is not a tool-name shape �
 an identifier with at most one parenthesized specifier — is dropped, so arbitrary
 prose or `key: value` text is never persisted as a tool name.
 
+**M7 addition — TOML reader shape ceilings.** The expanded `config.toml` reader
+(issue #74) keeps its linear, non-recursive, `Map`-based shape and adds three
+ceilings against a hostile document: `MAX_TOML_SECTION_DEPTH` (8) bounds a
+section path, `MAX_TOML_ARRAY_ITEMS` (256) bounds an array, and
+`MAX_TOML_SCALAR_LENGTH` (256) bounds a scalar string. Hitting one marks the file
+malformed, so the adapter records an `invalid-toml` diagnostic rather than
+allocating without limit; the old quadratic section-header pattern is replaced by
+a linear scan. `[shell_environment_policy.set]` values are never persisted — only
+the key count is — so environment values remain out of every channel.
+
 ### 5. Path containment (S12)
 
 `isPathWithin` composes its comparison with the path module rather than a

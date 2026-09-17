@@ -25,6 +25,7 @@ import { detectCodex } from './detect.js';
 import { CODEX_SAFE_METADATA_ALLOWLIST } from './metadata.js';
 import { redactCodex } from './redact.js';
 import {
+  MODELLED_CONFIG_SECTIONS,
   PROJECT_INSTRUCTION_FILES,
   USER_CONFIG_FILE,
   USER_DIR_KIND,
@@ -34,7 +35,7 @@ import {
   userConfigDir,
   type CodexElementKind,
 } from './paths.js';
-import { readTomlFacts } from './toml.js';
+import { readTomlFacts, type TomlTable } from './toml.js';
 
 /**
  * Discovers the Codex harness and builds an immutable ObservedSnapshot (design
@@ -80,7 +81,7 @@ export async function collectCodexHarness(
 
   await collectProject(project, elements, diagnostics);
   if (access.allowOutsideProject) {
-    await collectUser(home, elements, diagnostics);
+    await collectUser(project, home, elements, diagnostics);
   }
   elements.push(builtinLayer());
 
@@ -122,6 +123,7 @@ async function collectProject(
 }
 
 async function collectUser(
+  project: ProjectContext,
   home: string,
   elements: ObservedElement[],
   diagnostics: Diagnostic[],
@@ -140,6 +142,7 @@ async function collectUser(
   await collectToml(
     join(configDir, USER_CONFIG_FILE),
     `${USER_PREFIX}/${USER_CONFIG_FILE}`,
+    project,
     configDir,
     elements,
     diagnostics,
@@ -169,6 +172,7 @@ async function collectUser(
 async function collectToml(
   absPath: string,
   displayPath: string,
+  project: ProjectContext,
   baseDir: string,
   elements: ObservedElement[],
   diagnostics: Diagnostic[],
@@ -200,41 +204,128 @@ async function collectToml(
     return;
   }
   const facts = readTomlFacts(read.text);
+  if (facts.malformed) diagnostics.push(invalidTomlDiagnostic(displayPath));
+  const root = facts.root;
 
-  const approval: Record<string, SafeMetadataValue> = {
-    ...(facts.values['approval_policy'] !== undefined
-      ? { approvalMode: facts.values['approval_policy'] }
-      : {}),
-    ...(facts.values['sandbox_mode'] !== undefined
-      ? { sandboxMode: facts.values['sandbox_mode'] }
-      : {}),
-  };
+  const approval: Record<string, SafeMetadataValue> = {};
+  const approvalPolicy = scalarString(root, 'approval_policy');
+  if (approvalPolicy !== undefined) approval['approvalMode'] = approvalPolicy;
+  const sandboxMode = scalarString(root, 'sandbox_mode');
+  if (sandboxMode !== undefined) approval['sandboxMode'] = sandboxMode;
   if (Object.keys(approval).length > 0) {
     elements.push(configElement('approval-sandbox', `${displayPath}#approval`, approval));
   }
 
-  const context: Record<string, SafeMetadataValue> = {
-    ...(facts.values['model'] !== undefined ? { model: facts.values['model'] } : {}),
-    ...(facts.values['model_reasoning_effort'] !== undefined
-      ? { reasoningEffort: facts.values['model_reasoning_effort'] }
-      : {}),
-    ...(facts.values['service_tier'] !== undefined
-      ? { serviceTier: facts.values['service_tier'] }
-      : {}),
-  };
+  const context: Record<string, SafeMetadataValue> = {};
+  const model = scalarString(root, 'model');
+  if (model !== undefined) context['model'] = model;
+  const reasoningEffort = scalarString(root, 'model_reasoning_effort');
+  if (reasoningEffort !== undefined) context['reasoningEffort'] = reasoningEffort;
+  const serviceTier = scalarString(root, 'service_tier');
+  if (serviceTier !== undefined) context['serviceTier'] = serviceTier;
   if (Object.keys(context).length > 0) {
     elements.push(configElement('compaction-controls', `${displayPath}#context`, context));
   }
 
-  if (facts.mcpServers.length > 0) {
+  const mcpServers = root.tables.get('mcp_servers');
+  if (mcpServers !== undefined && mcpServers.tables.size > 0) {
     elements.push(
       configElement('mcp-configuration', `${displayPath}#mcp_servers`, {
-        serverNames: facts.mcpServers,
+        serverNames: [...mcpServers.tables.keys()],
       }),
     );
   }
-  // Plugins are intentionally not recorded: §31.2's kinds have no plugin layer.
-  void facts.plugins;
+
+  const plugins = root.tables.get('plugins');
+  if (plugins !== undefined && plugins.tables.size > 0) {
+    let enabled = 0;
+    for (const plugin of plugins.tables.values()) {
+      if (plugin.scalars.get('enabled') === true) enabled += 1;
+    }
+    elements.push(
+      configElement('plugin', `${displayPath}#plugins`, {
+        pluginNames: [...plugins.tables.keys()],
+        enabledPluginCount: enabled,
+      }),
+    );
+  }
+
+  const marketplaces = root.tables.get('marketplaces');
+  if (marketplaces !== undefined && marketplaces.tables.size > 0) {
+    elements.push(
+      configElement('plugin', `${displayPath}#marketplaces`, {
+        marketplaceNames: [...marketplaces.tables.keys()],
+      }),
+    );
+  }
+
+  const sandboxSection = root.tables.get('sandbox_workspace_write');
+  if (sandboxSection !== undefined) {
+    const metadata: Record<string, SafeMetadataValue> = {};
+    const networkAccess = scalarBoolean(sandboxSection, 'network_access');
+    if (networkAccess !== undefined) metadata['networkAccess'] = networkAccess;
+    const writableRoots = scalarArrayLength(sandboxSection, 'writable_roots');
+    if (writableRoots !== undefined) metadata['writableRootCount'] = writableRoots;
+    if (Object.keys(metadata).length > 0) {
+      elements.push(
+        configElement('approval-sandbox', `${displayPath}#sandbox_workspace_write`, metadata),
+      );
+    }
+  }
+
+  const shell = root.tables.get('shell_environment_policy');
+  if (shell !== undefined) {
+    const metadata: Record<string, SafeMetadataValue> = {};
+    const inheritMode = scalarString(shell, 'inherit');
+    if (inheritMode !== undefined) metadata['inheritMode'] = inheritMode;
+    const set = shell.tables.get('set');
+    if (set !== undefined) metadata['setKeyCount'] = set.scalars.size;
+    if (Object.keys(metadata).length > 0) {
+      elements.push(
+        configElement('shell-environment', `${displayPath}#shell_environment_policy`, metadata),
+      );
+    }
+  }
+
+  const projects = root.tables.get('projects');
+  const projectEntry = projects?.tables.get(project.root);
+  if (projectEntry !== undefined) {
+    const trustLevel = scalarString(projectEntry, 'trust_level');
+    if (trustLevel !== undefined) {
+      elements.push(
+        configElement(
+          'project-configuration',
+          `${displayPath}#projects.${project.root}`,
+          { trustLevel },
+          'user',
+          'project',
+        ),
+      );
+    }
+  }
+
+  const profiles = root.tables.get('profiles');
+  if (profiles !== undefined) {
+    for (const [name, profile] of profiles.tables) {
+      const metadata: Record<string, SafeMetadataValue> = {};
+      const profileApproval = scalarString(profile, 'approval_policy');
+      if (profileApproval !== undefined) metadata['approvalMode'] = profileApproval;
+      const profileSandbox = scalarString(profile, 'sandbox_mode');
+      if (profileSandbox !== undefined) metadata['sandboxMode'] = profileSandbox;
+      if (Object.keys(metadata).length > 0) {
+        elements.push(
+          configElement('approval-sandbox', `${displayPath}#profiles.${name}`, metadata),
+        );
+      }
+    }
+  }
+
+  // Every section the adapter does not model is recorded rather than dropped, so
+  // a new runtime section surfaces instead of disappearing (roadmap §5 M7).
+  for (const section of root.tables.keys()) {
+    if ((MODELLED_CONFIG_SECTIONS as readonly string[]).includes(section)) continue;
+    elements.push(unsupportedConfigSection(`${displayPath}#${section}`));
+  }
 }
 
 async function collectHooks(
@@ -414,15 +505,48 @@ function configElement(
   kind: CodexElementKind,
   path: string,
   raw: Record<string, SafeMetadataValue>,
+  origin: NativeOrigin = 'user',
+  scope = 'user',
 ): ObservedElement {
   return buildObservedElement({
     runtimeId: RUNTIME_ID,
-    origin: 'user',
-    scope: 'user',
+    origin,
+    scope,
     kind,
     path,
     metadata: toSafeMetadata(raw),
   });
+}
+
+/**
+ * A `config.toml` section the adapter knows exists but does not model. Recorded
+ * as `unsupported` so it is visible rather than silently ignored.
+ */
+function unsupportedConfigSection(path: string): ObservedElement {
+  return buildObservedElement({
+    runtimeId: RUNTIME_ID,
+    origin: 'user',
+    scope: 'user',
+    kind: 'unknown',
+    path,
+    status: 'unsupported',
+    reason: 'unsupported-by-adapter',
+  });
+}
+
+function scalarString(table: TomlTable, key: string): string | undefined {
+  const value = table.scalars.get(key);
+  return typeof value === 'string' ? value : undefined;
+}
+
+function scalarBoolean(table: TomlTable, key: string): boolean | undefined {
+  const value = table.scalars.get(key);
+  return typeof value === 'boolean' ? value : undefined;
+}
+
+function scalarArrayLength(table: TomlTable, key: string): number | undefined {
+  const value = table.scalars.get(key);
+  return Array.isArray(value) ? value.length : undefined;
 }
 
 function symlinkElement(
@@ -562,6 +686,15 @@ function hardlinkDiagnostic(displayPath: string): Diagnostic {
     severity: 'warning',
     code: 'hardlink-not-followed',
     message: `hardlink not followed: ${displayPath}`,
+    path: displayPath,
+  };
+}
+
+function invalidTomlDiagnostic(displayPath: string): Diagnostic {
+  return {
+    severity: 'warning',
+    code: 'invalid-toml',
+    message: `could not fully parse ${displayPath}`,
     path: displayPath,
   };
 }
