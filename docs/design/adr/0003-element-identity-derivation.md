@@ -69,13 +69,16 @@ nothing in exactly the case that matters — the adapter that forgot the fragmen
 is present whether or not a fragment is.
 
 Honest limit: two elements of the **same** kind built from one file still need
-distinct display paths. This is not a latent gap, because such elements need
-distinct fragments for an independent reason: the fragment is the settings key
-that cross-scope shadowing and the `conflicting-scope` finding group on. Codex's
+distinct display paths, and the extension guarantees uniqueness *across* kinds
+only. In practice same-kind siblings are distinct config sections and carry
+fragments for an independent reason anyway: the fragment is the settings key that
+cross-scope shadowing and the `conflicting-scope` finding group on. Codex's
 `config.toml#plugins` and `config.toml#marketplaces` are both `plugin` elements
-and are separated by their fragments, which they must have anyway. The identity
-extension removes the fragment's *uniqueness* burden for different-kind
-elements; it does not remove the fragment.
+and are separated by their fragments. Nothing in the type system enforces that,
+though, so what actually holds same-kind uniqueness is the fragment convention
+plus the discovery tests that plant it. The identity extension removes the
+fragment's *uniqueness* burden for different-kind elements; it does not remove
+the fragment.
 
 ### 2. The fragment convention has one definition
 
@@ -100,14 +103,18 @@ This is a compatibility event, stated plainly.
   are not an index anywhere in the store: `latest` and the run summary point at
   `obs_…` / `res_…` snapshot ids, and element ids live only inside the immutable
   snapshot they were captured with. An old snapshot stays readable and diffs
-  against another old snapshot exactly as before.
+  against another old snapshot exactly as before — which is why `sameElement`
+  keeps comparing `native.kind`. That comparison cannot fire for two elements
+  built under the current derivation, but a previous-derivation id can pair one
+  id with two kinds, and the comparison is what still reports that as a change.
 - **A diff across the derivation boundary is meaningless**: the same harness
   captured under the old and new derivations shares no element ids, so every
   element is reported as removed and added rather than changed.
-- **A kind change at one path** across snapshots is now a removal plus an
-  addition, not a one-element "change". That is the correct reading once kind is
-  part of identity; the previous "change" was only observable because identity
-  ignored kind.
+- **A kind change at one path** across two snapshots captured under the current
+  derivation is now a removal plus an addition, not a one-element "change". That
+  is the correct reading once kind is part of identity; the previous "change" was
+  only observable because identity ignored kind. Between two previous-derivation
+  snapshots the same change is still reported as a change, for the reason above.
 - **Schema-version policy is out of scope.** An id derivation is not a change to
   the persisted *shape* ADR 0001's rule governs, and the policy itself is the
   sibling issue "Reconcile schema-version failure handling with ADR 0001". This

@@ -175,11 +175,21 @@ function byId(a: string, b: string): number {
 
 /**
  * Structural equality of two observed elements that share an id. Runtime,
- * origin, path, and kind are part of the id (ADR 0003), so they cannot differ
- * here; the element's scope and content are compared explicitly.
+ * origin, path, and kind are part of the id (ADR 0003), so for elements built
+ * under the current derivation they cannot differ here; the element's scope and
+ * content are compared explicitly.
+ *
+ * `native.kind` is compared anyway, and must stay. It can never fire for two
+ * elements built under the current derivation, but a snapshot captured under the
+ * previous one — where the id covered runtime, origin and path only — can pair
+ * one id with two kinds: `.codex/skills/AGENTS.md` was recorded as `instructions`
+ * in one capture and as `skills` in another. Dropping the comparison reports that
+ * pair as unchanged, and the compatibility promise is that an old snapshot diffs
+ * against another old snapshot exactly as before.
  */
 function sameElement(a: ObservedElement, b: ObservedElement): boolean {
   return (
+    a.native.kind === b.native.kind &&
     a.native.scope === b.native.scope &&
     a.source.digest === b.source.digest &&
     canonicalJsonStringify(a.metadata) === canonicalJsonStringify(b.metadata)
