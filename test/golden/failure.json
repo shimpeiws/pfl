@@ -1,0 +1,13 @@
+{
+  "pflVersion": "VERSION",
+  "command": "report",
+  "ok": false,
+  "completeness": "unknown",
+  "diagnostics": [],
+  "data": {
+    "error": {
+      "code": "CONFIG_ERROR",
+      "message": "example failure"
+    }
+  }
+}

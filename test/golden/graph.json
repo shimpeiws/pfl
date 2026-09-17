@@ -1,0 +1,34 @@
+{
+  "pflVersion": "VERSION",
+  "command": "graph",
+  "ok": true,
+  "completeness": "partial",
+  "diagnostics": [
+    {
+      "severity": "info",
+      "code": "adopted-legacy-history",
+      "message": "adopted the existing history under PROJECT_ID"
+    }
+  ],
+  "data": {
+    "observedSnapshotId": "obs_0123456789ab",
+    "resolvedSnapshotId": "res_0123456789ab",
+    "nodes": [
+      {
+        "id": "el_0123456789abcdef",
+        "path": "CLAUDE.md",
+        "kind": "instructions",
+        "origin": "project",
+        "scope": "project",
+        "status": "effective",
+        "inspectability": "observable",
+        "facets": ["instructions"]
+      }
+    ],
+    "edges": [],
+    "interpretation": {
+      "classifierVersion": "4",
+      "origin": "stored"
+    }
+  }
+}

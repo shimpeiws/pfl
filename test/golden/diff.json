@@ -1,0 +1,66 @@
+{
+  "pflVersion": "VERSION",
+  "command": "diff",
+  "ok": true,
+  "completeness": "partial",
+  "diagnostics": [
+    {
+      "severity": "info",
+      "code": "adopted-legacy-history",
+      "message": "adopted the existing history under PROJECT_ID"
+    },
+    {
+      "severity": "info",
+      "code": "adopted-legacy-history",
+      "message": "adopted the existing history under PROJECT_ID"
+    }
+  ],
+  "data": {
+    "runtime": "claude-code",
+    "observedSnapshotIdA": "obs_0123456789ab",
+    "observedSnapshotIdB": "obs_0123456789ab",
+    "resolvedSnapshotIdA": "res_0123456789ab",
+    "resolvedSnapshotIdB": "res_0123456789ab",
+    "structural": {
+      "added": 0,
+      "removed": 0,
+      "changed": 0,
+      "addedIds": [],
+      "removedIds": [],
+      "changedIds": []
+    },
+    "effective": {
+      "newlyEffective": 0,
+      "noLongerEffective": 0,
+      "activationChanged": 0,
+      "statusChanges": []
+    },
+    "facetDeltas": {
+      "instructions": 0,
+      "knowledge": 0,
+      "memory": 0,
+      "actions": 0,
+      "delegation": 0,
+      "controls": 0
+    },
+    "relations": {
+      "added": [],
+      "removed": []
+    },
+    "findings": {
+      "added": [],
+      "removed": []
+    },
+    "versionNotes": [],
+    "interpretation": {
+      "a": {
+        "classifierVersion": "4",
+        "origin": "stored"
+      },
+      "b": {
+        "classifierVersion": "4",
+        "origin": "stored"
+      }
+    }
+  }
+}

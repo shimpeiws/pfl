@@ -6,18 +6,31 @@ import type { ElementId, ObservedSnapshotId, ResolvedSnapshotId, RuntimeId } fro
  * to the Observed Facts (design doc §7.2, §11).
  */
 
-/** Design doc §11, Activation. */
-export type Activation = 'always' | 'conditional' | 'on-demand' | 'event-driven' | 'unknown';
+/**
+ * Design doc §11, Activation. Each array is the single source; the type derives
+ * from it, so the persisted-shape validator imports the same list (roadmap M8
+ * #88).
+ */
+export const ACTIVATION_VALUES = [
+  'always',
+  'conditional',
+  'on-demand',
+  'event-driven',
+  'unknown',
+] as const;
+export type Activation = (typeof ACTIVATION_VALUES)[number];
 
 /** Design doc §11, Applicability. */
-export type ApplicabilityType =
-  | 'global'
-  | 'project'
-  | 'directory-subtree'
-  | 'tool-event'
-  | 'config-rule'
-  | 'runtime-defined'
-  | 'unknown';
+export const APPLICABILITY_VALUES = [
+  'global',
+  'project',
+  'directory-subtree',
+  'tool-event',
+  'config-rule',
+  'runtime-defined',
+  'unknown',
+] as const;
+export type ApplicabilityType = (typeof APPLICABILITY_VALUES)[number];
 
 export interface Applicability {
   type: ApplicabilityType;
@@ -25,14 +38,16 @@ export interface Applicability {
 }
 
 /** Design doc §11, Resolution semantics. */
-export type ResolutionStrategy =
-  | 'override'
-  | 'accumulate'
-  | 'available'
-  | 'policy'
-  | 'event-pipeline'
-  | 'runtime-defined'
-  | 'unknown';
+export const STRATEGY_VALUES = [
+  'override',
+  'accumulate',
+  'available',
+  'policy',
+  'event-pipeline',
+  'runtime-defined',
+  'unknown',
+] as const;
+export type ResolutionStrategy = (typeof STRATEGY_VALUES)[number];
 
 export interface Resolution {
   strategy: ResolutionStrategy;
@@ -44,7 +59,14 @@ export interface Resolution {
  * output under the current static environment and runtime semantics — an
  * on-demand skill is still effective (design doc §11).
  */
-export type ResolvedStatus = 'effective' | 'shadowed' | 'conditional' | 'unresolved' | 'unknown';
+export const RESOLVED_STATUS_VALUES = [
+  'effective',
+  'shadowed',
+  'conditional',
+  'unresolved',
+  'unknown',
+] as const;
+export type ResolvedStatus = (typeof RESOLVED_STATUS_VALUES)[number];
 
 export interface ResolvedElement {
   id: ElementId;

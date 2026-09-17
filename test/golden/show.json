@@ -1,0 +1,55 @@
+{
+  "pflVersion": "VERSION",
+  "command": "show",
+  "ok": true,
+  "completeness": "partial",
+  "diagnostics": [
+    {
+      "severity": "info",
+      "code": "adopted-legacy-history",
+      "message": "adopted the existing history under PROJECT_ID"
+    }
+  ],
+  "data": {
+    "observed": {
+      "id": "el_0123456789abcdef",
+      "inspectability": "observable",
+      "metadata": {},
+      "native": {
+        "kind": "instructions",
+        "origin": "project",
+        "scope": "project"
+      },
+      "source": {
+        "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "path": "CLAUDE.md",
+        "sizeBytes": 12
+      },
+      "status": "observed"
+    },
+    "resolved": {
+      "activation": "always",
+      "applicability": {
+        "type": "project"
+      },
+      "id": "el_0123456789abcdef",
+      "resolution": {
+        "reason": "accumulates",
+        "strategy": "accumulate"
+      },
+      "status": "effective"
+    },
+    "interpretation": {
+      "confidence": "high",
+      "elementId": "el_0123456789abcdef",
+      "facets": ["instructions"],
+      "reason": "defines agent behavior"
+    },
+    "relations": [],
+    "findings": [],
+    "interpretationProvenance": {
+      "classifierVersion": "4",
+      "origin": "stored"
+    }
+  }
+}
