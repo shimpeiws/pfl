@@ -221,7 +221,9 @@ The read commands report `interpretation: { classifierVersion, origin }` —
 is `stored` or `recomputed`. Since v1.0 `inspect` persists the interpretation, so
 a report on a fixed snapshot reproduces; a snapshot captured before v1.0 carries
 none and is recomputed, and the document says so. Absence of a stored
-interpretation is never an error.
+interpretation is never an error; a stored interpretation this binary cannot
+interpret is not absence and fails the read like any other uninterpretable
+artifact.
 
 ### `gc` (implemented under issue #87)
 

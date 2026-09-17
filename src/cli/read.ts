@@ -11,7 +11,7 @@ import { resolveProjectContext } from '../discovery/project-identity.js';
 import { SNAPSHOT_SCHEMA_VERSION } from '../snapshot/serialization.js';
 import {
   listRuns,
-  readInterpretationIfPresent,
+  readInterpretationForResolved,
   readLatestPointer,
   readObservedSnapshot,
   readResolvedSnapshot,
@@ -62,41 +62,24 @@ export async function loadInterpretation(
   const project = await resolveProjectContext(cwd, {
     allowExternalGit: await hasAnyUserConsent(home),
   });
-  const { resolvedId, interpretationId, diagnostics } = await resolveResolvedId(
-    project.id,
-    requestedId,
-    home,
-  );
+  const { resolvedId, diagnostics } = await resolveResolvedId(project.id, requestedId, home);
   const resolved = await readResolvedSnapshot(project.id, resolvedId, home);
   const observed = await readObservedSnapshot(project.id, resolved.observedSnapshotId, home);
 
-  if (interpretationId !== undefined) {
-    // `null` means no interpretation is stored (a pre-v1.0 run): absence is
-    // normal and the interpretation is recomputed. A stored interpretation this
-    // binary cannot interpret is not absence — it fails closed like any other
-    // direct read of an uninterpretable artifact (#82), so store corruption is
-    // not masked by a fresh recomputation.
-    const stored = await readInterpretationIfPresent(project.id, interpretationId, home);
-    if (stored !== null && stored.resolvedSnapshotId === resolved.snapshotId) {
-      return {
-        observed,
-        resolved,
-        interpretation: stored,
-        interpretationOrigin: 'stored',
-        diagnostics,
-      };
-    }
-    if (stored !== null) {
-      // A stored interpretation for a different snapshot is recoverable: the
-      // recomputation is correct for this snapshot, and the mismatch is
-      // recorded rather than guessed at.
-      diagnostics.push({
-        severity: 'warning',
-        code: 'interpretation-mismatch',
-        message: `stored interpretation ${stored.interpretationId} does not match resolved snapshot ${resolved.snapshotId}; recomputed`,
-        path: interpretationId,
-      });
-    }
+  // `null` means no interpretation is stored (a pre-v1.0 run): absence is
+  // normal and the interpretation is recomputed. A stored interpretation this
+  // binary cannot interpret is not absence — it fails closed like any other
+  // direct read of an uninterpretable artifact (#82), so store corruption is
+  // not masked by a fresh recomputation.
+  const stored = await readInterpretationForResolved(project.id, resolved.snapshotId, home);
+  if (stored !== null) {
+    return {
+      observed,
+      resolved,
+      interpretation: stored,
+      interpretationOrigin: 'stored',
+      diagnostics,
+    };
   }
 
   return {
@@ -125,11 +108,7 @@ async function resolveResolvedId(
   projectId: string,
   requestedId: string | undefined,
   home: string,
-): Promise<{
-  resolvedId: string;
-  interpretationId: string | undefined;
-  diagnostics: Diagnostic[];
-}> {
+): Promise<{ resolvedId: string; diagnostics: Diagnostic[] }> {
   if (requestedId === undefined || requestedId === 'latest') {
     const pointer = await readLatestPointer(projectId, home);
     if (pointer === null) {
@@ -138,11 +117,7 @@ async function resolveResolvedId(
         EXIT_CODES.CONFIG_ERROR,
       );
     }
-    return {
-      resolvedId: pointer.resolved,
-      interpretationId: pointer.interpretation,
-      diagnostics: [],
-    };
+    return { resolvedId: pointer.resolved, diagnostics: [] };
   }
 
   const { runs, diagnostics } = await listRuns(projectId, home);
@@ -157,9 +132,5 @@ async function resolveResolvedId(
       ...(diagnostics.length > 0 ? { diagnostics } : {}),
     });
   }
-  return {
-    resolvedId: run.resolvedId,
-    interpretationId: run.interpretationId ?? undefined,
-    diagnostics,
-  };
+  return { resolvedId: run.resolvedId, diagnostics };
 }

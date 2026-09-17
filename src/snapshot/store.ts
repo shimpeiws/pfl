@@ -212,41 +212,41 @@ export async function readResolvedSnapshot(
   );
 }
 
-/** Reads a Derived Interpretation by id (`interpretations/`). */
-export async function readInterpretation(
-  projectId: string,
-  interpretationId: string,
-  home: string = homedir(),
-): Promise<Interpretation> {
-  return readArtifact(
-    artifactPath(interpretationsDir(projectId, home), interpretationId),
-    isInterpretation,
-    pflHome(home),
-  );
-}
-
 /**
- * Reads a Derived Interpretation, returning `null` when none is stored. A
- * pre-v1.0 run carries no interpretation and that absence is not an error
- * (roadmap #84); every other failure still throws.
+ * Reads the Derived Interpretation stored for a resolved snapshot, or `null`
+ * when none is stored. The artifact is keyed by the resolved snapshot id, so
+ * the mapping from a run to its interpretation is a path, not a scan: a
+ * corrupt artifact cannot be mistaken for a different run's, and its failure is
+ * attributable to this run. A pre-v1.0 run carries none, and that absence is
+ * not an error (roadmap #84); every other failure throws.
  */
-export async function readInterpretationIfPresent(
+export async function readInterpretationForResolved(
   projectId: string,
-  interpretationId: string,
+  resolvedSnapshotId: string,
   home: string = homedir(),
 ): Promise<Interpretation | null> {
-  return readArtifactIfPresent(
-    artifactPath(interpretationsDir(projectId, home), interpretationId),
+  const interpretation = await readArtifactIfPresent(
+    artifactPath(interpretationsDir(projectId, home), resolvedSnapshotId),
     isInterpretation,
     pflHome(home),
   );
+  if (interpretation !== null && interpretation.resolvedSnapshotId !== resolvedSnapshotId) {
+    // The file is named for one resolved snapshot but claims another: the store
+    // is inconsistent, so fail closed rather than guess which is right.
+    throw invalidArtifactError(
+      `interpretation ${interpretation.interpretationId} is stored under ${resolvedSnapshotId} but claims ${interpretation.resolvedSnapshotId}`,
+      resolvedSnapshotId,
+    );
+  }
+  return interpretation;
 }
 
 /**
  * Persists a Derived Interpretation (design doc §21, roadmap #84). An
  * interpretation is a run artifact like the observed and resolved snapshots, so
  * `inspect` writes it once and read commands use the stored copy; a report then
- * reproduces, and it can state which classifier produced it.
+ * reproduces, and it can state which classifier produced it. It is stored under
+ * its resolved snapshot id, which is unique per run, so immutability holds.
  */
 export async function writeInterpretation(
   projectId: string,
@@ -254,7 +254,7 @@ export async function writeInterpretation(
   home: string = homedir(),
 ): Promise<void> {
   await writeArtifact(
-    artifactPath(interpretationsDir(projectId, home), interpretation.interpretationId),
+    artifactPath(interpretationsDir(projectId, home), interpretation.resolvedSnapshotId),
     serializeSnapshot(interpretation),
   );
 }

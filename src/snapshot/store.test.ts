@@ -34,8 +34,7 @@ import {
   permissionsPath,
   pflHome,
   projectDir,
-  readInterpretation,
-  readInterpretationIfPresent,
+  readInterpretationForResolved,
   readLatestPointer,
   readObservedSnapshot,
   readResolvedSnapshot,
@@ -448,7 +447,7 @@ describe('listRuns', () => {
   });
 });
 
-describe('readInterpretation', () => {
+describe('readInterpretationForResolved', () => {
   it('round-trips through writeInterpretation and reports absence as null', async () => {
     const home = await tempHome();
     const interpretation: Interpretation = {
@@ -469,33 +468,37 @@ describe('readInterpretation', () => {
     };
 
     await writeInterpretation('proj', interpretation, home);
-    await expect(
-      readInterpretation('proj', interpretation.interpretationId, home),
-    ).resolves.toMatchObject({ classifier: { version: '4' } });
+    // The artifact is keyed by the resolved snapshot id it interprets.
+    await expect(readInterpretationForResolved('proj', 'res_y', home)).resolves.toMatchObject({
+      classifier: { version: '4' },
+    });
 
     // A run captured before v1.0 carries no interpretation; absence is not an error.
-    await expect(readInterpretationIfPresent('proj', 'int_absent', home)).resolves.toBeNull();
+    await expect(readInterpretationForResolved('proj', 'res_absent', home)).resolves.toBeNull();
   });
 
-  it('reads from interpretations/', async () => {
+  it('fails closed when an artifact claims a different resolved snapshot', async () => {
     const home = await tempHome();
     await mkdir(interpretationsDir('proj', home), { recursive: true });
     await writeFile(
-      join(interpretationsDir('proj', home), 'int_x.json'),
+      join(interpretationsDir('proj', home), 'res_y.json'),
       serializeSnapshot({
         schemaVersion: '1',
         interpretationId: 'int_x',
-        resolvedSnapshotId: 'res_y',
+        resolvedSnapshotId: 'res_z',
         classifier: { id: 'classifier', version: '1' },
         elements: [],
-        stats: {},
+        stats: { observed: 0, effective: 0, shadowed: 0, conditional: 0, opaque: 0, byFacet: {} },
         findings: [],
       }),
     );
 
-    await expect(readInterpretation('proj', 'int_x', home)).resolves.toMatchObject({
-      interpretationId: 'int_x',
-    });
+    const error = await readInterpretationForResolved('proj', 'res_y', home).catch(
+      (e: unknown) => e,
+    );
+    expect(error).toBeInstanceOf(PflError);
+    expect((error as PflError).exitCode).toBe(EXIT_CODES.CONFIG_ERROR);
+    expect((error as PflError).data?.diagnostics?.[0]?.code).toBe('invalid-snapshot');
   });
 });
 

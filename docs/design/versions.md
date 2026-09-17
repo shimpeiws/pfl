@@ -45,6 +45,12 @@ a stored snapshot. It is persisted **with the interpretation** (`inspect` writes
 the interpretation since v1.0, #84), so a report states which classifier produced
 it. Bump it when a facet mapping or a finding rule changes.
 
+The interpretation artifact is keyed by the resolved snapshot id it interprets,
+so a run maps to its interpretation by path rather than by a scan. That keeps a
+corrupt artifact attributable to its own run instead of being mistaken for
+absence, and a `latest` pointer carries the interpretation id alongside the
+observed and resolved ids for reclaiming the run as a unit.
+
 ## Reproducibility
 
 Because the classifier version is stored with the interpretation, a report
