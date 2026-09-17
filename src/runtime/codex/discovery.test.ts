@@ -426,7 +426,7 @@ describe('collectCodexHarness', () => {
 
   it('redacts a secret-shaped dependency name before it is persisted', async () => {
     const { project, home } = await makeFixture();
-    const secret = 'ghp_0123456789abcdefghijklmnopqrstuvwx';
+    const secret = 'ghp_0123456789abcdefghijklmnopqrstuvwx'; // gitleaks:allow
     await writeFile(
       join(userConfigDir(home), 'skills', 'secret.md'),
       ['---', `dependencies: [${secret}]`, '---'].join('\n'),
