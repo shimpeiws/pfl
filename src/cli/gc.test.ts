@@ -264,6 +264,11 @@ describe('runGc', () => {
       home,
     );
 
+    // A dry run must not claim it would reclaim the unresolvable run either.
+    const dry = await runGc(projectRoot, { home, keep: 1, dryRun: true }, silent);
+    expect(dry.data.reclaimed.map((run) => run.observedId)).not.toContain(observedOnly);
+    expect(dry.diagnostics.map((entry) => entry.code)).toContain('unreclaimable-run');
+
     const outcome = await runGc(projectRoot, { home, keep: 1 }, silent);
 
     expect(outcome.data.reclaimed.map((run) => run.observedId)).not.toContain(observedOnly);

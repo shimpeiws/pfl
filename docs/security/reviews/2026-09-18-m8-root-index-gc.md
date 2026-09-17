@@ -6,7 +6,7 @@
 - Trigger: `src/snapshot/store.ts` and `src/discovery/project-identity.ts`
   changed; the store gains its first deletion path.
 - Result: one data-loss class and several smaller issues found and remediated;
-  no accepted risks added
+  four residual risks recorded as accepted (A4–A7)
 
 ## What changed
 
@@ -113,8 +113,20 @@ were remediated in this pull request:
 17. **A run with no resolved snapshot was half-deleted and reported as
     reclaimed.** Removing only its observation hid the remaining artifacts from
     every future scan. Fixed: such a run is left whole and reported as
-    `unreclaimable-run`. The gc summary and `reclaimedOrphans` now list what this
-    run actually deleted rather than what it planned.
+    `unreclaimable-run`, in a dry run too, and is excluded from the retention
+    budget so an incomplete run cannot displace reclaimable history. The gc
+    summary and `reclaimedOrphans` now list what this run actually deleted
+    rather than what it planned.
+18. **A `gc` deletion diagnostic carried an absolute path.** Fixed: the
+    `reclaim-failed` diagnostic uses a store-relative label, so it does not
+    depend on the export redaction to avoid naming the account.
+
+## Accepted residuals
+
+A4 (no index lock), A5 (a corrupt index fails closed with no rebuild command),
+A6 (a partial `gc` failure is a diagnostic, exit 0), and A7 (an interrupted
+`inspect` leaves a small uncollectable observation) are recorded in
+`accepted-risks.md` with their reopening conditions.
 
 The comment that a path-derived sibling is "reported by `pfl gc` as reclaimable"
 was corrected: after the first fix it is reported as unreferenced and never

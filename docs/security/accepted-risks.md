@@ -48,3 +48,58 @@ absent from both this register and the code as a fix is a defect.
   context and remove the approximation.
 - **Reopens if:** M8 lands, or a read command gains a runtime argument.
 - **Recorded:** 2026-09-17 (M6 Phase 4).
+
+## A4 — The project index has no lock (roadmap #86)
+
+- **Risk:** `~/.pfl/index.json` is read-modify-write, so two `pfl` processes
+  indexing different projects at the same moment can lose one another's entry
+  (last write wins). The write path re-reads and merges, and falls back to a
+  root-scoped id if another root claimed the chosen one, which narrows the
+  window but does not close it.
+- **Why accepted:** the tool is single-user and the commands are short-lived; a
+  lost entry re-mints the root's id on the next run, and a directory another
+  root claimed is left for `pfl gc --prune-orphans`. A cross-process lock is
+  design work the roadmap leaves out of #86.
+- **Reopens if:** concurrent first runs become a real workflow, or the index
+  gains state that a lost write cannot rebuild.
+- **Recorded:** 2026-09-18 (M8 #86).
+
+## A5 — A corrupt index fails closed with no rebuild command (roadmap #86)
+
+- **Risk:** a corrupt or unsupported-version `~/.pfl/index.json` makes every
+  command exit 6 rather than rebuild, because re-deriving ids could strand a
+  history.
+- **Why accepted:** failing closed is safer than guessing; the message names the
+  file and tells the user to move it aside, after which the next run rebuilds
+  the index and adopts existing histories. Corruption is not reachable by a
+  hostile clone, only by a same-uid process or a disk fault, both already outside
+  the threat model.
+- **Reopens if:** corruption is observed in practice, or an automated recovery
+  can be made safe.
+- **Recorded:** 2026-09-18 (M8 #86).
+
+## A6 — `pfl gc` reports a partial failure as a diagnostic, exit 0 (roadmap #87)
+
+- **Risk:** if one artifact cannot be removed (for example `EACCES`), `gc` keeps
+  going and exits 0, so a script cannot distinguish a full success from a partial
+  one by exit code alone.
+- **Why accepted:** `gc` is best-effort like every other command, and the failed
+  artifact is recorded in `diagnostics` (and omitted from `reclaimed`) so it is
+  never silently incomplete. Throwing would discard the report of what was
+  already reclaimed.
+- **Reopens if:** a caller needs to gate on complete reclamation; it can then
+  fail on a `reclaim-failed` diagnostic.
+- **Recorded:** 2026-09-18 (M8 #87).
+
+## A7 — An interrupted `inspect` leaves an uncollectable observation (roadmap #87)
+
+- **Risk:** `inspect` writes the observed snapshot before the resolved one, so
+  an interruption leaves an observation with no resolved snapshot. `gc` cannot
+  reclaim it as a run, so it stays and is reported on every run. It is excluded
+  from the retention budget, so it does not displace reclaimable history.
+- **Why accepted:** deleting the observation would leave any later-resolved
+  artifacts unattributable, and the run could still be completed. The residual
+  is a small, visible, bounded leak rather than a data-loss risk.
+- **Reopens if:** a repair path (for example `--prune-incomplete`) is added, or
+  the leak grows without bound in practice.
+- **Recorded:** 2026-09-18 (M8 #87).

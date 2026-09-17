@@ -96,21 +96,23 @@ export async function runGc(
 
   const { retained, reclaimed } = planRetention(runs, latest?.observed, keep);
 
+  // A run without a resolved snapshot cannot be deleted as a unit, and removing
+  // only its observation would hide the rest from every future scan. Report it
+  // in every mode, including a dry run, and never plan it for reclamation.
+  for (const run of runs) {
+    if (run.resolvedId === null) {
+      diagnostics.push({
+        severity: 'warning',
+        code: 'unreclaimable-run',
+        message: `run ${run.observedId} has no resolved snapshot and cannot be reclaimed`,
+        path: `observations/${run.observedId}.json`,
+      });
+    }
+  }
+
   const reclaimedRuns: GcRunRef[] = [];
   if (!dryRun) {
     for (const run of reclaimed) {
-      if (run.resolvedId === null) {
-        // A run without a resolved snapshot cannot be deleted as a unit, and
-        // removing only its observation would hide the rest from every future
-        // scan. Leave it whole and report it.
-        diagnostics.push({
-          severity: 'warning',
-          code: 'unreclaimable-run',
-          message: `run ${run.observedId} has no resolved snapshot and was not reclaimed`,
-          path: `observations/${run.observedId}.json`,
-        });
-        continue;
-      }
       const failures = await reclaimRun(stored.id, run, home);
       diagnostics.push(...failures);
       // Report a run as reclaimed only when every artifact is gone; a partial
@@ -144,8 +146,10 @@ export async function runGc(
     });
   }
 
-  for (const diagnostic of diagnostics) {
-    logDiagnostic(out, diagnostic);
+  // Under `--json` the diagnostics are in the envelope, so nothing is printed
+  // there; a human run sees them before the summary.
+  if (!options.json) {
+    for (const diagnostic of diagnostics) logDiagnostic(out, diagnostic);
   }
 
   const data: GcData = {
@@ -196,23 +200,28 @@ function normalizeKeep(value: number | undefined): number {
 }
 
 /**
- * The newest `keep` runs are retained, **and** the run named by `latest` is
- * always retained. When `latest` is older than the newest `keep`, that is
- * `keep + 1` runs; the run the pointer names is never reclaimed. Runs are newest
- * first, so the tail is the oldest.
+ * The newest `keep` **reclaimable** runs are retained, and the run named by
+ * `latest` is always retained. When `latest` is older than the newest `keep`,
+ * that is `keep + 1` runs; the run the pointer names is never reclaimed. Runs
+ * are newest first.
+ *
+ * A run with no resolved snapshot cannot be reclaimed as a unit, so it is
+ * excluded from both lists and never consumes the retention budget: incomplete
+ * runs (an interrupted `inspect`) must not displace reclaimable history.
  */
 export function planRetention(
   runs: readonly StoredRunSummary[],
   latestObservedId: string | undefined,
   keep: number,
 ): { retained: StoredRunSummary[]; reclaimed: StoredRunSummary[] } {
-  const retainedIds = new Set(runs.slice(0, keep).map((run) => run.observedId));
+  const reclaimable = runs.filter((run) => run.resolvedId !== null);
+  const retainedIds = new Set(reclaimable.slice(0, keep).map((run) => run.observedId));
   if (latestObservedId !== undefined) {
     retainedIds.add(latestObservedId);
   }
   return {
     retained: runs.filter((run) => retainedIds.has(run.observedId)),
-    reclaimed: runs.filter((run) => !retainedIds.has(run.observedId)),
+    reclaimed: reclaimable.filter((run) => !retainedIds.has(run.observedId)),
   };
 }
 
@@ -227,22 +236,30 @@ async function reclaimRun(
   run: StoredRunSummary,
   home: string,
 ): Promise<Diagnostic[]> {
+  if (run.resolvedId === null) return [];
+  const { resolvedId, observedId } = run;
   // Ids come from parsed artifacts; validate each before it becomes a path
   // segment so a crafted id cannot make gc delete outside the store.
-  // Callers never pass a run without a resolved snapshot (that case is left
-  // whole and reported), so the run is deleted as a complete unit.
-  const resolvedId = run.resolvedId as string;
-  const targets = [
+  const entries = [
     // The interpretation is keyed by the resolved id and belongs to the run even
     // when its payload could not be parsed (then `interpretationId` is null).
-    artifactFilePath(interpretationsDir(projectId, home), resolvedId),
-    artifactFilePath(snapshotsDir(projectId, home), resolvedId),
-    artifactFilePath(observationsDir(projectId, home), run.observedId),
+    {
+      target: artifactFilePath(interpretationsDir(projectId, home), resolvedId),
+      label: `interpretations/${resolvedId}.json`,
+    },
+    {
+      target: artifactFilePath(snapshotsDir(projectId, home), resolvedId),
+      label: `snapshots/${resolvedId}.json`,
+    },
+    {
+      target: artifactFilePath(observationsDir(projectId, home), observedId),
+      label: `observations/${observedId}.json`,
+    },
   ];
 
   const failures: Diagnostic[] = [];
-  for (const target of targets) {
-    const failure = await removeArtifact(target);
+  for (const { target, label } of entries) {
+    const failure = await removeArtifact(target, label);
     if (failure !== undefined) {
       failures.push(failure);
       break;
@@ -251,8 +268,12 @@ async function reclaimRun(
   return failures;
 }
 
-/** Removes one artifact; `undefined` on success (including already absent). */
-async function removeArtifact(target: string): Promise<Diagnostic | undefined> {
+/**
+ * Removes one artifact; `undefined` on success (including already absent). The
+ * diagnostic carries a store-relative label, not the absolute path, so it needs
+ * no redaction to avoid naming the account.
+ */
+async function removeArtifact(target: string, label: string): Promise<Diagnostic | undefined> {
   try {
     await unlink(target);
     return undefined;
@@ -261,8 +282,8 @@ async function removeArtifact(target: string): Promise<Diagnostic | undefined> {
     return {
       severity: 'warning',
       code: 'reclaim-failed',
-      message: `could not reclaim ${target}: ${error instanceof Error ? error.message : String(error)}`,
-      path: target,
+      message: `could not reclaim ${label}: ${error instanceof Error ? error.message : String(error)}`,
+      path: label,
     };
   }
 }
