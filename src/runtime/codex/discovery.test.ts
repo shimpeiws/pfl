@@ -1,13 +1,25 @@
 import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { deriveFindings } from '../../classify/findings.js';
 import type { ObservedElement } from '../../core/observed.js';
 import { MAX_ANCESTOR_DIRS, MAX_PARSE_BYTES } from '../../limits.js';
 import { collectCodexHarness } from './discovery.js';
 import { KNOWN_ELEMENT_KINDS, USER_DIR_KIND, userConfigDir } from './paths.js';
 import { resolveCodex } from './resolve.js';
+
+const originalPath = process.env['PATH'];
+
+// Detection scans `PATH` for an install the installer does not manage. These
+// tests inject a home, so `PATH` is emptied too: the machine's own installs are
+// never read and a version assertion cannot depend on the host.
+beforeAll(() => {
+  process.env['PATH'] = '';
+});
+afterAll(() => {
+  process.env['PATH'] = originalPath;
+});
 
 const tempDirs: string[] = [];
 

@@ -59,21 +59,26 @@ export async function discoverCodex(
   project: ProjectContext,
   access: AccessPolicy,
   home: string = homedir(),
+  pathValue: string = process.env['PATH'] ?? '',
 ): Promise<ObservedSnapshot> {
-  return collectCodexHarness(project, access, home);
+  return collectCodexHarness(project, access, home, pathValue);
 }
 
-/** The discovery core with an injected home, so tests need no global state. */
+/**
+ * The discovery core with an injected home and `PATH`, so tests need no global
+ * state and no dependence on the machine.
+ */
 export async function collectCodexHarness(
   project: ProjectContext,
   access: AccessPolicy,
   home: string,
+  pathValue: string = process.env['PATH'] ?? '',
 ): Promise<ObservedSnapshot> {
   const elements: ObservedElement[] = [];
   const diagnostics: Diagnostic[] = [];
 
   const detection = access.allowOutsideProject
-    ? await detectCodex(home)
+    ? await detectCodex(home, pathValue)
     : {
         version: null,
         runtimeCompatibility: 'unverified' as const,

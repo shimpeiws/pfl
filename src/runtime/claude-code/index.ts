@@ -17,11 +17,14 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
     _project: ProjectContext,
     access: AccessPolicy,
     home?: string,
+    pathValue: string = process.env['PATH'] ?? '',
   ): Promise<RuntimeDetection> {
     if (!access.allowOutsideProject) {
       return {
         runtimeId: this.id(),
-        installed: false,
+        // `unknown`, not `no`: detection could not look, so "not consented" stays
+        // distinguishable from "not installed" (roadmap §5 M7, issue #76).
+        installed: 'unknown',
         version: null,
         runtimeCompatibility: 'unverified',
         diagnostics: [
@@ -34,15 +37,16 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
         ],
       };
     }
-    return detectClaudeCode(home ?? homedir());
+    return detectClaudeCode(home ?? homedir(), pathValue);
   }
 
   async discover(
     project: ProjectContext,
     access: AccessPolicy,
     home?: string,
+    pathValue: string = process.env['PATH'] ?? '',
   ): Promise<ObservedSnapshot> {
-    return discoverClaudeCode(project, access, home ?? homedir());
+    return discoverClaudeCode(project, access, home ?? homedir(), pathValue);
   }
 
   async resolve(observed: ObservedSnapshot, home?: string): Promise<ResolvedSnapshot> {

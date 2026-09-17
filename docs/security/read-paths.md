@@ -96,6 +96,30 @@ The consent writer applies the same guard before writing, so a symlinked
 `baseDir` (excluding `baseDir` itself), a non-regular file, and a hardlink, and
 reports the size for the caller to bound. `readTextFileGuarded` builds on it.
 
+### `runtime/external-install.ts`
+
+Detection of installs the runtime's own installer does not manage (M7 Phase 6,
+issue #76). M7 Phase 6 adds this shared scanner; both adapters call it with the
+already-consented home and `PATH`.
+
+| Read                                                                 | Guard                                                                                                                                                                          | Classification |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------- |
+| `lstat` + `readdir` of each bin dir (`<prefix>/bin`, `PATH` entries) | `readDirectoryNames('/', dir)`: every component from the filesystem root is checked, so a symlinked leaf, PATH entry, or ancestor yields `[]`; leaf entries are never followed | install-scope  |
+| `readFile` `<prefix>/lib/node_modules/<pkg>/package.json`            | `readTextFileGuarded(…, '/')`: every component from the root checked (symlink / hardlink / non-regular refused); size bounded by `MAX_PARSE_BYTES`                             | install-scope  |
+| `lstat` + `readdir` of `<prefix>/Cellar/<formula>`                   | `readDirectoryNames('/', …)`: same ancestor guard                                                                                                                              | install-scope  |
+
+The binary is detected by its name in the listing, never opened or executed, so
+a symlinked launcher (`~/.local/bin/claude -> …`) counts as present without being
+resolved. Prefixes are the fixed home-relative `EXTERNAL_PREFIXES` plus
+`dirname` of every absolute `PATH` entry named `bin`. A PATH entry has no scope
+root, so the guard walks from the filesystem root rather than from a scope base:
+a symlinked `PATH` entry or a symlinked ancestor of one is skipped, not traversed.
+Versions read here are reconciled with the installer-managed ones by
+`runtime/version-sources.ts`, which reads no files. On macOS the root walk also
+refuses paths under `/var`, because `/var` itself is a symlink; that is the
+fail-closed behavior the invariant asks for, and a canonical home (`/Users/…`)
+is unaffected.
+
 ### `runtime/claude-code`
 
 | Location       | Read                                                        | Guard                                                                                                                            | Classification                |
@@ -103,6 +127,7 @@ reports the size for the caller to bound. `readTextFileGuarded` builds on it.
 | `detect.ts`    | `lstat` of `~/.local/share/claude`, `~/.local/bin/claude`   | ancestor guard (base: home)                                                                                                      | install-scope                 |
 | `detect.ts`    | `lstat` + `readdir` of `~/.local/share/claude/versions`     | ancestor guard (base: home)                                                                                                      | install-scope                 |
 | `detect.ts`    | `readFile` `~/.claude/.last-update-result.json`             | `readTextFileGuarded` (leaf guard)                                                                                               | install-scope                 |
+| `detect.ts`    | bin dirs, `PATH` entries, npm/Homebrew prefixes             | `readExternalInstall` (see `runtime/external-install.ts`); consent-gated                                                         | install-scope                 |
 | `discovery.ts` | walk `<root>/**` for `CLAUDE.md` / `CLAUDE.local.md`        | walk guards; `selectFile` reads only those names, excluding the project config directory by path; `.git` / `node_modules` pruned | project-implicit              |
 | `discovery.ts` | walk `.claude/**` and `~/.claude/<dirs>/**`                 | walk guards                                                                                                                      | project-implicit / user-scope |
 | `discovery.ts` | `readFile` `settings.json`, `settings.local.json`           | `readTextFileGuarded` + scope base                                                                                               | project-implicit / user-scope |
@@ -139,6 +164,7 @@ strings; hook commands, types, and timeouts are not persisted.
 | -------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
 | `detect.ts`    | `lstat` + `readdir` of `~/.codex/packages/standalone/releases`     | ancestor guard (base: `~/.codex`)                                                                                                | install-scope                 |
 | `detect.ts`    | `lstat` of `~/.codex/packages/standalone/releases`, `…/standalone` | ancestor guard (base: `~/.codex`)                                                                                                | install-scope                 |
+| `detect.ts`    | bin dirs, `PATH` entries, npm/Homebrew prefixes                    | `readExternalInstall` (see `runtime/external-install.ts`); consent-gated                                                         | install-scope                 |
 | `discovery.ts` | `readFile` known instruction files                                 | `inspectFileTarget(root, …)`                                                                                                     | project-implicit / user-scope |
 | `discovery.ts` | walk `<root>/**` for `AGENTS.md` / `AGENTS.override.md`            | walk guards; `selectFile` reads only those names, excluding the project config directory by path; `.git` / `node_modules` pruned | project-implicit              |
 | `discovery.ts` | walk `<root>/.codex/skills/**`                                     | walk guards                                                                                                                      | project-implicit              |
@@ -176,6 +202,18 @@ persisted. The `config.toml` read is unchanged: the same single guarded
 `model_max_output_tokens`, and `model_auto_compact_token_limit` as integers.
 Project-scoped skills are unchanged; `dependencies` frontmatter is read from the
 same skill files and stored only as redacted, allowlisted names.
+
+M7 Phase 6 (issues #76) adds the non-installer detection reads listed in the
+`detect.ts` row above, all **install-scope** and all behind the same consent gate
+as the installer-managed ones: the entries of each bin directory (the adapter's
+fixed home-relative prefixes, plus every absolute `PATH` entry), the npm
+`package.json` under a derived prefix, and the Homebrew `Cellar` version
+directory names. A binary is detected by its listing name, never opened or
+executed; a symlinked launcher is present but unresolved, and a symlinked `PATH`
+entry is skipped rather than traversed. The reads are shared with Claude Code
+through `runtime/external-install.ts`, so they appear once there rather than
+twice here. The consent prompt's "Installation and version metadata" group now
+lists these locations (roadmap S2), and a per-adapter equality test pins it.
 
 ### `snapshot/store.ts`
 

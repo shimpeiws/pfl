@@ -72,7 +72,7 @@ describe.each<FixtureRuntime>(['claude', 'codex'])('%s harness invariants', (run
 
     await runInspect(
       m.projectRoot,
-      { runtime: RUNTIME_IDS[runtime], home: m.home, interactive: false },
+      { runtime: RUNTIME_IDS[runtime], home: m.home, pathValue: '', interactive: false },
       silent,
     );
 
@@ -154,7 +154,7 @@ describe.each<FixtureRuntime>(['claude', 'codex'])('%s harness invariants', (run
 
     await runInspect(
       m.projectRoot,
-      { runtime: RUNTIME_IDS[runtime], home: m.home, interactive: false },
+      { runtime: RUNTIME_IDS[runtime], home: m.home, pathValue: '', interactive: false },
       silent,
     );
 

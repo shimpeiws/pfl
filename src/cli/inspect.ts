@@ -19,6 +19,8 @@ export interface InspectOptions {
   json?: boolean;
   /** Injected for tests; defaults to the current user's home. */
   home?: string;
+  /** Injected for tests; defaults to `process.env.PATH` for non-installer detection. */
+  pathValue?: string;
   /** Injected for tests; defaults to whether a TTY is attached. */
   interactive?: boolean;
   /** Injected for tests so the consent prompt needs no TTY. */
@@ -58,8 +60,8 @@ export async function runInspect(
     allowExternalGit: access.allowOutsideProject,
   });
 
-  const detection = await adapter.detect(project, access, home);
-  const observed = await adapter.discover(project, access, home);
+  const detection = await adapter.detect(project, access, home, options.pathValue);
+  const observed = await adapter.discover(project, access, home, options.pathValue);
   const resolved = await resolveHarness(adapter, observed, home);
 
   await writeObservedSnapshot(project.id, observed, home);

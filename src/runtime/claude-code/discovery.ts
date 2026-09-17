@@ -82,27 +82,29 @@ export async function discoverClaudeCode(
   project: ProjectContext,
   access: AccessPolicy,
   home: string = homedir(),
+  pathValue: string = process.env['PATH'] ?? '',
 ): Promise<ObservedSnapshot> {
-  return collectClaudeCodeHarness(project, access, home);
+  return collectClaudeCodeHarness(project, access, home, undefined, pathValue);
 }
 
 /**
- * The discovery core with an injected home, so tests need no global state. The
- * managed base is a parameter so a test injects a temp directory and never touches
- * `/Library`; when it is omitted the macOS-only default applies and a non-macOS
- * host reads no managed scope.
+ * The discovery core with an injected home and `PATH`, so tests need no global
+ * state and no dependence on the machine. The managed base is a parameter so a
+ * test injects a temp directory and never touches `/Library`; when it is omitted
+ * the macOS-only default applies and a non-macOS host reads no managed scope.
  */
 export async function collectClaudeCodeHarness(
   project: ProjectContext,
   access: AccessPolicy,
   home: string,
   managedDir?: string,
+  pathValue: string = process.env['PATH'] ?? '',
 ): Promise<ObservedSnapshot> {
   const elements: ObservedElement[] = [];
   const diagnostics: Diagnostic[] = [];
 
   const detection = access.allowOutsideProject
-    ? await detectClaudeCode(home)
+    ? await detectClaudeCode(home, pathValue)
     : {
         version: null,
         runtimeCompatibility: 'unverified' as const,

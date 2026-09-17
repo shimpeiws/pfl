@@ -1,0 +1,9 @@
+{
+  "timestamp": "2026-09-16T00:00:00.000Z",
+  "path": "native",
+  "outcome": "success",
+  "status": "success",
+  "version_from": "2.1.271",
+  "version_to": "2.1.272",
+  "error_code": null
+}

@@ -9,7 +9,7 @@ import type {
   SafeMetadataValue,
 } from '../../core/observed.js';
 import type { ResolvedElement } from '../../core/resolved.js';
-import { resolveCodex } from './resolve.js';
+import { resolveCodex, semanticsFor } from './resolve.js';
 
 const rid = runtimeId('codex');
 
@@ -34,13 +34,16 @@ function element(
   };
 }
 
-function snapshot(elements: ObservedElement[]): ObservedSnapshot {
+function snapshot(
+  elements: ObservedElement[],
+  version: string | null = '0.154.0',
+): ObservedSnapshot {
   return {
     schemaVersion: '1',
     snapshotId: generateObservedSnapshotId(),
     capturedAt: '2026-09-16T00:00:00.000Z',
     project: { id: 'proj', displayName: 'owner/repo', root: '/repo' },
-    runtime: { id: rid, version: '0.154.0' },
+    runtime: { id: rid, version },
     adapter: { id: 'codex', version: '0.1.0', runtimeCompatibility: 'verified' },
     elements,
     diagnostics: [],
@@ -255,5 +258,32 @@ describe('resolveCodex', () => {
 
     expect(find(resolved.elements, opaque).status).toBe('effective');
     expect(find(resolved.elements, link).status).toBe('unresolved');
+  });
+
+  it('selects the same axes at every version position until a breakpoint exists', () => {
+    const instruction = element('AGENTS.md', 'instructions', 'project');
+
+    expect(semanticsFor('0.140.0').position).toBe('below');
+    expect(semanticsFor('0.154.0').position).toBe('within');
+    expect(semanticsFor('0.160.0').position).toBe('above');
+    expect(semanticsFor(null).position).toBe('unknown');
+    expect(semanticsFor('0.140.0').axesFor(instruction)).toEqual(
+      semanticsFor('0.160.0').axesFor(instruction),
+    );
+  });
+
+  it('reflects the detected version position in resolution confidence', async () => {
+    const instruction = element('AGENTS.md', 'instructions', 'project');
+
+    const within = await resolveCodex(snapshot([instruction], '0.154.0'));
+    const above = await resolveCodex(snapshot([instruction], '0.160.0'));
+    const below = await resolveCodex(snapshot([instruction], '0.140.0'));
+    const unknown = await resolveCodex(snapshot([instruction], null));
+
+    expect(within.resolution.confidence).toBe('verified');
+    expect(above.resolution.confidence).toBe('unverified-runtime-version');
+    expect(below.resolution.confidence).toBe('unverified-runtime-version');
+    expect(unknown.resolution.confidence).toBe('unverified-runtime-version');
+    expect(above.effectiveElementIds).toHaveLength(1);
   });
 });

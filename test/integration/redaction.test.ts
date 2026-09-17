@@ -88,7 +88,7 @@ async function inspectAndLoad(fixture: Fixture) {
   await grantConsent(fixture.home, 'claude');
   await runInspect(
     fixture.projectRoot,
-    { runtime: 'claude-code', home: fixture.home, interactive: false },
+    { runtime: 'claude-code', home: fixture.home, pathValue: '', interactive: false },
     { info: () => undefined, warn: () => undefined, error: () => undefined },
   );
   const projectId = (await resolveProjectContext(fixture.projectRoot)).id;
@@ -153,7 +153,7 @@ describe('redaction across every channel (S6, S8)', () => {
       const out = captureLogger();
       await runInspect(
         fixture.projectRoot,
-        { runtime: 'claude-code', home: fixture.home, interactive: false, json },
+        { runtime: 'claude-code', home: fixture.home, pathValue: '', interactive: false, json },
         out.logger,
       );
       await runReport(fixture.projectRoot, { home: fixture.home, json }, out.logger);
