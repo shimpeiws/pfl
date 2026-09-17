@@ -15,27 +15,39 @@ anything they import that changes their behaviour:
 - `src/discovery/consent.ts`
 - `src/discovery/metadata.ts`
 - `src/util/fs.ts`
+- `src/limits.ts`
 - `src/redact/**`
 - `src/snapshot/store.ts`
 - `src/runtime/*/paths.ts`
+- `src/runtime/*/consent.ts`
+- `src/runtime/*/detect.ts`
 
 Adding a runtime adapter is a trust-boundary change in itself: a new adapter is a
 new read surface, and it also extends `docs/security/read-paths.md`.
 
 ## How the review is required
 
-A `/security-review` status check is a **required status check on the protected
-branch**. The check runs on every pull request and decides for itself whether the
-diff touches a trust boundary, reporting success immediately when it does not.
+The `.github/workflows/security-review.yml` job — the **Security review** check —
+is a **required status check on the protected branch**. It runs on every pull
+request and decides for itself whether the diff touches a trust boundary,
+reporting success immediately when it does not. When the diff does touch one, the
+check requires a review record under `docs/security/reviews/` in the same pull
+request, or the `security-reviewed` label; otherwise it fails.
 
 Selecting it by path filter was rejected: a required check that a path filter can
 skip is absent exactly when a file outside the filter turns out to matter. A
 documented convention was also rejected: a solo-maintained repository is exactly
 where a convention is easiest to skip.
 
-The review is performed with the `security-auditor` agent, which is written
-explicitly against the twelve design invariants (design doc §19; roadmap §3.1,
-§3.2), not against a generic security checklist.
+The review is performed with the `.claude/agents/security-auditor.md` agent,
+which is written explicitly against the design invariants (design doc §19;
+roadmap §3.1, §3.2), not against a generic security checklist.
+
+## Automated scans
+
+Alongside the review, CI runs CodeQL (`security-extended`), Semgrep, and Gitleaks
+on pull requests, and Dependabot opens weekly dependency updates. A scan finding
+is triaged like a review finding: remediated, or recorded as an accepted risk.
 
 ## Record keeping
 
@@ -47,7 +59,9 @@ explicitly against the twelve design invariants (design doc §19; roadmap §3.1,
   left silently unaddressed.
 - `docs/security/read-paths.md` is the read-path inventory the review checks
   against. A new read path is a review trigger even when no listed file changes.
-- Each release-candidate audit log tracks prior findings across audits.
+- `docs/security/audits/` holds release-candidate audit logs. Each log tracks the
+  milestone's findings across audits so a later audit continues the same rows
+  rather than re-deriving them.
 
 ## Changing the rules
 

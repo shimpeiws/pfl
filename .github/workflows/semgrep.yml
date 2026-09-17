@@ -1,0 +1,32 @@
+name: Semgrep
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '0 4 * * 1'
+
+permissions:
+  contents: read
+
+jobs:
+  semgrep:
+    runs-on: ubuntu-latest
+    container:
+      image: semgrep/semgrep
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      # `--config=auto` pulls the registry rule set for the languages present.
+      # `--error` fails the job on a finding, so a PR cannot merge past one.
+      - name: Scan
+        run: semgrep scan --config=auto --error --json --output=semgrep.json
+
+      - name: Upload findings
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: semgrep
+          path: semgrep.json
+          if-no-files-found: ignore
