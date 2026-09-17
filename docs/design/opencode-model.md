@@ -600,20 +600,6 @@ M9 must therefore record a duplicate-name diagnostic and must not depend on any
 winner: a fixture cannot be trusted to reproduce the loss. This row is also the
 concrete instance of the drift the header describes.
 
-### Appendix A — runs excluded from the count
-
-Recorded before the §0 script scoped `$OPENCODE_CONFIG*` to a subshell, and
-excluded from the table above: the leaked variable outranks every file on disk, so
-every step after it reported the same value regardless of the fixture. They are
-kept because the earlier draft of the table was built from them. Their values are
-reproduced as recorded in `655939e` and not re-run — re-running them would only
-reproduce the leak.
-
-| Run, as recorded then                    | Agent   | Command | Skill, three consecutive invocations |
-| ---------------------------------------- | ------- | ------- | ------------------------------------ |
-| 1.18.31, collision fixture alone         | project | project | global, project, project             |
-| 1.18.31, §0 fixture (with config decoys) | project | project | global, global, project              |
-
 ### Activation
 
 | Value          | OpenCode surface                                                        | Tag |
@@ -833,3 +819,17 @@ not exercise must not be extended to 1.18.31 by assumption.
    the rest of the reconciliation — every **[upstream]** and not-exercised row
    still stands on the source it names — and §10 makes that the prerequisite M9
    inherits.
+
+## Appendix A — §6 runs excluded from the count
+
+Recorded before the §0 script scoped `$OPENCODE_CONFIG*` to a subshell, and
+excluded from the table above: the leaked variable outranks every file on disk, so
+every step after it reported the same value regardless of the fixture. They are
+kept because the earlier draft of the table was built from them. Their values are
+reproduced as recorded in `655939e` and not re-run — re-running them would only
+reproduce the leak.
+
+| Run, as recorded then                    | Agent   | Command | Skill, three consecutive invocations |
+| ---------------------------------------- | ------- | ------- | ------------------------------------ |
+| 1.18.31, collision fixture alone         | project | project | global, project, project             |
+| 1.18.31, §0 fixture (with config decoys) | project | project | global, global, project              |
