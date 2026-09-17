@@ -64,7 +64,7 @@ describe.each(['claude-code', 'codex'] as const)('%s detection without consent',
 
     const detection = await getAdapter(runtime).detect(
       PROJECT,
-      { allowOutsideProject: false, grantedScopes: [] },
+      { user: false, install: false, grantedScopes: [] },
       m.home,
       '',
     );

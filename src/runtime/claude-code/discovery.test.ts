@@ -33,8 +33,8 @@ afterEach(async () => {
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
-const CONSENTED = { allowOutsideProject: true, grantedScopes: ['claude-code:user'] };
-const DENIED = { allowOutsideProject: false, grantedScopes: [] };
+const CONSENTED = { user: true, install: true, grantedScopes: ['claude-code:user'] };
+const DENIED = { user: false, install: false, grantedScopes: [] };
 
 interface Fixture {
   project: { id: string; displayName: string; root: string; remote: string };

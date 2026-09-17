@@ -33,8 +33,8 @@ afterEach(async () => {
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
-const CONSENTED = { allowOutsideProject: true, grantedScopes: ['codex:user'] };
-const DENIED = { allowOutsideProject: false, grantedScopes: [] };
+const CONSENTED = { user: true, install: true, grantedScopes: ['codex:user'] };
+const DENIED = { user: false, install: false, grantedScopes: [] };
 
 /** Enough `allow` decisions to cross `BROAD_TOOL_ACCESS_MIN_ALLOW`. */
 const RULE_ALLOW_COUNT = 12;

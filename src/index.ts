@@ -74,18 +74,34 @@ function withErrorHandling<Args extends [...unknown[], CommonFlags | undefined]>
 cli
   .command('inspect', 'Inspect one runtime harness without executing it')
   .option('--runtime <runtime>', 'Runtime to inspect: claude-code or codex')
+  .option(
+    '--allow-scope <scope>',
+    'Grant <runtime>:<scope> for this run only (repeatable; scope: user or install)',
+  )
   .option('--json', 'Output as JSON')
   .action(
-    withErrorHandling('inspect', async (flags: { runtime?: string } & CommonFlags) => {
-      if (!flags.runtime) {
-        throw new PflError('--runtime is required (claude-code or codex)', EXIT_CODES.CONFIG_ERROR);
-      }
-      return runInspect(
-        process.cwd(),
-        { runtime: flags.runtime, json: flags.json ?? false },
-        loggerForFlags(flags),
-      );
-    }),
+    withErrorHandling(
+      'inspect',
+      async (flags: { runtime?: string; allowScope?: string | string[] } & CommonFlags) => {
+        if (!flags.runtime) {
+          throw new PflError(
+            '--runtime is required (claude-code or codex)',
+            EXIT_CODES.CONFIG_ERROR,
+          );
+        }
+        const allowScopes =
+          flags.allowScope === undefined
+            ? []
+            : Array.isArray(flags.allowScope)
+              ? flags.allowScope
+              : [flags.allowScope];
+        return runInspect(
+          process.cwd(),
+          { runtime: flags.runtime, allowScopes, json: flags.json ?? false },
+          loggerForFlags(flags),
+        );
+      },
+    ),
   );
 
 cli

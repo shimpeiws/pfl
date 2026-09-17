@@ -19,7 +19,7 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
     home?: string,
     pathValue: string = process.env['PATH'] ?? '',
   ): Promise<RuntimeDetection> {
-    if (!access.allowOutsideProject) {
+    if (!access.install) {
       return {
         runtimeId: this.id(),
         // `unknown`, not `no`: detection could not look, so "not consented" stays

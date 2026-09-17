@@ -27,6 +27,7 @@ import { inspectFileTarget, readTextFileGuarded } from '../../util/fs.js';
 import { sha256Digest } from '../../util/hash.js';
 import { packageVersion } from '../../version.js';
 import type { AccessPolicy, ProjectContext } from '../types.js';
+import { grants } from '../../discovery/gate.js';
 import { detectCodex } from './detect.js';
 import { CODEX_SAFE_METADATA_ALLOWLIST } from './metadata.js';
 import { redactCodex } from './redact.js';
@@ -78,7 +79,7 @@ export async function collectCodexHarness(
   const elements: ObservedElement[] = [];
   const diagnostics: Diagnostic[] = [];
 
-  const detection = access.allowOutsideProject
+  const detection = grants(access, 'install')
     ? await detectCodex(home, pathValue)
     : {
         version: null,
@@ -87,16 +88,24 @@ export async function collectCodexHarness(
           {
             severity: 'info' as const,
             code: 'consent-not-granted',
-            message: 'user-scope discovery skipped: consent was not granted',
+            message: 'installation and version metadata skipped: the install scope was not granted',
           },
         ],
       };
   diagnostics.push(...detection.diagnostics);
 
   await collectProject(project, elements, diagnostics);
-  if (access.allowOutsideProject) {
+  if (grants(access, 'user')) {
     await collectAncestorInstructions(project, elements, diagnostics);
     await collectUser(project, home, elements, diagnostics);
+  } else {
+    // A missing user grant is a recorded absence, not an empty harness
+    // (roadmap M8 #81).
+    diagnostics.push({
+      severity: 'info',
+      code: 'consent-not-granted',
+      message: 'user-scope discovery skipped: the user scope was not granted',
+    });
   }
   elements.push(builtinLayer());
 

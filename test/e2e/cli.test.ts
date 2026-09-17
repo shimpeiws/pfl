@@ -7,7 +7,12 @@ import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { EXIT_CODES } from '../../src/cli/exit-codes.js';
 import { elementIdFor, runtimeId } from '../../src/core/ids.js';
 import { resolveProjectContext } from '../../src/discovery/project-identity.js';
-import { interpretationsDir, readLatestPointer, snapshotsDir } from '../../src/snapshot/store.js';
+import {
+  interpretationsDir,
+  permissionsPath,
+  readLatestPointer,
+  snapshotsDir,
+} from '../../src/snapshot/store.js';
 import {
   grantConsent,
   materialize,
@@ -617,6 +622,49 @@ describe('pfl CLI end to end', () => {
         id,
       ).toContain('unsupported-snapshot-schema');
     }
+  });
+
+  it('grants a scope for one run with --allow-scope, without writing the store', async () => {
+    const m = await materialize('claude');
+    materialized.push(m);
+
+    // Install alone is not enough: the user scope is required to discover the
+    // harness, and its absence is the exit-5 missing-scope document.
+    const installOnly = await runCli(m, [
+      'inspect',
+      '--runtime',
+      'claude-code',
+      '--allow-scope',
+      'claude-code:install',
+      '--json',
+    ]);
+    expect(installOnly.code).toBe(EXIT_CODES.CONSENT_REQUIRED);
+    expect(
+      (JSON.parse(installOnly.stdout) as { data: { missingScopes?: string[] } }).data.missingScopes,
+    ).toContain('claude-code:user');
+
+    // The user scope alone succeeds; install is skipped, so its absence is a
+    // diagnostic and detection reports `unknown`.
+    const withUser = await runCli(m, [
+      'inspect',
+      '--runtime',
+      'claude-code',
+      '--allow-scope',
+      'claude-code:user',
+      '--json',
+    ]);
+    expect(withUser.code, withUser.stderr).toBe(EXIT_CODES.SUCCESS);
+    const document = JSON.parse(withUser.stdout) as {
+      ok: boolean;
+      data: { runtimeVersion: string | null };
+      diagnostics: { code: string }[];
+    };
+    expect(document.ok).toBe(true);
+    expect(document.data.runtimeVersion).toBeNull();
+    expect(document.diagnostics.some((entry) => entry.code === 'consent-not-granted')).toBe(true);
+
+    // The grant is for this run only: nothing is written to the consent store.
+    expect(await readFile(permissionsPath(m.home), 'utf8').catch(() => null)).toBeNull();
   });
 
   it('emits the missing consent scopes in the failure document', async () => {

@@ -255,8 +255,20 @@ good or bad.
 
 Project-local discovery is implicit. Reading anything outside the project — your
 `~/.claude` / `~/.codex` user scope, and the installed runtime's version metadata
-— requires explicit, persisted consent. A non-interactive run without it fails
-closed with exit code 5 rather than assuming consent.
+— requires explicit, persisted consent, per runtime and scope:
+`<runtime>:user` for the user harness and `<runtime>:install` for installation
+and version metadata. A non-interactive run that lacks the user scope fails
+closed with exit code 5 rather than assuming consent; without the install scope
+it proceeds and reports the version as unknown.
+
+A CI job can grant a scope for a single run with a repeatable
+`--allow-scope <runtime>:<scope>` flag. The grant lasts for that run only and is
+never written to the consent store, so automation cannot widen your saved
+grants:
+
+```sh
+pfl inspect --runtime claude-code --allow-scope claude-code:user
+```
 
 Consent is stored per runtime + scope in `~/.pfl/permissions.json`. Snapshots are
 written under `~/.pfl/projects/<project-id>/` as immutable, atomically published
