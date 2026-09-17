@@ -6,6 +6,7 @@ import {
   mkdtemp,
   readFile,
   readdir,
+  readlink,
   rm,
   stat,
   symlink,
@@ -151,21 +152,39 @@ export interface FileFingerprint {
   mode: number;
 }
 
-/** Content hash, mtime, and mode for every regular file under `dir` (symlinks skipped). */
-export async function fingerprintTree(dir: string): Promise<Map<string, FileFingerprint>> {
+export interface FingerprintOptions {
+  /** Relative paths (or path prefixes) to skip, e.g. the store `pfl` writes. */
+  exclude?: readonly string[];
+}
+
+/**
+ * Content hash, mtime, and mode for every regular file under `dir`, plus the
+ * target of every symlink (so retargeting a link is detected). `atime` is
+ * intentionally excluded: reading a file changes it. Symlinked directories are
+ * not descended.
+ */
+export async function fingerprintTree(
+  dir: string,
+  options: FingerprintOptions = {},
+): Promise<Map<string, FileFingerprint>> {
+  const exclude = options.exclude ?? [];
   const fingerprints = new Map<string, FileFingerprint>();
   async function walk(current: string): Promise<void> {
     const entries = await readdir(current, { withFileTypes: true });
     for (const entry of entries) {
       const full = join(current, entry.name);
+      const rel = relative(dir, full);
+      if (exclude.some((skip) => rel === skip || rel.startsWith(`${skip}/`))) continue;
       if (entry.isDirectory()) {
         await walk(full);
+      } else if (entry.isSymbolicLink()) {
+        fingerprints.set(rel, { hash: `symlink:${await readlink(full)}`, mtimeMs: 0, mode: 0 });
       } else if (entry.isFile()) {
         const [content, stats] = await Promise.all([
           readFile(full).catch(() => Buffer.from('')),
           stat(full),
         ]);
-        fingerprints.set(relative(dir, full), {
+        fingerprints.set(rel, {
           hash: createHash('sha256').update(content).digest('hex'),
           mtimeMs: stats.mtimeMs,
           mode: stats.mode & 0o777,

@@ -1,5 +1,5 @@
 import { execFile, spawn } from 'node:child_process';
-import { rm } from 'node:fs/promises';
+import { rm, readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
@@ -112,7 +112,7 @@ describe('pfl CLI end to end', () => {
     expect(result.stdout).toContain('+ 0 newly effective');
   });
 
-  it('inspects a Codex harness and runs the read commands', async () => {
+  it('inspects a Codex harness and reads back Codex-specific content', async () => {
     const m = await fixture('codex');
 
     const inspect = await runCli(m, ['inspect', '--runtime', 'codex']);
@@ -123,5 +123,42 @@ describe('pfl CLI end to end', () => {
       const result = await runCli(m, args);
       expect(result.code, `${args.join(' ')}: ${result.stderr}`).toBe(EXIT_CODES.SUCCESS);
     }
+
+    // Codex-specific evidence, not just "it exited 0": the provenance path and
+    // the runtime id must actually be Codex, so a silent claude-code fallback
+    // or an empty harness would fail.
+    const graph = await runCli(m, ['graph']);
+    expect(graph.stdout).toContain('~/.codex');
+
+    const snapshots = await runCli(m, ['snapshots']);
+    expect(snapshots.stdout).toContain('codex@');
+
+    const list = await runCli(m, ['list', '--json']);
+    const listed = JSON.parse(list.stdout.trim().split('\n').at(-1) ?? '{}');
+    const userElement = listed.elements.find(
+      (element: { origin: string }) => element.origin === 'user',
+    );
+    const show = await runCli(m, ['show', userElement.id]);
+    expect(show.code, show.stderr).toBe(EXIT_CODES.SUCCESS);
+    expect(show.stdout).toContain('~/.codex');
+
+    const snapshotsJson = await runCli(m, ['snapshots', '--json']);
+    const payload = JSON.parse(snapshotsJson.stdout.trim().split('\n').at(-1) ?? '{}');
+    const resolvedId: string = payload.runs[0].resolvedId;
+    const diff = await runCli(m, ['diff', resolvedId, resolvedId]);
+    expect(diff.code, diff.stderr).toBe(EXIT_CODES.SUCCESS);
+    expect(diff.stdout).toContain('+ 0 added');
+  });
+
+  it('reports the package version from the packed layout', async () => {
+    const m = await fixture();
+    const manifest = JSON.parse(await readFile(join(repoRoot, 'package.json'), 'utf8')) as {
+      version: string;
+    };
+
+    const result = await runCli(m, ['--version']);
+
+    expect(result.code).toBe(EXIT_CODES.SUCCESS);
+    expect(result.stdout.trim()).toContain(manifest.version);
   });
 });

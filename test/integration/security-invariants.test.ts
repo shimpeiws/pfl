@@ -54,16 +54,21 @@ async function latestObserved(m: Materialized) {
 }
 
 describe.each<FixtureRuntime>(['claude', 'codex'])('%s harness invariants', (runtime) => {
-  it('is read-only: a full inspect changes nothing under the project or the user scope', async () => {
+  it('is read-only: a full inspect changes nothing under the project, the user scope, or outside', async () => {
     const m = await materialize(runtime);
     materialized.push(m);
     await grantConsent(m.home, runtime);
+    // The store under `~/.pfl` is the one thing a run may write; everything else
+    // (project, the whole home except `.pfl`, and the out-of-project fixture)
+    // must be untouched.
     const beforeProject = await fingerprintTree(m.projectRoot);
-    const beforeUser = await fingerprintTree(m.userConfigDir);
-    // Positive control: the fingerprint actually covers files, so an empty
+    const beforeHome = await fingerprintTree(m.home, { exclude: ['.pfl'] });
+    const beforeOutside = await fingerprintTree(m.outsideDir);
+    // Positive controls: each fingerprint actually covers entries, so an empty
     // comparison cannot pass vacuously.
     expect(beforeProject.size).toBeGreaterThan(0);
-    expect(beforeUser.size).toBeGreaterThan(0);
+    expect(beforeHome.size).toBeGreaterThan(0);
+    expect(beforeOutside.size).toBeGreaterThan(0);
 
     await runInspect(
       m.projectRoot,
@@ -72,7 +77,8 @@ describe.each<FixtureRuntime>(['claude', 'codex'])('%s harness invariants', (run
     );
 
     expect(await fingerprintTree(m.projectRoot)).toEqual(beforeProject);
-    expect(await fingerprintTree(m.userConfigDir)).toEqual(beforeUser);
+    expect(await fingerprintTree(m.home, { exclude: ['.pfl'] })).toEqual(beforeHome);
+    expect(await fingerprintTree(m.outsideDir)).toEqual(beforeOutside);
   });
 
   it('never follows the symlink and records it once as skipped', async () => {
@@ -126,8 +132,10 @@ describe.each<FixtureRuntime>(['claude', 'codex'])('%s harness invariants', (run
     const m = await inspect(runtime);
     const artifacts = await readStoreArtifacts(m.home);
 
-    // Positive control: a negative assertion over an empty store proves nothing.
+    // Positive control: a negative assertion over an empty store proves nothing,
+    // and the artifact bodies (not only the pointer) must have been read.
     expect(artifacts.length).toBeGreaterThan(0);
+    expect(artifacts).toContain('"schemaVersion"');
     for (const sentinel of SENTINELS) {
       expect(artifacts).not.toContain(sentinel);
     }
@@ -157,19 +165,42 @@ describe.each<FixtureRuntime>(['claude', 'codex'])('%s harness invariants', (run
 });
 
 describe('no-execution guard', () => {
+  // A text scan is a tripwire, not a proof: obfuscation (globalThis['ev'+'al'])
+  // evades it, and type-position `import('./x')` would false-positive. It has
+  // no false positives in `src` today, so it stays strict.
+  const forbidden = [
+    /child_process/,
+    /\bexecSync\b/,
+    /\bspawnSync\b/,
+    /\bspawn\(/,
+    /\bexecFile\(/,
+    /\bexecFileSync\b/,
+    /\beval\s*\(/,
+    /\bFunction\s*\(/,
+    /['"](?:node:)?vm['"]/,
+    /worker_threads/,
+    /\bcreateRequire\b/,
+    /\bimport\s*\(/,
+    /\brequire\s*\(/,
+  ];
+
+  it('flags a known-bad canary, so the patterns are not inert', () => {
+    const canary = [
+      'const a = child_process;',
+      'eval("1");',
+      'new Function("a");',
+      'await import("./z");',
+      'require("w");',
+      'createRequire(x)("m");',
+      'from "vm";',
+      'worker_threads;',
+    ].join('\n');
+
+    expect(forbidden.filter((pattern) => pattern.test(canary)).length).toBeGreaterThanOrEqual(7);
+  });
+
   it('never imports or calls a process-spawning or code-evaluating API in src', async () => {
-    const forbidden = [
-      /child_process/,
-      /\bexecSync\b/,
-      /\bspawnSync\b/,
-      /\bspawn\(/,
-      /\bexecFile\(/,
-      /\beval\s*\(/,
-      /\bnew\s+Function\b/,
-      /node:vm/,
-      /\bimport\s*\(/,
-      /\brequire\s*\(/,
-    ];
+    const scanned: string[] = [];
     const matches: string[] = [];
 
     async function walk(dir: string): Promise<void> {
@@ -178,6 +209,7 @@ describe('no-execution guard', () => {
         const full = join(dir, entry.name);
         if (entry.isDirectory()) await walk(full);
         else if (entry.name.endsWith('.ts') && !entry.name.endsWith('.test.ts')) {
+          scanned.push(full);
           const content = await readFile(full, 'utf8');
           for (const pattern of forbidden) {
             if (pattern.test(content)) matches.push(`${full}: ${String(pattern)}`);
@@ -187,6 +219,8 @@ describe('no-execution guard', () => {
     }
     await walk(join(process.cwd(), 'src'));
 
+    // Positive control: the walk actually found files to scan.
+    expect(scanned.length).toBeGreaterThan(0);
     expect(matches).toEqual([]);
   });
 });
