@@ -36,7 +36,6 @@ async function makeFixture(): Promise<Fixture> {
 
   await mkdir(root, { recursive: true });
   await mkdir(join(configDir, 'skills'), { recursive: true });
-  await mkdir(join(configDir, 'agents'), { recursive: true });
   await mkdir(join(configDir, 'rules'), { recursive: true });
   await mkdir(join(configDir, 'memories'), { recursive: true });
   await mkdir(
@@ -61,6 +60,30 @@ async function makeFixture(): Promise<Fixture> {
       'notify = ["/bin/notify", "turn-ended"]',
       '[mcp_servers.node_repl]',
       'command = "node"',
+      '[sandbox_workspace_write]',
+      'network_access = true',
+      'writable_roots = ["/first", "/second"]',
+      '[shell_environment_policy]',
+      'inherit = "core"',
+      '[shell_environment_policy.set]',
+      'FOO = "SENTINEL_ENV_VALUE"',
+      'BAZ = "SENTINEL_ENV_VALUE_2"',
+      `[projects."${root}"]`,
+      'trust_level = "trusted"',
+      '[marketplaces.local]',
+      'source_type = "local"',
+      '[plugins."browser@local"]',
+      'enabled = true',
+      '[plugins."off@local"]',
+      'enabled = false',
+      '[profiles.fast]',
+      'approval_policy = "never"',
+      '[features]',
+      'hooks = true',
+      '[hooks.state."x"]',
+      'last_run = 1',
+      '[tui.model_availability_nux]',
+      '"gpt" = 1',
       '',
     ].join('\n'),
   );
@@ -80,7 +103,6 @@ async function makeFixture(): Promise<Fixture> {
       '',
     ].join('\n'),
   );
-  await writeFile(join(configDir, 'agents', 'reviewer.md'), '# Reviewer\n');
   await writeFile(join(configDir, 'rules', 'rule.md'), '# Rule\n');
   await writeFile(join(configDir, 'memories', 'MEMORY.md'), '# Memory\n');
   await writeFile(join(outside, 'leaked.txt'), 'must not be discovered\n');
@@ -107,7 +129,6 @@ describe('collectCodexHarness', () => {
     expect(paths.get('AGENTS.override.md')?.native.kind).toBe('fallback-instructions');
     expect(paths.get('~/.codex/AGENTS.md')?.native.kind).toBe('instructions');
     expect(paths.get('~/.codex/skills/SKILL.md')?.native.kind).toBe('skills');
-    expect(paths.get('~/.codex/agents/reviewer.md')?.native.kind).toBe('custom-agents');
     expect(paths.get('~/.codex/rules/rule.md')?.native.kind).toBe('permissions');
     expect(paths.get('~/.codex/memories/MEMORY.md')?.native.kind).toBe('memory');
   });
@@ -129,9 +150,49 @@ describe('collectCodexHarness', () => {
     expect(paths.get('~/.codex/config.toml#mcp_servers')?.metadata).toEqual({
       serverNames: ['node_repl'],
     });
+    expect(paths.get('~/.codex/config.toml#sandbox_workspace_write')?.metadata).toEqual({
+      networkAccess: true,
+      writableRootCount: 2,
+    });
+    expect(paths.get('~/.codex/config.toml#shell_environment_policy')?.metadata).toEqual({
+      inheritMode: 'core',
+      setKeyCount: 2,
+    });
+    expect(paths.get('~/.codex/config.toml#plugins')?.metadata).toEqual({
+      pluginNames: ['browser@local', 'off@local'],
+      enabledPluginCount: 1,
+    });
+    expect(paths.get('~/.codex/config.toml#marketplaces')?.metadata).toEqual({
+      marketplaceNames: ['local'],
+    });
+    expect(paths.get(`~/.codex/config.toml#profiles.fast`)?.metadata).toEqual({
+      approvalMode: 'never',
+    });
+    expect(paths.get(`~/.codex/config.toml#projects.${project.root}`)).toMatchObject({
+      native: { kind: 'project-configuration', origin: 'user', scope: 'project' },
+      metadata: { trustLevel: 'trusted' },
+    });
+    // A secret-shaped environment value in `[shell_environment_policy.set]` is
+    // never persisted, only counted.
+    expect(JSON.stringify(snapshot.elements)).not.toContain('SENTINEL_ENV_VALUE');
     expect(paths.get('~/.codex/hooks.json#hooks')?.metadata).toEqual({
       eventNames: ['SessionStart'],
     });
+  });
+
+  it('records unmodelled config.toml sections as unsupported rather than dropping them', async () => {
+    const { project, home } = await makeFixture();
+
+    const snapshot = await collectCodexHarness(project, CONSENTED, home);
+    const paths = byPath(snapshot.elements);
+
+    for (const section of ['features', 'hooks', 'tui']) {
+      expect(paths.get(`~/.codex/config.toml#${section}`)).toMatchObject({
+        status: 'unsupported',
+        reason: 'unsupported-by-adapter',
+        native: { kind: 'unknown' },
+      });
+    }
   });
 
   it('resolves frontmatter structure for walked skill files', async () => {

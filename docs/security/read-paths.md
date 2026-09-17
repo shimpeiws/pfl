@@ -113,6 +113,14 @@ reports the size for the caller to bound. `readTextFileGuarded` builds on it.
 | `discovery.ts` | `readFile` `config.toml`                                           | `readTextFileGuarded` + scope base | user-scope                    |
 | `discovery.ts` | `readFile` `hooks.json`                                            | `readTextFileGuarded` + scope base | user-scope                    |
 
+M7 models more of `config.toml` (`[sandbox_workspace_write]`, `[projects.*]`,
+`[shell_environment_policy]`, `[marketplaces.*]`, `[plugins.*]`, `[profiles.*]`)
+and records every other section as `unsupported`. The read is unchanged — the
+same single guarded `readFile` — and `[shell_environment_policy.set]` values are
+never persisted, only their key count. M7 also removes `~/.codex/agents/` as a
+search area (it is absent in the verified range), so the walk covers fewer
+directories, not more.
+
 ### `snapshot/store.ts`
 
 | Line | Read                               | Guard                                       | Classification |

@@ -22,7 +22,7 @@ import type { ResolvedSnapshot } from '../core/resolved.js';
  */
 
 export const CLASSIFIER_ID = 'pfl-native';
-export const CLASSIFIER_VERSION = '1';
+export const CLASSIFIER_VERSION = '2';
 
 interface FacetMapping {
   facets: readonly HarnessFacet[];
@@ -45,10 +45,10 @@ const FACETS_BY_KIND: Record<string, FacetMapping> = {
   },
   commands: { facets: ['actions'], confidence: 'high', reason: 'invokable command' },
   subagents: { facets: ['delegation'], confidence: 'high', reason: 'delegates work to a subagent' },
-  'custom-agents': {
-    facets: ['delegation'],
-    confidence: 'high',
-    reason: 'delegates work to a custom agent',
+  plugin: {
+    facets: ['knowledge', 'actions', 'delegation'],
+    confidence: 'medium',
+    reason: 'supplies skills, commands, agents, or hooks',
   },
   'multi-agent-configuration': {
     facets: ['delegation'],
@@ -66,6 +66,16 @@ const FACETS_BY_KIND: Record<string, FacetMapping> = {
     facets: ['controls'],
     confidence: 'high',
     reason: 'constrains approval and sandboxing',
+  },
+  'shell-environment': {
+    facets: ['controls'],
+    confidence: 'medium',
+    reason: 'shapes the environment the agent sees',
+  },
+  'project-configuration': {
+    facets: ['controls'],
+    confidence: 'medium',
+    reason: 'project trust and approval configuration',
   },
   'output-style': { facets: ['instructions'], confidence: 'medium', reason: 'shapes output style' },
   'mcp-configuration': {

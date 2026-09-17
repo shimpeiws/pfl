@@ -38,6 +38,17 @@ export const MAX_FRONTMATTER_KEYS = 64;
 export const MAX_TOOL_NAMES = 64;
 export const MAX_TOOL_NAME_LENGTH = 200;
 
+/**
+ * TOML reader shape ceilings (roadmap §5 M7, issue #74). The parse input is
+ * already bounded, but a hostile `config.toml` can still declare a deeply nested
+ * section path or an enormous array, so the reader bounds section depth, array
+ * length, and scalar string length. Hitting one records the file as malformed
+ * rather than allocating without limit.
+ */
+export const MAX_TOML_SECTION_DEPTH = 8;
+export const MAX_TOML_ARRAY_ITEMS = 256;
+export const MAX_TOML_SCALAR_LENGTH = 256;
+
 export type LimitName =
   | 'MAX_FILE_BYTES'
   | 'MAX_WALK_ENTRIES'

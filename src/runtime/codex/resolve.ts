@@ -21,11 +21,13 @@ import { resolveElements, type ElementResolutionInput } from '../../resolution/r
  * instructions                  project | global    accumulate      always
  * fallback-instructions         project             override        always   (replaces AGENTS.md)
  * skills                        project             available       on-demand (still effective)
- * custom-agents                 project             available       on-demand
  * permissions                   global              policy          always
  * memory                        project             accumulate      always
  * hooks                         tool-event(target)  event-pipeline  event-driven
  * approval-sandbox              global              policy          always
+ * shell-environment             global              policy          always   (behavioral control)
+ * project-configuration         project             policy          always
+ * plugin                        global              available       on-demand
  * compaction-controls           global              policy          always   (behavioral control)
  * mcp-configuration             global              available       on-demand
  * runtime-provided-instructions runtime-defined     runtime-defined always   (opaque)
@@ -33,10 +35,10 @@ import { resolveElements, type ElementResolutionInput } from '../../resolution/r
  * ```
  *
  * `AGENTS.override.md` takes precedence over `AGENTS.md` in the same scope, so
- * the base file is `shadowed` when an override is present. Codex has no
- * project-scoped configuration directory, so there is no cross-scope settings
- * shadowing to apply. Skill dependencies are recorded as observed structure,
- * never inferred.
+ * the base file is `shadowed` when an override is present. Codex stores
+ * project-scoped configuration centrally (`[projects.*]`), so there is no
+ * cross-scope settings shadowing to apply. Skill dependencies are recorded as
+ * observed structure, never inferred.
  */
 
 export async function resolveCodex(
@@ -88,14 +90,18 @@ function axesFor(element: ObservedElement): {
     case 'fallback-instructions':
       return { applicability: { type: 'project' }, strategy: 'override', activation: 'always' };
     case 'skills':
-    case 'custom-agents':
       return { applicability: { type: 'project' }, strategy: 'available', activation: 'on-demand' };
+    case 'plugin':
+      return { applicability: { type: 'global' }, strategy: 'available', activation: 'on-demand' };
     case 'memory':
       return { applicability: { type: 'project' }, strategy: 'accumulate', activation: 'always' };
     case 'permissions':
     case 'approval-sandbox':
     case 'compaction-controls':
+    case 'shell-environment':
       return { applicability: { type: 'global' }, strategy: 'policy', activation: 'always' };
+    case 'project-configuration':
+      return { applicability: { type: 'project' }, strategy: 'policy', activation: 'always' };
     case 'mcp-configuration':
       return { applicability: { type: 'global' }, strategy: 'available', activation: 'on-demand' };
     case 'hooks':

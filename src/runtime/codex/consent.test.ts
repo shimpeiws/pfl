@@ -18,7 +18,6 @@ const EXPECTED = [
       '~/.codex/config.toml',
       '~/.codex/AGENTS.md',
       '~/.codex/skills/**',
-      '~/.codex/agents/**',
       '~/.codex/rules/**',
       '~/.codex/memories/**',
       '~/.codex/hooks/**',

@@ -5,3 +5,19 @@ model = "gpt-5.6-luna"
 
 [mcp_servers.node_repl]
 command = "node"
+
+[sandbox_workspace_write]
+network_access = true
+writable_roots = ["/first", "/second"]
+
+[shell_environment_policy]
+inherit = "core"
+
+[shell_environment_policy.set]
+SENTINEL_CODEX_ENV = "sk-ant-api03-EXFILTRATION-0123456789"
+
+[plugins."fixture@local"]
+enabled = true
+
+[features]
+hooks = true

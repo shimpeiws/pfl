@@ -106,20 +106,41 @@ describe('resolveCodex', () => {
     expect(find(resolved.elements, nestedBase).status).toBe('effective');
   });
 
-  it('treats on-demand skills and custom agents as effective', async () => {
+  it('treats on-demand skills and plugins as effective', async () => {
     const skill = element('~/.codex/skills/SKILL.md', 'skills', 'user');
-    const agent = element('~/.codex/agents/reviewer.md', 'custom-agents', 'user');
+    const plugin = element('~/.codex/config.toml#plugins', 'plugin', 'user');
 
-    const resolved = await resolveCodex(snapshot([skill, agent]));
+    const resolved = await resolveCodex(snapshot([skill, plugin]));
 
     expect(find(resolved.elements, skill)).toMatchObject({
       status: 'effective',
       activation: 'on-demand',
     });
-    expect(find(resolved.elements, agent)).toMatchObject({
+    expect(find(resolved.elements, plugin)).toMatchObject({
       status: 'effective',
       activation: 'on-demand',
       resolution: { strategy: 'available' },
+    });
+  });
+
+  it('resolves shell environment and project configuration as policy', async () => {
+    const shell = element(
+      '~/.codex/config.toml#shell_environment_policy',
+      'shell-environment',
+      'user',
+    );
+    const project = element('~/.codex/config.toml#projects./repo', 'project-configuration', 'user');
+
+    const resolved = await resolveCodex(snapshot([shell, project]));
+
+    expect(find(resolved.elements, shell)).toMatchObject({
+      status: 'effective',
+      resolution: { strategy: 'policy' },
+    });
+    expect(find(resolved.elements, project)).toMatchObject({
+      status: 'effective',
+      applicability: { type: 'project' },
+      resolution: { strategy: 'policy' },
     });
   });
 
