@@ -117,14 +117,16 @@ observations in this document — the §1 roots, §2's precedence, walk stop and
 `OPENCODE_CONFIG_DIR`, §4's element and MCP surfaces in both scopes, §6's
 collision, and the compiled-in layers of §8 — with one exception: the
 walk-independence check recorded in §2 has its own fixture. The 1.18.30
-observations came from earlier versions of it; the load-bearing details below and
-the **1.18.31 only** marks in the exercised list delimit where the two differ.
-Those earlier versions are two: the 1.18.30 one (`e98dbfc`), whose same-name
-element markers (`agent/command/skill/marker`) are identical to the ones above but
-whose config fixture gave every source the same single key and created no
-repository, and a later pre-fix one (`655939e`), which added `git init` and the
-per-key decoys and is an 1.18.31 run kept in Appendix A, not used as 1.18.30
-evidence. That is why the agent and command element results carry 1.18.30 evidence
+observations came from an earlier version of it (`e98dbfc`); the load-bearing
+details below and the **1.18.31 only** marks in the exercised list delimit where
+the two differ. That earlier version's same-name element markers
+(`agent/command/skill/marker`) are identical to the ones above, but its config
+fixture gave every source the same single key and created no repository. A later
+pre-fix version (`655939e`) added `git init` and the per-key decoys; it is an
+1.18.31 run and corresponds to the **§0-fixture row** in Appendix A, whose other
+row predates even that script. Neither pre-fix version is used as 1.18.30 evidence
+except for the element markers, which are identical throughout. That is why the
+agent and command element results carry 1.18.30 evidence
 while the precedence ladder and the walk stop do not. The probe is reproduced in
 full so the 1.18.31 observations can be re-derived rather than taken on trust; it
 writes only under a `mktemp` directory, and the decoy files it creates are never
@@ -323,7 +325,8 @@ only**:
   `grep -ci`, not the resolved key set (step 8);
 - that a same-name agent and command resolve to the project's copy while a
   same-name skill is lost unstably (§6; re-measured: the agent and command winners
-  reproduced, the 1.18.30 skill winner — `global` — did not);
+  reproduced, and the 1.18.30 skill winner (`global`) recurred but not stably —
+  `global` in 9 of 24 invocations);
 - the compiled-in layers: the agents `agent list` reports and the built-in skill
   `customize-opencode`, reported with `"location": "<built-in>"` (§5, §7, §8) —
   the built-in listing reproduced, but whether `agent list` shows the fixture's
@@ -408,7 +411,7 @@ points at a separate TUI-only config (`tui.json[c]`); UI chrome is outside the
 harness boundary (§7) and is not modelled.
 
 Verified precedence and walk behaviours (isolated probe, §0). All four were
-measured on the §0 fixture on 1.18.31, and **all four are 1.18.31 only**: they come
+measured on the §0 probe on 1.18.31, and **all four are 1.18.31 only**: they come
 from that fixture, not from the earlier one the 1.18.30 record used. That earlier recorded
 probe creates no repository (`e98dbfc`), and the first probe that measured a walk
 stop introduced `git init` (`655939e`). The 1.18.30 fixture also gave every source
@@ -696,7 +699,7 @@ Managed configuration overrides everything and is not user-overridable
 
 | Value                | OpenCode surface                                                                | Tag |
 | -------------------- | ------------------------------------------------------------------------------- | --- |
-| `global`             | `~/.config/opencode/AGENTS.md`, global config keys                               | config keys [installed: measured; 1.18.31 only]; `AGENTS.md` [installed: self-described] |
+| `global`             | `~/.config/opencode/AGENTS.md`, global config keys, user-scope element dirs      | element dirs [installed: measured; 1.18.31 only, §0 step 10]; config keys [installed: measured; 1.18.31 only]; `AGENTS.md` [installed: self-described] |
 | `project`            | project `opencode.json`, `.opencode/**`, project `AGENTS.md`                      | element dirs [installed: measured; skills 1.18.31 only, §4.2]; config keys [installed: measured; 1.18.31 only]; `AGENTS.md` [installed: self-described] |
 | `directory-subtree`  | a nested `AGENTS.md`/`CLAUDE.md` and skills found along the walk to the git root | [upstream] — the walk stop is measured on 1.18.31 only, the content found along it is not |
 | `tool-event`         | `permission.bash` patterns; plugin hook events                                   | [upstream] |
@@ -771,11 +774,12 @@ sixteen consecutive pairs inside those runs.
 What decides it is **not established here**. These observations show that the
 surviving copy is not stable across invocations; they do not show which scan or
 ordering produces it, and no such mechanism is claimed. The earlier 1.18.30 record
-of `global` is a single observation the re-probe did not reproduce: failure to
-reproduce is not proof that it was wrong, and one observation could not have
-established it as a property of that version. Nor does `global` mark a version
-difference in the other direction — the 1.18.31 runs above returned `global` for
-the first invocation of four of the eight.
+of `global` is a single observation the re-probe neither confirmed nor refuted:
+`global` recurred (9 of 24 invocations, and the first invocation of four of the
+eight runs), but no winner is stable, so one observation could not have established
+it as a property of that version. Nor does `global` mark a version difference in
+the other direction — the 1.18.31 runs above returned `global` for the first
+invocation of four of the eight.
 
 M9 must therefore record a duplicate-name diagnostic and must not depend on any
 winner: a fixture cannot be trusted to reproduce the loss. This row is also the
@@ -844,8 +848,9 @@ any of it.
 
 **No seventh facet is required.** `references` → `knowledge`, `tools` →
 `actions`, `formatter`/`lsp` → `controls`: all are covered by the existing six.
-`memory` has no OpenCode surface found in this installation; that is a
-"not present in 1.18.30" observation, not a claim that OpenCode has none.
+`memory` has no surface in the config schema [upstream] or in the built-in skill
+body [installed: self-described]; no probe searched for one, so this is not a
+claim that OpenCode has none.
 
 Some kinds are new strings (`agents`, `tools`, `references`,
 `tooling-configuration`), but `kind` is a plain `string` on `ObservedElement`
@@ -966,16 +971,17 @@ how far that is. It supports three different kinds of **1.18.31 only** evidence,
 which §0's exercised list distinguishes:
 
 - **No 1.18.30 record of the claim as stated.** The user-scope-only elements
-  (step 10), `OPENCODE_CONFIG_DIR` (step 11), the MCP resolved key set (step 8),
-  the project-scope skill row (§4.2), the walk stop, and the walk-independence
-  check (§2) have no 1.18.30 observation; the MCP path does have a 1.18.30 mention
-  count, but not one of the resolved key set.
-- **A record whose fixture cannot support the claim.** The precedence ladder: the
-  1.18.30 fixture gave every source the same single key, so it could not separate
-  a source that loaded and lost from one that was never read (§0).
+  (step 10), `OPENCODE_CONFIG_DIR` (step 11), the project-scope skill row (§4.2),
+  the walk stop, and the walk-independence check (§2) have no 1.18.30 observation.
+- **A record whose fixture or method cannot support the claim.** The precedence
+  ladder (the 1.18.30 fixture gave every source the same single key, so it could
+  not separate a source that loaded and lost from one that was never read) and the
+  MCP resolved key set (the 1.18.30 record counted `mcp` mentions with `grep -ci`,
+  not the resolved key set) — both §0.
 - **A re-measurement whose outcome is non-deterministic, so the single 1.18.30
   observation is neither confirmed nor refuted.** The §6 collision winner: `global`
-  recurred on 1.18.31 (9 of 24 invocations), so this is not a version difference.
+  recurred on 1.18.31 (9 of 24 invocations), so nothing here marks a version
+  difference.
 - **A re-measurement that did not reproduce.** Whether `agent list` shows the
   fixture's own agent (§0).
 
@@ -1028,9 +1034,10 @@ assumption.
 6. **Reconciling this document with 1.18.31.** The header records the drift. The
    §0 probe has since been re-run on 1.18.31 and the surfaces it reaches
    re-checked: §0's exercised list names them and marks the ones first measured on
-   1.18.31. Among the re-measured surfaces, §6's collision winner did not
-   reproduce, so §6 now records its runs per binary and keeps the runs taken before
-   the subshell fix in Appendix A. What remains undone is the rest of the
+   1.18.31. Among the re-measured surfaces, §6's collision winner proved
+   non-deterministic, so §6 now records its runs per binary and keeps the runs
+   taken before the subshell fix in Appendix A. What remains undone is the rest of
+   the
    reconciliation — every **[upstream]** row and every **[installed: measured]**
    row that §0 does not list as exercised still stands on the source it names,
    which is 1.18.30 — and §10 makes that the prerequisite M9 inherits.
