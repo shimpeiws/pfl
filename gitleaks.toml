@@ -13,7 +13,7 @@
 [extend]
 useDefault = true
 
-[[allowlists]]
+[allowlist]
 description = "Fake, deliberately planted test sentinels."
 regexes = [
   '''ghp_0123456789abcdefghijklmnopqrstuvwx''',
