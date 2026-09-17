@@ -5,6 +5,7 @@ import { runInspect } from '../../src/cli/inspect.js';
 import { resolveProjectContext } from '../../src/discovery/project-identity.js';
 import {
   observationsDir,
+  readInterpretationForResolved,
   readLatestPointer,
   readObservedSnapshot,
 } from '../../src/snapshot/store.js';
@@ -141,6 +142,30 @@ describe.each<FixtureRuntime>(['claude', 'codex'])('%s harness invariants', (run
     }
     for (const secret of SECRETS) {
       expect(artifacts).not.toContain(secret);
+    }
+  });
+
+  it('stores interpretation text that carries no path or raw content', async () => {
+    const m = await inspect(runtime);
+    const projectId = (await resolveProjectContext(m.projectRoot)).id;
+    const pointer = await readLatestPointer(projectId, m.home);
+    if (pointer === null) throw new Error('expected a latest pointer after inspect');
+    const interpretation = await readInterpretationForResolved(projectId, pointer.resolved, m.home);
+    if (interpretation === null) throw new Error('expected a stored interpretation');
+
+    // Reasons and finding messages are templates over counts, enums, and
+    // structural key names; none may carry a path or captured content. A
+    // positive control keeps the check from passing over an empty set.
+    const texts = [
+      ...interpretation.elements.map((element) => element.reason),
+      ...interpretation.findings.map((finding) => finding.message),
+    ];
+    expect(texts.length).toBeGreaterThan(0);
+    for (const text of texts) {
+      expect(text).not.toContain('/');
+      expect(text).not.toContain('~');
+      for (const sentinel of SENTINELS) expect(text).not.toContain(sentinel);
+      for (const secret of SECRETS) expect(text).not.toContain(secret);
     }
   });
 

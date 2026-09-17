@@ -72,7 +72,9 @@ The stable codes a consumer of the frozen contract may match on:
 | `unreadable-snapshot` / `unreadable-observation` / `unreadable-interpretation` | A scan skipped an artifact it could not read: the store guard refused it (symlink, hardlink, non-regular, or over the size limit), or it failed to deserialize for another reason. |
 
 Harness diagnostics (for example `runtime-version-unverified`) keep their own
-codes and are command-specific.
+codes and are command-specific. An artifact diagnostic in a failure document is
+`severity: "error"`; the same condition found by a scan is `severity: "warning"`,
+because the scan skips the artifact and continues.
 
 ## Partial results and exit codes
 

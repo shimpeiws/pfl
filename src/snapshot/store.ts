@@ -849,7 +849,7 @@ function uninterpretableArtifact(error: unknown, name: string): PflError {
     return new PflError(error.message, EXIT_CODES.CONFIG_ERROR, {
       diagnostics: [
         {
-          severity: 'warning',
+          severity: 'error',
           code: 'unsupported-snapshot-schema',
           message: error.message,
           path: name,
@@ -863,15 +863,22 @@ function uninterpretableArtifact(error: unknown, name: string): PflError {
   return snapshotStoreError(errorMessage(error));
 }
 
+/**
+ * The artifact failed to be read as its type. A direct read of it fails, so the
+ * diagnostic is `error`; a scan downgrades it to `warning` when it skips the
+ * artifact and continues (`readErrorDiagnostic`).
+ */
 function invalidArtifactError(message: string, name: string): PflError {
   return new PflError(message, EXIT_CODES.CONFIG_ERROR, {
-    diagnostics: [{ severity: 'warning', code: 'invalid-snapshot', message, path: name }],
+    diagnostics: [{ severity: 'error', code: 'invalid-snapshot', message, path: name }],
   });
 }
 
 /** The diagnostic for one artifact a scan could not read, carried or generic. */
 function readErrorDiagnostic(error: unknown, fallbackCode: string, name: string): Diagnostic {
   const carried = error instanceof PflError ? error.data?.diagnostics?.[0] : undefined;
-  if (carried !== undefined) return { ...carried, path: name };
+  // A scan skips the artifact and continues, so even a carried `error` is
+  // reported at `warning` here.
+  if (carried !== undefined) return { ...carried, severity: 'warning', path: name };
   return { severity: 'warning', code: fallbackCode, message: errorMessage(error), path: name };
 }

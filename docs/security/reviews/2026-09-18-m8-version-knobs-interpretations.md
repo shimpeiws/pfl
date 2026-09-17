@@ -105,11 +105,17 @@ knowledge content, and none carries a path or a secret. The interpretation is
 therefore already within the allowlist and needs no separate redaction pass at
 persistence.
 
+The claim is enforced rather than only inspected: a security-invariant test
+resolves both fixtures, reads the stored interpretation, and asserts every
+`reason` and finding message contains no path separator, home sentinel, or
+secret sentinel, with a positive control that the set is non-empty. A future
+template that interpolated a path would fail it.
+
 No finding was accepted as a risk.
 
 ## Verification
 
-- Full gate green: `test` (53 files, 459 tests), `check`, `format`, `build`,
+- Full gate green: `test` (53 files, 461 tests), `check`, `format`, `build`,
   `typecheck:test`, `knip`.
 - New tests: a schema-2 snapshot read directly exits 2 with
   `unsupported-snapshot-schema` and names the versions; a validation failure and

@@ -91,33 +91,45 @@ export async function runInspect(
   const observed = await adapter.discover(project, access, home, options.pathValue);
   const resolved = await resolveHarness(adapter, observed, home);
 
-  // The interpretation is a run artifact, persisted with its siblings so a
-  // report reproduces and can name the classifier that produced it (#84).
-  const interpretation: Interpretation = {
-    schemaVersion: SNAPSHOT_SCHEMA_VERSION,
-    interpretationId: generateInterpretationId(),
-    resolvedSnapshotId: resolved.snapshotId,
-    ...classify(observed, resolved),
-    findings: deriveFindings(observed, resolved),
-  };
-
   await writeObservedSnapshot(project.id, observed, home);
   await writeResolvedSnapshot(project.id, resolved, home);
-  await writeInterpretation(project.id, interpretation, home);
+
+  // The interpretation is a run artifact, persisted with its siblings so a
+  // report reproduces and can name the classifier that produced it (#84). A
+  // classification failure must not cost the captured run: the observed and
+  // resolved snapshots are already stored, a read recomputes a missing
+  // interpretation, and the failure is recorded as a diagnostic.
+  const diagnostics = [...observed.diagnostics, ...resolved.diagnostics];
+  let interpretationId: string | undefined;
+  try {
+    const interpretation: Interpretation = {
+      schemaVersion: SNAPSHOT_SCHEMA_VERSION,
+      interpretationId: generateInterpretationId(),
+      resolvedSnapshotId: resolved.snapshotId,
+      ...classify(observed, resolved),
+      findings: deriveFindings(observed, resolved),
+    };
+    await writeInterpretation(project.id, interpretation, home);
+    interpretationId = interpretation.interpretationId;
+  } catch (error) {
+    diagnostics.push({
+      severity: 'warning',
+      code: 'interpretation-not-stored',
+      message: `the interpretation could not be stored and will be recomputed on read: ${error instanceof Error ? error.message : String(error)}`,
+    });
+  }
+
   await writeLatestPointer(
     project.id,
     {
       observed: observed.snapshotId,
       resolved: resolved.snapshotId,
-      interpretation: interpretation.interpretationId,
+      ...(interpretationId !== undefined ? { interpretation: interpretationId } : {}),
     },
     home,
   );
 
   const data = inspectData(observed, resolved);
-  // Observed and resolved diagnostics belong to the run, not to the payload, so
-  // they travel in the envelope and are not nested under `data`.
-  const diagnostics = [...observed.diagnostics, ...resolved.diagnostics];
 
   if (options.json !== true) {
     renderInspect(out, request.runtimeName, observed, resolved, detection);
