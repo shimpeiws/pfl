@@ -361,6 +361,9 @@ describe('uninterpretable artifacts (schema, #82)', () => {
     expect((error as PflError).exitCode).toBe(EXIT_CODES.CONFIG_ERROR);
     const diagnostic = (error as PflError).data?.diagnostics?.[0];
     expect(diagnostic?.code).toBe('unsupported-snapshot-schema');
+    // The path is store-relative and names the artifact class, so a snapshot is
+    // not confused with an interpretation that shares its id.
+    expect(diagnostic?.path).toBe('snapshots/res_future.json');
     // The message must name the version found and the versions supported.
     expect(diagnostic?.message).toContain('2');
     expect(diagnostic?.message).toContain('1');
@@ -374,7 +377,9 @@ describe('uninterpretable artifacts (schema, #82)', () => {
     const error = await readObservedSnapshot('proj', 'obs_bad', home).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(PflError);
     expect((error as PflError).exitCode).toBe(EXIT_CODES.CONFIG_ERROR);
-    expect((error as PflError).data?.diagnostics?.[0]?.code).toBe('invalid-snapshot');
+    const diagnostic = (error as PflError).data?.diagnostics?.[0];
+    expect(diagnostic?.code).toBe('invalid-snapshot');
+    expect(diagnostic?.path).toBe('observations/obs_bad.json');
   });
 
   it('surfaces the same diagnostic through listRuns instead of failing the scan', async () => {
@@ -548,7 +553,9 @@ describe('readInterpretationForResolved', () => {
     );
     expect(error).toBeInstanceOf(PflError);
     expect((error as PflError).exitCode).toBe(EXIT_CODES.CONFIG_ERROR);
-    expect((error as PflError).data?.diagnostics?.[0]?.code).toBe('invalid-snapshot');
+    const diagnostic = (error as PflError).data?.diagnostics?.[0];
+    expect(diagnostic?.code).toBe('invalid-snapshot');
+    expect(diagnostic?.path).toBe('interpretations/res_y.json');
   });
 
   it('fails closed when an artifact claims a different resolved snapshot', async () => {
@@ -572,7 +579,9 @@ describe('readInterpretationForResolved', () => {
     );
     expect(error).toBeInstanceOf(PflError);
     expect((error as PflError).exitCode).toBe(EXIT_CODES.CONFIG_ERROR);
-    expect((error as PflError).data?.diagnostics?.[0]?.code).toBe('invalid-snapshot');
+    const diagnostic = (error as PflError).data?.diagnostics?.[0];
+    expect(diagnostic?.code).toBe('invalid-snapshot');
+    expect(diagnostic?.path).toBe('interpretations/res_y.json');
   });
 });
 

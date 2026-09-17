@@ -54,7 +54,7 @@ field passes the redaction layer at the export boundary.
 
 ## Findings and disposition
 
-Several review rounds found and closed five consistency gaps; all were
+Several review rounds found and closed six consistency gaps; all were
 remediated in this pull request:
 
 1. A well-formed envelope whose contents failed validation still exited 6.
@@ -82,9 +82,28 @@ remediated in this pull request:
    selection matches the qualified path. A scan's diagnostics describe the scan,
    so consumers match by `code`, not position.
 
+6. Direct reads still labelled their diagnostics with a bare file name while
+   scans used a class-qualified one, so `res_x.json` could mean a snapshot or an
+   interpretation depending on the path taken. Fixed: `readArtifact`,
+   `readArtifactIfPresent`, and their parse/guard helpers now take the artifact
+   class and emit `snapshots/…`, `observations/…`, or `interpretations/…`; tests
+   assert the path.
+
 A guard refusal (symlink, hardlink, non-regular, over the size limit) remains a
 store failure, exit 6, unlike an uninterpretable artifact; the README and ADR
 now state that split explicitly.
+
+## Persisted interpretation content
+
+Storing the interpretation is a new persistence write, so its fields were
+checked against the deny-by-default invariant. The artifact holds only ids,
+`schemaVersion`, the classifier id and version, per-element facets, confidence,
+and `reason`, the numeric stats, and findings. Every `reason` and every finding
+message is a fixed template built from counts, enum values, or a structural key
+name (`classifier.ts`, `findings.ts`); none interpolates instruction, memory, or
+knowledge content, and none carries a path or a secret. The interpretation is
+therefore already within the allowlist and needs no separate redaction pass at
+persistence.
 
 No finding was accepted as a risk.
 

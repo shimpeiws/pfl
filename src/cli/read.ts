@@ -147,9 +147,11 @@ async function resolveResolvedId(
     throw new PflError(`unknown snapshot: ${requestedId}`, EXIT_CODES.CONFIG_ERROR, context);
   }
   if (run.resolvedId === null) {
-    const reason = diagnostics.find((entry) => entry.path?.startsWith('snapshots/'));
+    // A resolved snapshot that failed to read cannot be attributed to one
+    // observation by its content alone, so the message stays general and the
+    // cause travels in `context.diagnostics` for a consumer to match by code.
     throw new PflError(
-      `could not read the resolved snapshot for ${requestedId}${reason !== undefined ? `: ${reason.message}` : ''}`,
+      `could not read the resolved snapshot for ${requestedId}`,
       EXIT_CODES.CONFIG_ERROR,
       context,
     );

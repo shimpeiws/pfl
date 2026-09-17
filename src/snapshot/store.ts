@@ -185,6 +185,7 @@ export async function readObservedSnapshot(
     artifactPath(observationsDir(projectId, home), snapshotId),
     isObservedSnapshot,
     pflHome(home),
+    'observations',
   );
 }
 
@@ -209,6 +210,7 @@ export async function readResolvedSnapshot(
     artifactPath(snapshotsDir(projectId, home), snapshotId),
     isResolvedSnapshot,
     pflHome(home),
+    'snapshots',
   );
 }
 
@@ -225,17 +227,19 @@ export async function readInterpretationForResolved(
   resolvedSnapshotId: string,
   home: string = homedir(),
 ): Promise<Interpretation | null> {
+  const target = artifactPath(interpretationsDir(projectId, home), resolvedSnapshotId);
   const interpretation = await readArtifactIfPresent(
-    artifactPath(interpretationsDir(projectId, home), resolvedSnapshotId),
+    target,
     isInterpretation,
     pflHome(home),
+    'interpretations',
   );
   if (interpretation !== null && interpretation.resolvedSnapshotId !== resolvedSnapshotId) {
     // The file is named for one resolved snapshot but claims another: the store
     // is inconsistent, so fail closed rather than guess which is right.
     throw invalidArtifactError(
       `interpretation ${interpretation.interpretationId} is stored under ${resolvedSnapshotId} but claims ${interpretation.resolvedSnapshotId}`,
-      resolvedSnapshotId,
+      `interpretations/${basename(target)}`,
     );
   }
   return interpretation;
@@ -343,6 +347,7 @@ export async function listRuns(
         join(resolvedDir, name),
         isResolvedSnapshot,
         pflHome(home),
+        'snapshots',
       );
       resolvedByObserved.set(resolved.observedSnapshotId, resolved.snapshotId);
     } catch (error) {
@@ -367,6 +372,7 @@ export async function listRuns(
         join(interpretationsDir(projectId, home), name),
         isInterpretation,
         pflHome(home),
+        'interpretations',
       );
       const keyedAs = name.slice(0, -ARTIFACT_SUFFIX.length);
       // The artifact is keyed by the resolved snapshot id, so the file name and
@@ -400,6 +406,7 @@ export async function listRuns(
         join(observedDir, name),
         isObservedSnapshot,
         pflHome(home),
+        'observations',
       );
       const resolvedId = resolvedByObserved.get(observed.snapshotId) ?? null;
       runs.push({
@@ -450,23 +457,32 @@ async function artifactNames(
   }
 }
 
+/** The store subdirectory an artifact lives in; also its diagnostic path prefix. */
+type ArtifactClass = 'observations' | 'snapshots' | 'interpretations';
+
 function artifactPath(dir: string, id: string): string {
   assertSafeSegment(id, 'artifact id');
   return join(dir, `${id}${ARTIFACT_SUFFIX}`);
+}
+
+/** A store-relative label that names the artifact class, e.g. `snapshots/res_x.json`. */
+function artifactLabel(target: string, artifactClass: ArtifactClass): string {
+  return `${artifactClass}/${basename(target)}`;
 }
 
 async function readArtifact<T>(
   target: string,
   isValid: (value: unknown) => value is T,
   baseDir: string,
+  artifactClass: ArtifactClass,
 ): Promise<T> {
+  const label = artifactLabel(target, artifactClass);
   const read = await readTextFileGuarded(target, MAX_ARTIFACT_BYTES, baseDir);
-  if (read.status === 'missing')
-    throw snapshotStoreError(`snapshot not found: ${basename(target)}`);
+  if (read.status === 'missing') throw snapshotStoreError(`snapshot not found: ${label}`);
   if (read.status !== 'ok') {
-    throw snapshotStoreError(guardedReadError(read, `snapshot ${basename(target)}`));
+    throw snapshotStoreError(guardedReadError(read, label));
   }
-  return parseArtifact(read.text, target, isValid);
+  return parseArtifact(read.text, label, isValid);
 }
 
 /**
@@ -478,20 +494,18 @@ async function readArtifactIfPresent<T>(
   target: string,
   isValid: (value: unknown) => value is T,
   baseDir: string,
+  artifactClass: ArtifactClass,
 ): Promise<T | null> {
+  const label = artifactLabel(target, artifactClass);
   const read = await readTextFileGuarded(target, MAX_ARTIFACT_BYTES, baseDir);
   if (read.status === 'missing') return null;
   if (read.status !== 'ok') {
-    throw snapshotStoreError(guardedReadError(read, `snapshot ${basename(target)}`));
+    throw snapshotStoreError(guardedReadError(read, label));
   }
-  return parseArtifact(read.text, target, isValid);
+  return parseArtifact(read.text, label, isValid);
 }
 
-function parseArtifact<T>(
-  text: string,
-  target: string,
-  isValid: (value: unknown) => value is T,
-): T {
+function parseArtifact<T>(text: string, label: string, isValid: (value: unknown) => value is T): T {
   let parsed: unknown;
   try {
     // The on-disk envelope always carries `schemaVersion` (ADR 0001), including
@@ -501,14 +515,13 @@ function parseArtifact<T>(
     // A snapshot this binary cannot interpret is a diagnostic, not a store
     // failure (ADR 0001, roadmap #82): the store is readable, the artifact is
     // not. `listRuns` and every read command handle it the same way.
-    throw uninterpretableArtifact(error, basename(target));
+    throw uninterpretableArtifact(error, label);
   }
 
   if (!isValid(parsed)) {
     // A well-formed envelope whose contents are the wrong shape is as
     // uninterpretable as malformed JSON: same diagnostic, same exit (#82).
-    const message = `snapshot is missing required fields: ${basename(target)}`;
-    throw invalidArtifactError(message, basename(target));
+    throw invalidArtifactError(`artifact is missing required fields: ${label}`, label);
   }
   return parsed;
 }
