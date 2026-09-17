@@ -89,6 +89,12 @@ Implemented in `src/snapshot/serialization.ts` as `serializeSnapshot` /
     different failure from an unsupported version.
 - Any change to a persisted snapshot shape must bump `SNAPSHOT_SCHEMA_VERSION`
   and add the new value to `SUPPORTED_SNAPSHOT_SCHEMA_VERSIONS`.
+- A run writes several artifacts in turn — observed snapshot, resolved
+  snapshot, interpretation — and only then replaces `latest`. Each write is
+  atomic and immutable, but the run as a whole is not one transaction: a failure
+  between writes leaves an artifact the pointer does not name. `latest` is the
+  publish boundary, so such an artifact is not visible to a read command; it is
+  an orphan for `pfl gc` to reclaim (#87), not a corruption to repair.
 - Element ids are opaque (`el_<16 hex>`); humans read `source.path`, not the id.
 - `ElementId` currently derives from runtime + origin + path only. If two
   distinct elements can share all three, the derivation must be extended (for

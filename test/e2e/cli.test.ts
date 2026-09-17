@@ -385,31 +385,57 @@ describe('pfl CLI end to end', () => {
     expect(document.data).toBeTypeOf('object');
   });
 
-  it('stores the interpretation and reports its provenance, recomputing when absent', async () => {
+  it('stores the interpretation and reads the stored payload back', async () => {
     const m = await fixture();
     await runCli(m, ['inspect', '--runtime', 'claude-code']);
+    const projectId = (await resolveProjectContext(m.projectRoot)).id;
+    const pointer = await readLatestPointer(projectId, m.home);
+    if (pointer?.interpretation === undefined) throw new Error('expected an interpretation id');
+    const artifact = join(interpretationsDir(projectId, m.home), `${pointer.interpretation}.json`);
+
+    // Mutate the stored classifier version: the report must return the stored
+    // value, which proves it read the artifact rather than recomputing.
+    const raw = JSON.parse(await readFile(artifact, 'utf8')) as {
+      classifier: { version: string };
+    };
+    raw.classifier.version = '999';
+    await writeFile(artifact, `${JSON.stringify(raw)}\n`);
 
     const stored = JSON.parse((await runCli(m, ['report', '--json'])).stdout) as {
       data: { interpretation: { classifierVersion: string; origin: string } };
     };
-    expect(stored.data.interpretation.origin).toBe('stored');
-    expect(stored.data.interpretation.classifierVersion).toMatch(/^\d+$/);
+    expect(stored.data.interpretation).toEqual({ classifierVersion: '999', origin: 'stored' });
+  });
 
-    // Remove the stored interpretation: the report recomputes and says so in one
-    // line, and the `--json` document reports `recomputed`.
+  it('recomputes when no interpretation is stored, and fails closed when it is corrupt', async () => {
+    const m = await fixture();
+    await runCli(m, ['inspect', '--runtime', 'claude-code']);
     const projectId = (await resolveProjectContext(m.projectRoot)).id;
     const pointer = await readLatestPointer(projectId, m.home);
     if (pointer?.interpretation === undefined) throw new Error('expected an interpretation id');
-    await rm(join(interpretationsDir(projectId, m.home), `${pointer.interpretation}.json`));
+    const artifact = join(interpretationsDir(projectId, m.home), `${pointer.interpretation}.json`);
 
+    // Absence (a pre-v1.0 run) is not an error: the report recomputes and says so.
+    await rm(artifact);
     const human = await runCli(m, ['report']);
     expect(human.code, human.stderr).toBe(EXIT_CODES.SUCCESS);
     expect(human.stdout).toContain('Interpretation recomputed');
-
     const recomputed = JSON.parse((await runCli(m, ['report', '--json'])).stdout) as {
       data: { interpretation: { origin: string } };
     };
     expect(recomputed.data.interpretation.origin).toBe('recomputed');
+
+    // A corrupt stored interpretation is not absence: it fails closed with a
+    // diagnostic, rather than masking store corruption with a recomputation.
+    await writeFile(artifact, '{ not json');
+    const corrupt = await runCli(m, ['report', '--json']);
+    expect(corrupt.code).toBe(EXIT_CODES.CONFIG_ERROR);
+    const document = JSON.parse(corrupt.stdout) as {
+      data: { error: { code: string } };
+      diagnostics: { code: string }[];
+    };
+    expect(document.data.error.code).toBe('CONFIG_ERROR');
+    expect(document.diagnostics[0]?.code).toBe('invalid-snapshot');
   });
 
   it('emits the failure envelope on a non-zero exit', async () => {

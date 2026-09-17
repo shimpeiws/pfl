@@ -483,7 +483,10 @@ function parseArtifact<T>(
   }
 
   if (!isValid(parsed)) {
-    throw snapshotStoreError(`snapshot is missing required fields: ${basename(target)}`);
+    // A well-formed envelope whose contents are the wrong shape is as
+    // uninterpretable as malformed JSON: same diagnostic, same exit (#82).
+    const message = `snapshot is missing required fields: ${basename(target)}`;
+    throw invalidArtifactError(message, basename(target));
   }
   return parsed;
 }
@@ -755,16 +758,28 @@ function snapshotStoreError(message: string): PflError {
  * diagnostic instead of a bare exit 6 (ADR 0001; roadmap #82).
  */
 function uninterpretableArtifact(error: unknown, name: string): PflError {
-  if (error instanceof UnsupportedSchemaVersionError || error instanceof InvalidSnapshotError) {
-    const code =
-      error instanceof UnsupportedSchemaVersionError
-        ? 'unsupported-snapshot-schema'
-        : 'invalid-snapshot';
+  if (error instanceof UnsupportedSchemaVersionError) {
     return new PflError(error.message, EXIT_CODES.CONFIG_ERROR, {
-      diagnostics: [{ severity: 'warning', code, message: error.message, path: name }],
+      diagnostics: [
+        {
+          severity: 'warning',
+          code: 'unsupported-snapshot-schema',
+          message: error.message,
+          path: name,
+        },
+      ],
     });
   }
+  if (error instanceof InvalidSnapshotError) {
+    return invalidArtifactError(error.message, name);
+  }
   return snapshotStoreError(errorMessage(error));
+}
+
+function invalidArtifactError(message: string, name: string): PflError {
+  return new PflError(message, EXIT_CODES.CONFIG_ERROR, {
+    diagnostics: [{ severity: 'warning', code: 'invalid-snapshot', message, path: name }],
+  });
 }
 
 /** The diagnostic for one artifact a scan could not read, carried or generic. */

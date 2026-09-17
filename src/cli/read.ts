@@ -71,39 +71,31 @@ export async function loadInterpretation(
   const observed = await readObservedSnapshot(project.id, resolved.observedSnapshotId, home);
 
   if (interpretationId !== undefined) {
-    try {
-      const stored = await readInterpretationIfPresent(project.id, interpretationId, home);
-      if (stored !== null && stored.resolvedSnapshotId === resolved.snapshotId) {
-        return {
-          observed,
-          resolved,
-          interpretation: stored,
-          interpretationOrigin: 'stored',
-          diagnostics,
-        };
-      }
-      if (stored !== null) {
-        diagnostics.push({
-          severity: 'warning',
-          code: 'interpretation-mismatch',
-          message: `stored interpretation ${stored.interpretationId} does not match resolved snapshot ${resolved.snapshotId}; recomputed`,
-          path: interpretationId,
-        });
-      }
-    } catch (error) {
-      // An uninterpretable or unreadable stored interpretation is recorded and
-      // worked around by recomputing, never a failure of the read (#84).
-      const carried = error instanceof PflError ? error.data?.diagnostics : undefined;
-      diagnostics.push(
-        ...(carried ?? [
-          {
-            severity: 'warning' as const,
-            code: 'unreadable-interpretation',
-            message: error instanceof Error ? error.message : String(error),
-            path: interpretationId,
-          },
-        ]),
-      );
+    // `null` means no interpretation is stored (a pre-v1.0 run): absence is
+    // normal and the interpretation is recomputed. A stored interpretation this
+    // binary cannot interpret is not absence — it fails closed like any other
+    // direct read of an uninterpretable artifact (#82), so store corruption is
+    // not masked by a fresh recomputation.
+    const stored = await readInterpretationIfPresent(project.id, interpretationId, home);
+    if (stored !== null && stored.resolvedSnapshotId === resolved.snapshotId) {
+      return {
+        observed,
+        resolved,
+        interpretation: stored,
+        interpretationOrigin: 'stored',
+        diagnostics,
+      };
+    }
+    if (stored !== null) {
+      // A stored interpretation for a different snapshot is recoverable: the
+      // recomputation is correct for this snapshot, and the mismatch is
+      // recorded rather than guessed at.
+      diagnostics.push({
+        severity: 'warning',
+        code: 'interpretation-mismatch',
+        message: `stored interpretation ${stored.interpretationId} does not match resolved snapshot ${resolved.snapshotId}; recomputed`,
+        path: interpretationId,
+      });
     }
   }
 
