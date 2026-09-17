@@ -1140,7 +1140,7 @@ Inventory will:
   ✗ Store file contents
   ✗ Store environment values or credentials
   ✗ Execute Claude Code or any discovered tool
-  ✗ Follow symlinks
+  ✗ Follow symlinks inside the listed locations
 
 Allow this runtime scope? [y/N]
 ```
