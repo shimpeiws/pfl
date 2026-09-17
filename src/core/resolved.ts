@@ -58,16 +58,17 @@ export interface ResolvedElement {
   resolution: Resolution;
 }
 
-/** Design doc §14. Only explicit, statically resolvable edges are required initially. */
-export const RELATION_TYPES = [
-  'contains',
-  'discovered-from',
-  'accumulates-with',
-  'overrides',
-  'shadows',
-  'resolves-to',
-  'applies-to',
-] as const;
+/**
+ * Design doc §14. Only explicit, statically resolvable edges are frozen for
+ * v1.0. The initial declaration also listed `contains`, `discovered-from`,
+ * `resolves-to`, and `applies-to`; no adapter produces them and each has an
+ * adequate structural representation already (`source.path` + origin for
+ * provenance, `resolution.strategy`/`status` for resolution, `applicability`
+ * for applicability), so they are withdrawn rather than carried as vestigial
+ * schema. The full table and the reasoning are in
+ * `docs/design/relation-types.md`.
+ */
+export const RELATION_TYPES = ['accumulates-with', 'overrides', 'shadows'] as const;
 
 export type RelationType = (typeof RELATION_TYPES)[number];
 

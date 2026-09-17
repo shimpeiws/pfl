@@ -6,7 +6,7 @@ import { EXIT_CODES, PflError } from '../cli/exit-codes.js';
 import type { Completeness, Diagnostic } from '../core/diagnostics.js';
 import type { Interpretation } from '../core/interpretation.js';
 import { OBSERVED_REASONS, type ObservedSnapshot } from '../core/observed.js';
-import type { ResolvedSnapshot } from '../core/resolved.js';
+import { RELATION_TYPES, type ResolvedSnapshot } from '../core/resolved.js';
 import { MAX_ARTIFACT_BYTES } from '../limits.js';
 import { checkSymlinkAncestors, readTextFileGuarded } from '../util/fs.js';
 import { deserializeSnapshot, serializeSnapshot, type VersionedSnapshot } from './serialization.js';
@@ -98,15 +98,6 @@ const APPLICABILITY_VALUES: readonly string[] = [
   'config-rule',
   'runtime-defined',
   'unknown',
-];
-const RELATION_TYPE_VALUES: readonly string[] = [
-  'contains',
-  'discovered-from',
-  'accumulates-with',
-  'overrides',
-  'shadows',
-  'resolves-to',
-  'applies-to',
 ];
 
 export function pflHome(home: string = homedir()): string {
@@ -607,7 +598,7 @@ function isRelation(value: unknown): boolean {
   const type = value['type'];
   return (
     typeof type === 'string' &&
-    RELATION_TYPE_VALUES.includes(type) &&
+    (RELATION_TYPES as readonly string[]).includes(type) &&
     typeof value['from'] === 'string' &&
     typeof value['to'] === 'string'
   );

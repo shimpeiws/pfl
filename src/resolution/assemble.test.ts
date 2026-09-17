@@ -156,6 +156,18 @@ describe('assembleResolvedSnapshot', () => {
     expect(older.digests.resolvedSnapshot).not.toBe(newer.digests.resolvedSnapshot);
   });
 
+  it('deep-freezes the resolved snapshot, so a caller cannot desynchronize it', () => {
+    const resolved = assembleResolvedSnapshot({
+      observed: observedSnapshot(),
+      elements: [resolvedElement('a', 'effective')],
+    });
+
+    expect(Object.isFrozen(resolved)).toBe(true);
+    expect(Object.isFrozen(resolved.elements)).toBe(true);
+    expect(Object.isFrozen(resolved.elements[0])).toBe(true);
+    expect(Object.isFrozen(resolved.digests)).toBe(true);
+  });
+
   it('keeps a verified version at full confidence', () => {
     const resolved = assembleResolvedSnapshot({
       observed: observedSnapshot('verified'),

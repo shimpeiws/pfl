@@ -9,6 +9,7 @@ import type { Relation, ResolvedElement, ResolvedSnapshot } from '../core/resolv
 import { redactDiagnostic, type RedactionContext } from '../redact/output.js';
 import { harnessContentDigest, resolvedSnapshotDigest } from '../snapshot/digest.js';
 import { SNAPSHOT_SCHEMA_VERSION } from '../snapshot/serialization.js';
+import { deepFreeze } from '../util/freeze.js';
 
 /**
  * Assembles the immutable ResolvedSnapshot (design doc §13.3, §15). A resolved
@@ -78,7 +79,11 @@ export function assembleResolvedSnapshot(input: ResolvedSnapshotInput): Resolved
     semanticsVersion: RESOLUTION_SEMANTICS_VERSION,
   });
 
-  return {
+  // Snapshots are immutable (design doc §15), so the resolved snapshot is
+  // frozen deeply, exactly as the observed one is: a caller that later mutates
+  // an element it handed in cannot desynchronize the elements from the
+  // digests computed here.
+  return deepFreeze({
     schemaVersion: SNAPSHOT_SCHEMA_VERSION,
     snapshotId: input.snapshotId ?? generateResolvedSnapshotId(),
     observedSnapshotId: observed.snapshotId,
@@ -94,7 +99,7 @@ export function assembleResolvedSnapshot(input: ResolvedSnapshotInput): Resolved
       .map((element) => element.id),
     diagnostics,
     digests: { harnessContent, resolvedSnapshot },
-  };
+  });
 }
 
 function mergeRelations(explicit: readonly Relation[], derived: readonly Relation[]): Relation[] {
