@@ -634,9 +634,10 @@ Fixture: one name (`marker`) defined in all three surfaces in both scopes —
 `$ROOT/proj/.opencode/{agent,command,skill}/marker…` — each copy carrying a
 distinguishing body, inspected from `$ROOT/proj` under the §0 probe. The agent and
 command winners are read from the `agent`/`command` maps of `debug config`, not
-from `agent list`, which reports nothing for a `mode: subagent` fixture on 1.18.30
-and the bare name `marker (subagent)` on 1.18.31 (§0 step 9). The skill winner is
-read from `debug skill`, which lists one surviving entry per name.
+from `agent list`, which listed no entry for the fixture on 1.18.30 and
+`marker (subagent)` on 1.18.31 — a name and a mode, never a scope or a path
+(§0 step 9). The skill winner is read from `debug skill`, which lists one
+surviving entry per name.
 
 The one record from the earlier binary, kept apart from the count:
 
@@ -667,8 +668,8 @@ rule — and the observed outcome is not a rule either. Across the seven §0 run
 and command were `project` in every one of them, so the instability is specific to
 the skill catalog rather than to element loading in general. The winner was not
 constant within a run in five of those seven runs, and it changed between
-consecutive invocations — same fixture, nothing changed on disk — nine times in
-the 21.
+consecutive invocations — same fixture, nothing changed on disk — nine of the
+fourteen consecutive pairs inside those runs.
 
 What decides it is **not established here**. These observations show that the
 surviving copy is not stable across invocations; they do not show which scan or
@@ -882,15 +883,20 @@ be extended to 1.18.31 by assumption.
    call is what made the previous draft contradict §5.3, so it is settled here.
    If the model should cover these variables after all, that is a deliberate
    change to the design's harness boundary and consent policy — not an adapter
-   decision.
+   decision. What §9 requires of M9 is a note, and that is settled with the rest.
+   The narrower question left open is whether a **detection** — deciding, from the
+   run's environment, that its load paths differ — can exist at all without
+   reading these variables, and if it can, whether it is worth having for OpenCode
+   alone when neither existing adapter does it for `CLAUDE_CONFIG_DIR` or
+   `CODEX_HOME`.
 3. **Skill-name collision tie-break** (§6) — **settled by re-probe: there is no
    stable tie-break to record.** On 1.18.31 one fixture produced both winners
    across consecutive invocations with unchanged on-disk state — 13 `project` /
    8 `global` over 21 invocations in seven runs — so M9 records a duplicate-name
-   diagnostic and relies on no winner. What decides the winner stays **unstated
-   rather than open**: no scan or ordering is claimed, and no probe planned here
-   would settle it, so there is nothing further to reconcile on this point beyond
-   the general reconciliation below.
+   diagnostic and relies on no winner. What still open is **what selects the
+   survivor**, which §6 does not establish and M9 deliberately does not require:
+   no scan or ordering is claimed, and no probe planned here would settle it.
+   Nothing else on this point remains, beyond the general reconciliation below.
 4. **Nested `.opencode` directories.** Skills are documented to load along the
    walk to the git root; whether a nested `<subdir>/.opencode/agents/` is also
    loaded is unverified. A probe with agents in a nested directory would settle
@@ -917,10 +923,14 @@ be extended to 1.18.31 by assumption.
 ## Appendix A — §6 runs excluded from the count
 
 Both runs below were recorded before the §0 script scoped `$OPENCODE_CONFIG*` to a
-subshell, and are excluded from §6's count on that ground alone: the leaked
-variable outranks every file on disk, so every step after it reported the same
-value regardless of the fixture. The exclusion is by **when the run was taken**,
-not by what it reported, so these values are not evidence in either direction.
+subshell, and are excluded from §6's count on that ground alone: `$OPENCODE_CONFIG`
+outranks every file on disk, and once a `cfg` call leaked it, every later step in
+that run resolved a configuration that the fixture could not influence. The
+exclusion is by **when the run was taken**, not by what it reported: the leak
+bounds what the run's other steps can be compared against, so its values are read
+in neither direction. (The leak is a config-file input, so it does not mechanically
+explain a skill-catalog value either — which is why the rows are kept rather than
+discarded as wrong.)
 They are kept because the earlier draft of §6's table was built from them. Their
 values are reproduced as recorded in `655939e` and not re-run — re-running them
 would only reproduce the leak.
