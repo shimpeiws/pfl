@@ -31,8 +31,9 @@
     **[installed: measured]** row it does not list — has **not** been re-probed
     and remains a 1.18.30 observation.
   - The reconciliation §10 describes is therefore **already due**, not a future
-    trigger. Until it runs, read this document as "measured on 1.18.30, with the
-    §0 surfaces re-checked on 1.18.31 and nothing further", and do not extend any
+    trigger. Until it runs, read this document as "measured on 1.18.30 except
+    where §0 marks a surface 1.18.31 only, with the §0 surfaces re-checked on
+    1.18.31 and nothing further", and do not extend any
     claim past that.
 - **What this means for M9.** Every **[installed: measured]** layout row that §0
   does **not** list as exercised must be **re-verified against the installed
@@ -126,9 +127,11 @@ fixture gave every source the same single key and created no repository. A later
 pre-fix version (`655939e`) added `git init` and the per-key decoys; it is an
 1.18.31 run and corresponds to the **§0-fixture row** in Appendix A, whose other
 row predates even that script. Only `e98dbfc` supplies 1.18.30 evidence, and only
-its element-marker results; `655939e` is an 1.18.31 run and supplies none. That is
-why the agent and command element results carry 1.18.30 evidence
-while the precedence ladder and the walk stop do not. The probe is reproduced in
+its element results: that probe `unset`s all three `OPENCODE_CONFIG*` redirectors
+(`env -u`), so the leak that excludes Appendix A's runs does not reach them, and
+`655939e` is an 1.18.31 run that supplies none. That is why the agent, command and
+user-scope skill element results carry 1.18.30 evidence while the precedence ladder
+and the walk stop do not. The probe is reproduced in
 full so the 1.18.31 observations can be re-derived rather than taken on trust; it
 writes only under a `mktemp` directory, and the decoy files it creates are never
 the user's own. Rows it does not reach carry one of the weaker tags.
@@ -266,15 +269,15 @@ measured something else:
   `agent list` prints a name and a mode but never which scope's copy won: for the
   fixture it reported `marker (subagent)` while the winning copy's description
   (`PROJECT agent marker`) appears only in `debug config`'s `agent` map. It is not a
-  reliable way to detect that an agent loaded at all either — the same fixture
-  produced no entry on 1.18.30 and an entry on 1.18.31.
+  reliable way to detect that an agent loaded at all either — the same element
+  fixture produced no entry on 1.18.30 and an entry on 1.18.31.
 - **`$OPENCODE_CONFIG` and `$OPENCODE_CONFIG_CONTENT` set only inside a
   subshell.** A prefix assignment to a shell *function* persists in bash, so
   setting them on a `cfg` call leaks them into every later step — and since #6
   outranks every on-disk source, those steps are then measured against a config
   that cannot be overridden. Every step after the leak reported the same value
   until it was caught, which is why the runs recorded before the fix are excluded
-  from §6's count (Appendix A).
+  from §6's count (Appendix A; the 1.18.30 record is kept in §6 itself).
 - **One marker per key, not one per file.** `model` is set in every source, so
   precedence is read from it; `small_model` is set only on disk, and `username`
   carries a distinct marker **value** only in the `$OPENCODE_CONFIG` file — the key
@@ -375,7 +378,7 @@ directory; no probe searched for one [installed: self-described].
 ## 2. Configuration file locations and search order
 
 Two naming forms are accepted everywhere: `opencode.json` and `opencode.jsonc`
-(JSONC: comments and trailing commas) [upstream; both parsed by the same loader].
+(JSONC: comments and trailing commas) [upstream].
 Config sources are **deep-merged**, later overriding earlier for conflicting
 keys; non-conflicting keys are preserved. Order [upstream; the on-disk and env
 sources (#2–#6) measured in §0, to the extent §2 states]:
@@ -407,9 +410,9 @@ loaded **after** the global config and `.opencode/`, so it can override them.
 **Measured (§0 step 11; 1.18.31 only):** an `agent/` and a `command/` subdir
 under that directory are both loaded — each fixture's description appeared in
 `debug config`'s `agent` and `command` maps when the variable was set for that run
-alone. **Not measured (upstream only):** the `mode/` and `plugin/` subdirs, and
-the load order stated in this sentence, which is the binary's own documentation
-rather than an observation here. `OPENCODE_TUI_CONFIG`
+alone. **Not measured:** the `mode/` and `plugin/` subdirs [upstream], and the
+load order stated in this sentence, which is the binary's own documentation rather
+than an observation here [installed: self-described]. `OPENCODE_TUI_CONFIG`
 points at a separate TUI-only config (`tui.json[c]`); UI chrome is outside the
 harness boundary (§7) and is not modelled.
 
@@ -685,13 +688,13 @@ file, and deciding what consent covers — is a change to the harness boundary
 The resolver separates Native source, Applicability, Resolution semantics, and
 Activation (design doc §11). OpenCode's behaviour on each [installed: measured
 unless noted; the measured rows rest on four fixtures, each with its own version
-profile — the §0 ladder (1.18.31 only), the collision fixture (its project-scope
-skill result and collision outcome are 1.18.31 only, while its agent and command
-results carry 1.18.30 evidence, §0; its lone 1.18.30 skill observation is recorded
-below), step 10's user-scope-only fixture (1.18.31 only), and step 9's built-in
-listing (built-in entries on both binaries, with the fixture-agent difference noted
-at its row). The self-described and upstream rows are unchanged from the 1.18.30
-record]:
+profile — the §0 probe's config-ladder and walk fixtures (both 1.18.31 only), the
+collision fixture (its project-scope skill result and collision outcome are 1.18.31
+only, while its agent and command results carry 1.18.30 evidence, §0; its lone
+1.18.30 skill observation is recorded below), step 10's user-scope-only fixture
+(1.18.31 only), and step 9's built-in listing (built-in entries on both binaries,
+with the fixture-agent difference noted at its row). The self-described and
+upstream rows are unchanged from the 1.18.30 record]:
 
 ### Native source
 
@@ -826,6 +829,9 @@ controls` (`src/core/facets.ts:6`). Mapping the OpenCode kinds found:
 | Built-in agents (`build`, `plan`, `general`, `explore`; hidden `compaction`, `title`, `summary`) and built-in tools | **not modelled** as elements | — |
 | themes, keybinds, TUI                  | **not modelled** — UI chrome, outside the harness boundary (design doc §5)        | —                              |
 
+The left column's rows are [upstream] config-schema keys unless §4 or §8 marks the
+surface measured; §7 maps them, it does not measure them.
+
 **Built-in layers are one opaque element, not a catalogue.** Claude Code records
 its built-in instruction layers as a single element — `origin: 'builtin'`,
 `kind: 'runtime-provided-instructions'`, `path: '(builtin) claude-code instruction
@@ -869,7 +875,7 @@ Recorded, never guessed (design doc §12):
 
 - **Built-in agents** compiled into the binary: `build`, `plan`, `general`,
   `explore`, plus `compaction`, `title`, `summary`, which the built-in skill text
-  calls hidden. No file in either §4 scope defines these names, and
+  calls hidden. No file in the probe's §4 scopes defines these names, and
   `opencode agent list` reports them (§0 step 9) [installed: measured for the
   listing; "hidden" is installed: self-described]. The listing does **not** mark
   an entry as built in — on 1.18.31 the fixture's own agent appears there too,
@@ -972,9 +978,9 @@ catches it.
 outstanding obligation rather than a future one — tracked as §11.6. Meanwhile the
 **schema** conclusion (§9) is unaffected. The **layout** claims were re-checked on
 1.18.31 as far as the §0 probe reaches, and §0's exercised list is the record of
-how far that is. It supports several kinds of evidence, which §0's exercised list
-distinguishes — the first two are **1.18.31 only**, the last two are
-re-measurements that carry 1.18.30 evidence as well:
+how far that is. It distinguishes four ways the 1.18.30 attribution is limited,
+which §0's exercised list records — the first two are **1.18.31 only**, the last
+two are re-measurements that carry 1.18.30 evidence as well:
 
 - **No 1.18.30 record of the claim as stated.** The user-scope-only elements
   (step 10), `OPENCODE_CONFIG_DIR` (step 11), the project-scope skill row (§4.2),
@@ -1048,7 +1054,7 @@ assumption.
    row that §0 does not list as exercised still stands on the source it names,
    which is 1.18.30 — and §10 makes that the prerequisite M9 inherits.
 
-## Appendix A — §6 runs excluded from the count
+## Appendix A — 1.18.31 runs excluded from §6's count
 
 Both runs below were recorded before the §0 script scoped `$OPENCODE_CONFIG*` to a
 subshell, and are excluded from §6's count on that ground alone: `$OPENCODE_CONFIG`
