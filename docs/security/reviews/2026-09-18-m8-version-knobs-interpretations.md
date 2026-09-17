@@ -90,7 +90,7 @@ No finding was accepted as a risk.
 
 ## Verification
 
-- Full gate green: `test` (53 files, 458 tests), `check`, `format`, `build`,
+- Full gate green: `test` (53 files, 459 tests), `check`, `format`, `build`,
   `typecheck:test`, `knip`.
 - New tests: a schema-2 snapshot read directly exits 2 with
   `unsupported-snapshot-schema` and names the versions; a validation failure and

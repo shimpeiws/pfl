@@ -449,8 +449,8 @@ describe('pfl CLI end to end', () => {
     // run rather than mistaken for absence.
     const artifact = join(interpretationsDir(projectId, m.home), `${pointer.resolved}.json`);
 
-    // The failure document's `diagnostics` is the scan's set, so match by code
-    // rather than position.
+    // Match by code rather than position: the diagnostic may come from the
+    // direct read or from the scan that resolved the named id.
     await writeFile(artifact, '{ not json');
     for (const id of [pointer.observed, pointer.resolved]) {
       const corrupt = await runCli(m, ['report', '--snapshot', id, '--json']);

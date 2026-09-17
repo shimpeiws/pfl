@@ -69,7 +69,7 @@ The stable codes a consumer of the frozen contract may match on:
 | --- | --- |
 | `unsupported-snapshot-schema` | An artifact's `schemaVersion` is not supported; its message names the version found and the versions supported. |
 | `invalid-snapshot` | An artifact is malformed: invalid JSON, or contents of the wrong shape. |
-| `unreadable-snapshot` / `unreadable-observation` / `unreadable-interpretation` | A scan skipped an artifact the store guard refused (symlink, hardlink, non-regular, or over the size limit). |
+| `unreadable-snapshot` / `unreadable-observation` / `unreadable-interpretation` | A scan skipped an artifact it could not read: the store guard refused it (symlink, hardlink, non-regular, or over the size limit), or it failed to deserialize for another reason. |
 
 Harness diagnostics (for example `runtime-version-unverified`) keep their own
 codes and are command-specific.
@@ -201,10 +201,11 @@ command already uses for the element's interpretation.
 ### `snapshots`
 
 ```text
-{ project, runs: [{ observedId, resolvedId, capturedAt, runtime, completeness }] }
+{ project, runs: [{ observedId, resolvedId, interpretationId, capturedAt, runtime, completeness }] }
 ```
 
-`runs` is newest first.
+`runs` is newest first. `interpretationId` is `null` when the run has no stored
+interpretation (a pre-v1.0 run, or an interrupted `inspect`).
 
 ### `diff`
 

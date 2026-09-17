@@ -104,7 +104,7 @@ and names the classifier that produced it. See
 | 3    | `RUNTIME_UNSUPPORTED`   | Runtime unsupported — the requested runtime id is unknown                      |
 | 4    | `INSPECTION_FAILED`     | Inspection failed — an unexpected error during inspection                      |
 | 5    | `CONSENT_REQUIRED`      | Consent required — a read outside the project needs consent and none was given |
-| 6    | `SNAPSHOT_STORE_FAILED` | Snapshot store failure — reading or writing `~/.pfl/` failed at the I/O level  |
+| 6    | `SNAPSHOT_STORE_FAILED` | Snapshot store failure — reading or writing `~/.pfl/` failed                   |
 
 A `--json` failure document carries the stable name in `data.error.code`, not
 the number. A stored snapshot this binary cannot interpret is not a store

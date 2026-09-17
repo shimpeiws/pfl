@@ -19,6 +19,7 @@ import {
   generateObservedSnapshotId,
   generateResolvedSnapshotId,
   runtimeId,
+  type ElementId,
   type ObservedSnapshotId,
   type ResolvedSnapshotId,
 } from '../core/ids.js';
@@ -481,33 +482,46 @@ describe('listRuns', () => {
 });
 
 describe('readInterpretationForResolved', () => {
-  it('round-trips through writeInterpretation and reports absence as null', async () => {
+  it('round-trips a populated interpretation and reports absence as null', async () => {
     const home = await tempHome();
     const interpretation: Interpretation = {
       schemaVersion: '1',
       interpretationId: generateInterpretationId(),
       resolvedSnapshotId: 'res_y' as ResolvedSnapshotId,
       classifier: { id: 'pfl-native', version: '4' },
-      elements: [],
+      elements: [
+        {
+          elementId: 'el_x' as ElementId,
+          facets: ['instructions'],
+          confidence: 'high',
+          reason: 'test',
+        },
+      ],
       stats: {
-        observed: 0,
-        effective: 0,
+        observed: 1,
+        effective: 1,
         shadowed: 0,
         conditional: 0,
         opaque: 0,
-        byFacet: {},
+        byFacet: { instructions: 1 },
       },
-      findings: [],
+      findings: [
+        { rule: 'memory-enabled', message: 'memory is enabled', elementIds: ['el_x' as ElementId] },
+      ],
     };
 
     await writeInterpretation('proj', interpretation, home);
-    // The artifact is keyed by the resolved snapshot id it interprets.
-    await expect(readInterpretationForResolved('proj', 'res_y', home)).resolves.toMatchObject({
-      classifier: { version: '4' },
-    });
+    // The artifact is keyed by the resolved snapshot id it interprets, and the
+    // populated elements, stats, and findings must all survive the predicate.
+    await expect(readInterpretationForResolved('proj', 'res_y', home)).resolves.toEqual(
+      interpretation,
+    );
 
-    // A run captured before v1.0 carries no interpretation; absence is not an error.
+    // A run captured before v1.0 carries no interpretation; absence is not an
+    // error, and neither is a store that has no `interpretations/` directory.
     await expect(readInterpretationForResolved('proj', 'res_absent', home)).resolves.toBeNull();
+    await rm(interpretationsDir('proj', home), { recursive: true, force: true });
+    await expect(readInterpretationForResolved('proj', 'res_y', home)).resolves.toBeNull();
   });
 
   it('rejects a structurally malformed interpretation as invalid-snapshot', async () => {
@@ -521,9 +535,10 @@ describe('readInterpretationForResolved', () => {
         schemaVersion: '1',
         interpretationId: 'int_x',
         resolvedSnapshotId: 'res_y',
-        classifier: {},
+        classifier: { id: 'classifier', version: '1' },
+        // The only violation is the null element, so the test pins that branch.
         elements: [null],
-        stats: {},
+        stats: { observed: 0, effective: 0, shadowed: 0, conditional: 0, opaque: 0, byFacet: {} },
         findings: [],
       })}\n`,
     );
