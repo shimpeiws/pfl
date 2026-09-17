@@ -55,3 +55,47 @@ describe('readTomlFacts', () => {
     expect(facts.mcpServers).toEqual(['foo.bar', 'baz.qux']);
   });
 });
+
+describe('readTomlFacts pathological input (hostile corpus)', () => {
+  // The parse-size ceiling (MAX_PARSE_BYTES) is enforced before this reader is
+  // called (readTextFileGuarded), and is covered by the adapter's oversized
+  // config.toml test; these cases are about the reader itself not hanging.
+  it('ignores an unterminated string', () => {
+    expect(readTomlFacts('model = "unterminated\n').values).toEqual({});
+  });
+
+  it('does not throw on malformed sections and control characters', () => {
+    const text = '[\n]\n[[\nmodel = "m"\n\u0000\u0007\nkey = \n';
+    expect(() => readTomlFacts(text)).not.toThrow();
+  }, 2000);
+
+  it('handles a very long single line without failing', () => {
+    const facts = readTomlFacts(`value = "${'x'.repeat(200_000)}"\n`);
+    expect(facts.values['value']?.length).toBe(200_000);
+  }, 2000);
+
+  it('handles CRLF line endings', () => {
+    expect(readTomlFacts('model = "m"\r\nother = "o"\r\n').values).toEqual({
+      model: 'm',
+      other: 'o',
+    });
+  });
+
+  it('collects many server sections', () => {
+    const text = Array.from({ length: 500 }, (_, index) => `[mcp_servers.s${index}]`).join('\n');
+    expect(readTomlFacts(text).mcpServers).toHaveLength(500);
+  });
+
+  it('does not pollute Object.prototype from a __proto__ scalar or section', () => {
+    const facts = readTomlFacts(
+      ['__proto__ = "polluted"', '[mcp_servers.__proto__]', 'enabled = true', ''].join('\n'),
+    );
+
+    expect(Object.getPrototypeOf(facts.values)).toBeNull();
+    expect(({} as Record<string, unknown>)['polluted']).toBeUndefined();
+  });
+
+  it('takes the last value for a duplicated top-level key', () => {
+    expect(readTomlFacts('model = "a"\nmodel = "b"\n').values).toEqual({ model: 'b' });
+  });
+});
