@@ -1,0 +1,65 @@
+name: Security review
+
+# A required status check on the protected branch (roadmap §3.3). The job runs
+# on every pull request and decides for itself whether the diff touches a trust
+# boundary. Selecting it by path filter was rejected: a required check that a
+# path filter can skip is absent exactly when a file outside the filter matters.
+#
+# A trust-boundary change must carry a recorded review under
+# docs/security/reviews/ (see docs/security/review-policy.md), or the
+# `security-reviewed` label.
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  security-review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Require a recorded review for trust-boundary changes
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          HAS_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'security-reviewed') }}
+        run: |
+          set -euo pipefail
+
+          changed=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          echo "Changed files:"
+          echo "$changed"
+
+          # Trust-boundary paths (kept in step with docs/security/review-policy.md).
+          # Changes to this workflow are *not* auto-gated (listing it here would
+          # make the check block the very pull request that edits it); they are
+          # reviewed by a human like any other CI change.
+          trigger='^(src/discovery/(walk|project-identity|consent|metadata)\.ts|src/util/fs\.ts|src/limits\.ts|src/redact/.*\.ts|src/snapshot/store\.ts|src/runtime/[^/]+/(paths|consent|detect)\.ts)$'
+
+          touches=$(printf '%s\n' "$changed" | grep -E "$trigger" || true)
+          if [ -z "$touches" ]; then
+            echo "No trust-boundary path changed; nothing to review."
+            exit 0
+          fi
+
+          echo "Trust-boundary paths changed:"
+          echo "$touches"
+
+          if [ "$HAS_LABEL" = "true" ]; then
+            echo "The 'security-reviewed' label is set."
+            exit 0
+          fi
+
+          if printf '%s\n' "$changed" | grep -qE '^docs/security/reviews/.+\.md$'; then
+            echo "A review record is included."
+            exit 0
+          fi
+
+          echo "::error::This pull request changes a trust boundary but adds no docs/security/reviews/*.md record. Run the security-auditor review, commit its record, or add the 'security-reviewed' label."
+          exit 1
