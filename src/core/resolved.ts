@@ -59,18 +59,36 @@ export interface ResolvedElement {
 }
 
 /**
- * Design doc §14. Only explicit, statically resolvable edges are frozen for
- * v1.0. The initial declaration also listed `contains`, `discovered-from`,
- * `resolves-to`, and `applies-to`; no adapter produces them and each has an
- * adequate structural representation already (`source.path` + origin for
- * provenance, `resolution.strategy`/`status` for resolution, `applicability`
- * for applicability), so they are withdrawn rather than carried as vestigial
- * schema. The full table and the reasoning are in
- * `docs/design/relation-types.md`.
+ * Design doc §14. Only explicit, statically resolvable edges are produced and
+ * frozen for v1.0. The initial declaration also listed `contains`,
+ * `discovered-from`, `resolves-to`, and `applies-to`; no adapter produces them
+ * and each has an adequate structural representation already (`source.path` +
+ * origin for provenance, `resolution.strategy`/`status` for resolution,
+ * `applicability` for applicability), so they are withdrawn from the model
+ * rather than carried as vestigial schema. The full table and the reasoning are
+ * in `docs/design/relation-types.md`.
  */
 export const RELATION_TYPES = ['accumulates-with', 'overrides', 'shadows'] as const;
 
 export type RelationType = (typeof RELATION_TYPES)[number];
+
+/**
+ * The four withdrawn members are gone from the model but not from the schema-1
+ * read surface. `SNAPSHOT_SCHEMA_VERSION` is unchanged: a stored artifact was
+ * valid under schema 1 if it used any of the seven values, and narrowing the
+ * validator would make this reader reject an artifact the previous reader
+ * accepted. The reader therefore stays permissive — it accepts the full schema-1
+ * set — while no producer emits the withdrawn values, so no artifact this
+ * version writes can contain one. A future schema bump can drop the legacy
+ * reads; until then the two sets are deliberately separate.
+ */
+export const PERSISTED_RELATION_TYPES: readonly string[] = [
+  ...RELATION_TYPES,
+  'contains',
+  'discovered-from',
+  'resolves-to',
+  'applies-to',
+];
 
 export interface Relation {
   type: RelationType;

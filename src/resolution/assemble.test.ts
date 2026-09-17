@@ -157,15 +157,32 @@ describe('assembleResolvedSnapshot', () => {
   });
 
   it('deep-freezes the resolved snapshot, so a caller cannot desynchronize it', () => {
+    const winner = resolvedElement('a', 'effective');
+    const loser = resolvedElement('b', 'shadowed');
     const resolved = assembleResolvedSnapshot({
       observed: observedSnapshot(),
-      elements: [resolvedElement('a', 'effective')],
+      elements: [winner, loser],
+      relations: [{ type: 'shadows', from: winner.id, to: loser.id }],
+      diagnostics: [{ severity: 'info', code: 'example', message: 'example' }],
     });
 
-    expect(Object.isFrozen(resolved)).toBe(true);
-    expect(Object.isFrozen(resolved.elements)).toBe(true);
-    expect(Object.isFrozen(resolved.elements[0])).toBe(true);
-    expect(Object.isFrozen(resolved.digests)).toBe(true);
+    // The root and every nested container and object are frozen, not only the
+    // top level: a caller mutating the resolution or a relation must fail.
+    const frozen = [
+      resolved,
+      resolved.elements,
+      resolved.elements[0],
+      resolved.elements[0]?.resolution,
+      resolved.relations,
+      resolved.relations[0],
+      resolved.runtime,
+      resolved.resolution,
+      resolved.diagnostics,
+      resolved.diagnostics[0],
+      resolved.effectiveElementIds,
+      resolved.digests,
+    ];
+    expect(frozen.every((value) => value !== undefined && Object.isFrozen(value))).toBe(true);
   });
 
   it('keeps a verified version at full confidence', () => {

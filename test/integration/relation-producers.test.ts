@@ -43,11 +43,32 @@ async function relationTypesFor(runtime: FixtureRuntime): Promise<string[]> {
   const pointer = await readLatestPointer(projectId, m.home);
   if (pointer === null) throw new Error(`no latest pointer after inspecting ${runtime}`);
   const resolved = await readResolvedSnapshot(projectId, pointer.resolved, m.home);
-  return resolved.relations.map((relation) => relation.type);
+  return [...new Set(resolved.relations.map((relation) => relation.type))];
 }
 
+/**
+ * Where each declared type is produced. Pinning it per runtime makes the test
+ * falsifiable: removing a producer (or moving it to the other adapter) fails
+ * even if the union of produced types happens to stay the same.
+ */
+const EXPECTED: Record<FixtureRuntime, readonly string[]> = {
+  // Claude: settings-key precedence and same-directory CLAUDE.local shadowing
+  // produce `shadows`; accumulating instruction layers produce
+  // `accumulates-with`.
+  claude: ['accumulates-with', 'shadows'],
+  // Codex: `AGENTS.override.md` produces `overrides` and `shadows`;
+  // accumulating instruction layers produce `accumulates-with`.
+  codex: ['accumulates-with', 'overrides', 'shadows'],
+};
+
 describe('relation producers', () => {
-  it('produces every declared relation type across the shipped fixtures', async () => {
+  it('produces exactly the expected relation types per runtime', async () => {
+    for (const runtime of ['claude', 'codex'] as const) {
+      expect([...(await relationTypesFor(runtime))].sort()).toEqual([...EXPECTED[runtime]].sort());
+    }
+  });
+
+  it('covers every declared relation type across the shipped fixtures', async () => {
     const produced = new Set<string>();
     for (const runtime of ['claude', 'codex'] as const) {
       for (const type of await relationTypesFor(runtime)) produced.add(type);

@@ -69,17 +69,24 @@ edges it needs are among the three produced. The provenance purpose is served.
 
 ## Compatibility
 
-Removing a declared enum member is not a change to a persisted snapshot's
-*shape*, and it does not invalidate a stored artifact:
+The withdrawal narrows the *model*, not the schema-1 read surface, so
+`SNAPSHOT_SCHEMA_VERSION` does not bump:
 
-- The four withdrawn values were never emitted, so no stored snapshot can
-  contain one. An artifact written under the previous declaration remains valid
-  under the narrowed validator.
+- Schema 1 admitted all seven values. A reader that refused four of them would
+  reject an artifact the previous reader accepted, so the on-disk validator
+  keeps accepting the full schema-1 set (`PERSISTED_RELATION_TYPES`). It is
+  deliberately wider than `RELATION_TYPES`.
+- No producer emits the four withdrawn values, so no artifact this version
+  writes contains one. The reader is permissive only for files it did not write.
 - No field is added, removed, or retyped; `Relation` keeps `type`, `from`, and
-  `to`. `SNAPSHOT_SCHEMA_VERSION` is unchanged.
-- The CLI `--json` contract already treats `diff.relations` as `{type, from,
-  to}` objects, so a consumer that reads a relation is unaffected. A consumer
-  that matches on one of the four withdrawn values would have matched nothing.
+  `to`. The `--json` contract already treats a relation as `{type, from, to}`,
+  so a consumer is unaffected. A consumer that matched one of the four values
+  would have matched nothing.
+- A future schema bump can drop the legacy reads and enforce `RELATION_TYPES`
+  alone; that is a schema change, and it belongs to that bump, not here.
+
+`src/snapshot/store.test.ts` pins both halves: a schema-1 artifact with a
+withdrawn value still reads, and one with an unknown value is still refused.
 
 ## Enforcement
 
