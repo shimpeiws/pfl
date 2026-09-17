@@ -1,0 +1,23 @@
+# gitleaks configuration for pfl.
+#
+# The test suite deliberately plants secret-shaped sentinels so the redaction and
+# deny-by-default persistence tests are meaningful — see the `SECRETS` list in
+# `test/fixtures/materialize.ts`. Those values are fake. Only these exact planted
+# sentinels are allowlisted; the default rules otherwise apply unchanged, so a
+# real secret committed into a test is still caught.
+#
+# The allowlist is configuration, not an inline comment, because gitleaks scans
+# every commit in a pull request: a sentinel introduced in one commit would still
+# be reported even if a later commit added an inline `gitleaks:allow`.
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Fake, deliberately planted test sentinels."
+regexes = [
+  '''ghp_0123456789abcdefghijklmnopqrstuvwx''',
+  '''EXFILTRATION''',
+  '''s3cr3t-p4ss''',
+  '''wJalrXUtnFEMIEXAMPLEKEY0123456789''',
+]
