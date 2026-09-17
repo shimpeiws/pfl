@@ -5,7 +5,11 @@ import { getRuntimeName } from '../runtime/registry.js';
 import { redactingLogger } from '../redact/output.js';
 import type { Logger } from '../util/logger.js';
 import { type CommandOutcome } from './document.js';
-import { loadInterpretation } from './read.js';
+import {
+  interpretationProvenance,
+  loadInterpretation,
+  type InterpretationProvenance,
+} from './read.js';
 
 export interface ReportOptions {
   snapshot?: string;
@@ -23,6 +27,8 @@ export interface ReportData {
   confidence: string;
   stats: HarnessStats;
   findings: Finding[];
+  /** Which classifier produced the interpretation, and where it came from (#84). */
+  interpretation: InterpretationProvenance;
 }
 
 /**
@@ -37,11 +43,8 @@ export async function runReport(
 ): Promise<CommandOutcome<ReportData>> {
   const home = options.home ?? homedir();
   const out = redactingLogger(logger, options.json ? 'export' : 'display', { home });
-  const { observed, resolved, interpretation, diagnostics } = await loadInterpretation(
-    cwd,
-    options.snapshot,
-    home,
-  );
+  const run = await loadInterpretation(cwd, options.snapshot, home);
+  const { observed, resolved, interpretation, diagnostics } = run;
   for (const diagnostic of diagnostics) {
     out.warn(diagnostic.message, { code: diagnostic.code, path: diagnostic.path ?? undefined });
   }
@@ -57,6 +60,7 @@ export async function runReport(
     confidence: resolved.resolution.confidence,
     stats,
     findings: interpretation.findings,
+    interpretation: interpretationProvenance(run),
   };
 
   if (options.json) {
@@ -85,6 +89,12 @@ export async function runReport(
     }
   }
 
+  if (run.interpretationOrigin === 'recomputed') {
+    out.info('');
+    out.info(
+      `Interpretation recomputed with classifier ${interpretation.classifier.version} (no stored interpretation).`,
+    );
+  }
   if (resolved.resolution.confidence === 'unverified-runtime-version') {
     out.info('');
     out.warn(

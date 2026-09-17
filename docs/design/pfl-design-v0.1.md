@@ -450,7 +450,7 @@ Examples:
 - graph projections
 - semantic impact in a diff
 
-Derived Interpretation may change when Inventory logic improves. Raw observations do not.
+Derived Interpretation may change when Inventory logic improves. Raw observations do not. Since v1.0 the interpretation is persisted with the snapshots so that a report reproduces; when none is stored (a pre-v1.0 snapshot, or an interrupted `inspect`) it is recomputed with the current classifier and marked as recomputed.
 
 ---
 
@@ -1014,6 +1014,8 @@ Adapters add Claude Code / Codex-specific rules.
 
 ```ts
 interface Interpretation {
+  schemaVersion: string;
+
   interpretationId: string;
   resolvedSnapshotId: string;
 
@@ -1029,12 +1031,21 @@ interface Interpretation {
       | "high"
       | "medium"
       | "unknown";
+    reason: string;
   }[];
 
   stats: HarnessStats;
   findings: Finding[];
 }
 ```
+
+Since v1.0 `inspect` **persists** the interpretation next to the observed and
+resolved snapshots and the read commands use the stored copy, so a report
+reproduces and names the classifier that produced it. A run with no stored
+interpretation — one captured before v1.0, or an interrupted `inspect` — is
+recomputed, and the answer records that it was recomputed. The artifact carries
+`schemaVersion` and is read through the versioned deserializer like the other
+snapshots. See [`versions.md`](versions.md) and roadmap M8 (issue #84).
 
 Classification is:
 

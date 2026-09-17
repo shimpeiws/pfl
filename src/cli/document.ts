@@ -78,12 +78,17 @@ export function buildErrorDocument(
     error instanceof PflError ? error.exitCode : EXIT_CODES.INSPECTION_FAILED;
   const message = error instanceof Error ? error.message : String(error);
   const missingScopes = error instanceof PflError ? error.data?.missingScopes : undefined;
+  const contextDiagnostics = error instanceof PflError ? error.data?.diagnostics : undefined;
   return {
     pflVersion: packageVersion,
     command,
     ok: false,
     completeness: 'unknown',
-    diagnostics: [],
+    // A failure may be a recorded condition (an unreadable snapshot), in which
+    // case its diagnostics travel with it rather than only in the message.
+    diagnostics: (contextDiagnostics ?? []).map((diagnostic) =>
+      redactDiagnostic(diagnostic, 'export', ctx),
+    ),
     data: {
       error: { code: EXIT_CODE_NAMES[exitCode], message: redactFreeText(message, 'export', ctx) },
       // `PflErrorContext` is a closed shape, so this explicit copy is the whole

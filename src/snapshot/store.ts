@@ -9,7 +9,13 @@ import { OBSERVED_REASONS, type ObservedSnapshot } from '../core/observed.js';
 import { PERSISTED_RELATION_TYPES, type ResolvedSnapshot } from '../core/resolved.js';
 import { MAX_ARTIFACT_BYTES } from '../limits.js';
 import { checkSymlinkAncestors, readTextFileGuarded } from '../util/fs.js';
-import { deserializeSnapshot, serializeSnapshot, type VersionedSnapshot } from './serialization.js';
+import {
+  InvalidSnapshotError,
+  UnsupportedSchemaVersionError,
+  deserializeSnapshot,
+  serializeSnapshot,
+  type VersionedSnapshot,
+} from './serialization.js';
 
 /**
  * Storage layout (design doc §29). pfl stores data under the user's home
@@ -133,6 +139,13 @@ export function latestPath(projectId: string, home: string = homedir()): string 
 export interface StoredRunSummary {
   observedId: string;
   resolvedId: string | null;
+  /**
+   * The stored interpretation's id, when one was written with the run. A run
+   * captured before v1.0 has none, and its interpretation is recomputed on read
+   * (roadmap #84). Retention reclaims a run as a unit, so the three ids travel
+   * together (#87).
+   */
+  interpretationId: string | null;
   capturedAt: string;
   runtime: { id: string; version: string | null };
   completeness: Completeness;
@@ -147,6 +160,8 @@ export interface RunListResult {
 export interface LatestPointer {
   observed: string;
   resolved: string;
+  /** The stored interpretation id, absent on a pointer written before v1.0. */
+  interpretation?: string;
 }
 
 /** Persists an ObservedSnapshot (an observation event). */
@@ -170,6 +185,7 @@ export async function readObservedSnapshot(
     artifactPath(observationsDir(projectId, home), snapshotId),
     isObservedSnapshot,
     pflHome(home),
+    'observations',
   );
 }
 
@@ -194,19 +210,56 @@ export async function readResolvedSnapshot(
     artifactPath(snapshotsDir(projectId, home), snapshotId),
     isResolvedSnapshot,
     pflHome(home),
+    'snapshots',
   );
 }
 
-/** Reads a Derived Interpretation by id (`interpretations/`). */
-export async function readInterpretation(
+/**
+ * Reads the Derived Interpretation stored for a resolved snapshot, or `null`
+ * when none is stored. The artifact is keyed by the resolved snapshot id, so
+ * the mapping from a run to its interpretation is a path, not a scan: a
+ * corrupt artifact cannot be mistaken for a different run's, and its failure is
+ * attributable to this run. A pre-v1.0 run carries none, and that absence is
+ * not an error (roadmap #84); every other failure throws.
+ */
+export async function readInterpretationForResolved(
   projectId: string,
-  interpretationId: string,
+  resolvedSnapshotId: string,
   home: string = homedir(),
-): Promise<Interpretation> {
-  return readArtifact(
-    artifactPath(interpretationsDir(projectId, home), interpretationId),
+): Promise<Interpretation | null> {
+  const target = artifactPath(interpretationsDir(projectId, home), resolvedSnapshotId);
+  const interpretation = await readArtifactIfPresent(
+    target,
     isInterpretation,
     pflHome(home),
+    'interpretations',
+  );
+  if (interpretation !== null && interpretation.resolvedSnapshotId !== resolvedSnapshotId) {
+    // The file is named for one resolved snapshot but claims another: the store
+    // is inconsistent, so fail closed rather than guess which is right.
+    throw invalidArtifactError(
+      `interpretation ${interpretation.interpretationId} is stored under ${resolvedSnapshotId} but claims ${interpretation.resolvedSnapshotId}`,
+      `interpretations/${basename(target)}`,
+    );
+  }
+  return interpretation;
+}
+
+/**
+ * Persists a Derived Interpretation (design doc §21, roadmap #84). An
+ * interpretation is a run artifact like the observed and resolved snapshots, so
+ * `inspect` writes it once and read commands use the stored copy; a report then
+ * reproduces, and it can state which classifier produced it. It is stored under
+ * its resolved snapshot id, which is unique per run, so immutability holds.
+ */
+export async function writeInterpretation(
+  projectId: string,
+  interpretation: Interpretation,
+  home: string = homedir(),
+): Promise<void> {
+  await writeArtifact(
+    artifactPath(interpretationsDir(projectId, home), interpretation.resolvedSnapshotId),
+    serializeSnapshot(interpretation),
   );
 }
 
@@ -240,7 +293,16 @@ export async function readLatestPointer(
   if (typeof observed !== 'string' || typeof resolved !== 'string') {
     throw snapshotStoreError('the latest pointer is missing an id');
   }
-  return { observed, resolved };
+  // Optional: a pointer written before v1.0 has no interpretation id.
+  const interpretation = parsed['interpretation'];
+  if (interpretation !== undefined && typeof interpretation !== 'string') {
+    throw snapshotStoreError('the latest pointer has an invalid interpretation id');
+  }
+  return {
+    observed,
+    resolved,
+    ...(interpretation !== undefined ? { interpretation } : {}),
+  };
 }
 
 /** Points `latest` at a run. The pointer is mutable and replaced atomically. */
@@ -251,6 +313,9 @@ export async function writeLatestPointer(
 ): Promise<void> {
   assertSafeSegment(pointer.observed, 'snapshot id');
   assertSafeSegment(pointer.resolved, 'snapshot id');
+  if (pointer.interpretation !== undefined) {
+    assertSafeSegment(pointer.interpretation, 'interpretation id');
+  }
 
   const target = latestPath(projectId, home);
   await ensureDir(dirname(target));
@@ -282,15 +347,55 @@ export async function listRuns(
         join(resolvedDir, name),
         isResolvedSnapshot,
         pflHome(home),
+        'snapshots',
       );
       resolvedByObserved.set(resolved.observedSnapshotId, resolved.snapshotId);
     } catch (error) {
-      diagnostics.push({
-        severity: 'warning',
-        code: 'unreadable-snapshot',
-        message: errorMessage(error),
-        path: name,
-      });
+      diagnostics.push(readErrorDiagnostic(error, 'unreadable-snapshot', `snapshots/${name}`));
+    }
+  }
+
+  // Interpretations are keyed by the resolved snapshot they interpret, so a run
+  // summary can name the stored interpretation (or `null` when there is none).
+  // Each is parsed rather than trusted from its name: the file name and the
+  // payload must agree, or a scan would report a run as interpreted that the
+  // direct read (which uses the path) cannot find. The id it carries is what
+  // retention reclaims the run with (#87).
+  const interpretationByResolved = new Map<string, string>();
+  for (const name of await artifactNames(
+    interpretationsDir(projectId, home),
+    pflHome(home),
+    diagnostics,
+  )) {
+    try {
+      const interpretation = await readArtifact(
+        join(interpretationsDir(projectId, home), name),
+        isInterpretation,
+        pflHome(home),
+        'interpretations',
+      );
+      const keyedAs = name.slice(0, -ARTIFACT_SUFFIX.length);
+      // The artifact is keyed by the resolved snapshot id, so the file name and
+      // the payload must agree. A mismatch is the same inconsistency a direct
+      // read refuses, and the scan must not report a run as interpreted when
+      // the read path would not find it.
+      if (interpretation.resolvedSnapshotId !== keyedAs) {
+        diagnostics.push({
+          severity: 'warning',
+          code: 'invalid-snapshot',
+          message: `interpretation ${interpretation.interpretationId} is stored under ${keyedAs} but claims ${interpretation.resolvedSnapshotId}`,
+          path: `interpretations/${name}`,
+        });
+        continue;
+      }
+      interpretationByResolved.set(
+        interpretation.resolvedSnapshotId,
+        interpretation.interpretationId,
+      );
+    } catch (error) {
+      diagnostics.push(
+        readErrorDiagnostic(error, 'unreadable-interpretation', `interpretations/${name}`),
+      );
     }
   }
 
@@ -301,21 +406,22 @@ export async function listRuns(
         join(observedDir, name),
         isObservedSnapshot,
         pflHome(home),
+        'observations',
       );
+      const resolvedId = resolvedByObserved.get(observed.snapshotId) ?? null;
       runs.push({
         observedId: observed.snapshotId,
-        resolvedId: resolvedByObserved.get(observed.snapshotId) ?? null,
+        resolvedId,
+        interpretationId:
+          resolvedId === null ? null : (interpretationByResolved.get(resolvedId) ?? null),
         capturedAt: observed.capturedAt,
         runtime: { id: observed.runtime.id, version: observed.runtime.version },
         completeness: observed.completeness,
       });
     } catch (error) {
-      diagnostics.push({
-        severity: 'warning',
-        code: 'unreadable-observation',
-        message: errorMessage(error),
-        path: name,
-      });
+      diagnostics.push(
+        readErrorDiagnostic(error, 'unreadable-observation', `observations/${name}`),
+      );
     }
   }
 
@@ -351,34 +457,71 @@ async function artifactNames(
   }
 }
 
+/** The store subdirectory an artifact lives in; also its diagnostic path prefix. */
+type ArtifactClass = 'observations' | 'snapshots' | 'interpretations';
+
 function artifactPath(dir: string, id: string): string {
   assertSafeSegment(id, 'artifact id');
   return join(dir, `${id}${ARTIFACT_SUFFIX}`);
+}
+
+/** A store-relative label that names the artifact class, e.g. `snapshots/res_x.json`. */
+function artifactLabel(target: string, artifactClass: ArtifactClass): string {
+  return `${artifactClass}/${basename(target)}`;
 }
 
 async function readArtifact<T>(
   target: string,
   isValid: (value: unknown) => value is T,
   baseDir: string,
+  artifactClass: ArtifactClass,
 ): Promise<T> {
+  const label = artifactLabel(target, artifactClass);
   const read = await readTextFileGuarded(target, MAX_ARTIFACT_BYTES, baseDir);
-  if (read.status === 'missing')
-    throw snapshotStoreError(`snapshot not found: ${basename(target)}`);
+  if (read.status === 'missing') throw snapshotStoreError(`snapshot not found: ${label}`);
   if (read.status !== 'ok') {
-    throw snapshotStoreError(guardedReadError(read, `snapshot ${basename(target)}`));
+    throw snapshotStoreError(guardedReadError(read, label));
   }
+  return parseArtifact(read.text, label, isValid);
+}
 
+/**
+ * Like `readArtifact`, but a missing artifact is `null` rather than an error.
+ * Used for an optional companion artifact (a pre-v1.0 run has no stored
+ * interpretation) where absence is normal but any other failure is not.
+ */
+async function readArtifactIfPresent<T>(
+  target: string,
+  isValid: (value: unknown) => value is T,
+  baseDir: string,
+  artifactClass: ArtifactClass,
+): Promise<T | null> {
+  const label = artifactLabel(target, artifactClass);
+  const read = await readTextFileGuarded(target, MAX_ARTIFACT_BYTES, baseDir);
+  if (read.status === 'missing') return null;
+  if (read.status !== 'ok') {
+    throw snapshotStoreError(guardedReadError(read, label));
+  }
+  return parseArtifact(read.text, label, isValid);
+}
+
+function parseArtifact<T>(text: string, label: string, isValid: (value: unknown) => value is T): T {
   let parsed: unknown;
   try {
-    // The on-disk envelope always carries `schemaVersion` (ADR 0001), even when
-    // the artifact type itself does not model it (for example Interpretation).
-    parsed = deserializeSnapshot<VersionedSnapshot>(read.text);
+    // The on-disk envelope always carries `schemaVersion` (ADR 0001), including
+    // for Interpretation.
+    parsed = deserializeSnapshot<VersionedSnapshot>(text);
   } catch (error) {
-    throw snapshotStoreError(errorMessage(error));
+    // A snapshot this binary cannot interpret is a diagnostic, not a store
+    // failure (ADR 0001, roadmap #82): the store is readable, the artifact is
+    // not. `listRuns` and every read command handle it the same way.
+    throw uninterpretableArtifact(error, label);
   }
 
   if (!isValid(parsed)) {
-    throw snapshotStoreError(`snapshot is missing required fields: ${basename(target)}`);
+    // A well-formed envelope whose contents are the wrong shape is as
+    // uninterpretable as malformed JSON: same diagnostic, same exit (#82).
+    throw invalidArtifactError(`artifact is missing required fields: ${label}`, label);
   }
   return parsed;
 }
@@ -606,15 +749,68 @@ function isRelation(value: unknown): boolean {
   );
 }
 
+/**
+ * Validates an interpretation the way the snapshot predicates validate theirs
+ * (roadmap S11): a malformed artifact is refused with `invalid-snapshot` rather
+ * than handed to a reader that would crash on it.
+ *
+ * Facets and finding rules are checked for structure only, never against the
+ * current tables, so a stored interpretation carrying a facet or rule this
+ * build does not know stays readable (design doc §6: readers tolerate unknown
+ * future facets). `confidence` is the deliberate exception: it is a closed
+ * three-value scale the classifier expresses, not an open vocabulary, so an
+ * unrecognised value is a malformed artifact.
+ */
 function isInterpretation(value: unknown): value is Interpretation {
   if (!isRecord(value)) return false;
+  if (
+    typeof value['schemaVersion'] !== 'string' ||
+    typeof value['interpretationId'] !== 'string' ||
+    typeof value['resolvedSnapshotId'] !== 'string'
+  ) {
+    return false;
+  }
+  const classifier = value['classifier'];
+  if (
+    !isRecord(classifier) ||
+    typeof classifier['id'] !== 'string' ||
+    typeof classifier['version'] !== 'string'
+  ) {
+    return false;
+  }
+  if (!Array.isArray(value['elements']) || !value['elements'].every(isElementInterpretation)) {
+    return false;
+  }
+  if (!isHarnessStats(value['stats'])) return false;
+  return Array.isArray(value['findings']) && value['findings'].every(isFinding);
+}
+
+function isElementInterpretation(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (typeof value['elementId'] !== 'string' || typeof value['reason'] !== 'string') return false;
+  const confidence = value['confidence'];
+  if (confidence !== 'high' && confidence !== 'medium' && confidence !== 'unknown') return false;
   return (
-    typeof value['interpretationId'] === 'string' &&
-    typeof value['resolvedSnapshotId'] === 'string' &&
-    isRecord(value['classifier']) &&
-    Array.isArray(value['elements']) &&
-    isRecord(value['stats']) &&
-    Array.isArray(value['findings'])
+    Array.isArray(value['facets']) && value['facets'].every((facet) => typeof facet === 'string')
+  );
+}
+
+function isHarnessStats(value: unknown): value is Interpretation['stats'] {
+  if (!isRecord(value)) return false;
+  for (const count of ['observed', 'effective', 'shadowed', 'conditional', 'opaque']) {
+    if (typeof value[count] !== 'number') return false;
+  }
+  const byFacet = value['byFacet'];
+  return isRecord(byFacet) && Object.values(byFacet).every((count) => typeof count === 'number');
+}
+
+function isFinding(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value['rule'] === 'string' &&
+    typeof value['message'] === 'string' &&
+    Array.isArray(value['elementIds']) &&
+    value['elementIds'].every((id) => typeof id === 'string')
   );
 }
 
@@ -639,4 +835,50 @@ function errorMessage(error: unknown): string {
 
 function snapshotStoreError(message: string): PflError {
   return new PflError(message, EXIT_CODES.SNAPSHOT_STORE_FAILED);
+}
+
+/**
+ * A snapshot whose schema this binary does not support, or which is malformed,
+ * is not a store failure: the store read succeeded and the artifact is the
+ * problem. It becomes a configuration error carrying a diagnostic that names
+ * the version found and the versions supported, so a read command degrades to a
+ * diagnostic instead of a bare exit 6 (ADR 0001; roadmap #82).
+ */
+function uninterpretableArtifact(error: unknown, name: string): PflError {
+  if (error instanceof UnsupportedSchemaVersionError) {
+    return new PflError(error.message, EXIT_CODES.CONFIG_ERROR, {
+      diagnostics: [
+        {
+          severity: 'error',
+          code: 'unsupported-snapshot-schema',
+          message: error.message,
+          path: name,
+        },
+      ],
+    });
+  }
+  if (error instanceof InvalidSnapshotError) {
+    return invalidArtifactError(error.message, name);
+  }
+  return snapshotStoreError(errorMessage(error));
+}
+
+/**
+ * The artifact failed to be read as its type. A direct read of it fails, so the
+ * diagnostic is `error`; a scan downgrades it to `warning` when it skips the
+ * artifact and continues (`readErrorDiagnostic`).
+ */
+function invalidArtifactError(message: string, name: string): PflError {
+  return new PflError(message, EXIT_CODES.CONFIG_ERROR, {
+    diagnostics: [{ severity: 'error', code: 'invalid-snapshot', message, path: name }],
+  });
+}
+
+/** The diagnostic for one artifact a scan could not read, carried or generic. */
+function readErrorDiagnostic(error: unknown, fallbackCode: string, name: string): Diagnostic {
+  const carried = error instanceof PflError ? error.data?.diagnostics?.[0] : undefined;
+  // A scan skips the artifact and continues, so even a carried `error` is
+  // reported at `warning` here.
+  if (carried !== undefined) return { ...carried, severity: 'warning', path: name };
+  return { severity: 'warning', code: fallbackCode, message: errorMessage(error), path: name };
 }

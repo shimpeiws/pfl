@@ -1,3 +1,5 @@
+import type { Diagnostic } from '../core/diagnostics.js';
+
 /**
  * Process exit codes, ratified for v0.1 and documented in the README.
  *
@@ -23,6 +25,12 @@ export type ExitCode = (typeof EXIT_CODES)[keyof typeof EXIT_CODES];
 export interface PflErrorContext {
   /** Consent scope keys the run needed and did not have, e.g. `claude-code:user`. */
   missingScopes?: readonly string[];
+  /**
+   * Diagnostics explaining the failure, carried into the `--json` failure
+   * document's `diagnostics` array. Used when the failure is a recorded,
+   * expected condition (an unreadable snapshot) rather than a bare error.
+   */
+  diagnostics?: readonly Diagnostic[];
 }
 
 export class PflError extends Error {

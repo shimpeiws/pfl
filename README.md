@@ -70,10 +70,11 @@ pfl graph --snapshot <id>
 
 pfl snapshots
 
-pfl diff <snapshot-a> <snapshot-b>
+pfl diff <snapshot-a> [snapshot-b]
 ```
 
-The default snapshot for read commands is `latest`.
+The default snapshot for read commands is `latest`; `diff`'s second operand
+defaults to it, and the literal `latest` is accepted anywhere an id is.
 
 ## Machine-readable output (`--json`)
 
@@ -84,6 +85,16 @@ so a consumer parses it without knowing which command produced it, and failures
 emit the same envelope with `ok: false`. The full contract is in
 [`docs/design/pfl-json-contract.md`](docs/design/pfl-json-contract.md).
 
+## Versions
+
+Four version values are independent: the package version, the on-disk snapshot
+schema, the resolution semantics, and the classifier. A snapshot's schema
+governs readability (an unknown one is refused, not guessed); the semantics
+version feeds the resolved digest and is diff-visible; the classifier version
+feeds no digest but is stored with the interpretation, so a report reproduces
+and names the classifier that produced it. See
+[`docs/design/versions.md`](docs/design/versions.md).
+
 ## Exit codes
 
 | Code | Stable name             | Meaning                                                                        |
@@ -93,10 +104,16 @@ emit the same envelope with `ok: false`. The full contract is in
 | 3    | `RUNTIME_UNSUPPORTED`   | Runtime unsupported — the requested runtime id is unknown                      |
 | 4    | `INSPECTION_FAILED`     | Inspection failed — an unexpected error during inspection                      |
 | 5    | `CONSENT_REQUIRED`      | Consent required — a read outside the project needs consent and none was given |
-| 6    | `SNAPSHOT_STORE_FAILED` | Snapshot store failure — writing or reading `~/.pfl/` failed                   |
+| 6    | `SNAPSHOT_STORE_FAILED` | Snapshot store failure — reading or writing `~/.pfl/` failed                   |
 
 A `--json` failure document carries the stable name in `data.error.code`, not
-the number.
+the number. A stored snapshot this binary cannot interpret is not a store
+failure: a scan skips it with a diagnostic (`unsupported-snapshot-schema` or
+`invalid-snapshot`), and a direct read exits 2 (`CONFIG_ERROR`) carrying that
+diagnostic. An unsupported schema names the version found and the versions
+supported. Exit 6 is reserved for a store that could not be read at all — an
+I/O failure, a guard refusal (a symlinked, oversized, or non-regular artifact),
+or a corrupt `latest` pointer.
 
 ## Examples
 

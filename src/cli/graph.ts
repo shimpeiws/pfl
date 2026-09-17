@@ -3,7 +3,11 @@ import { redactPath, redactingLogger } from '../redact/output.js';
 import type { Logger } from '../util/logger.js';
 import { type CommandOutcome } from './document.js';
 import { buildGraphModel, type GraphModel } from './graph-model.js';
-import { loadInterpretation } from './read.js';
+import {
+  interpretationProvenance,
+  loadInterpretation,
+  type InterpretationProvenance,
+} from './read.js';
 import { detectTreeStyle, renderGraph } from './tree.js';
 
 export interface GraphOptions {
@@ -13,7 +17,7 @@ export interface GraphOptions {
   home?: string;
 }
 
-export type GraphData = GraphModel;
+export type GraphData = GraphModel & { interpretation: InterpretationProvenance };
 
 /**
  * `pfl graph [--snapshot <id>]` (design doc §14, §27): render provenance and
@@ -28,16 +32,14 @@ export async function runGraph(
 ): Promise<CommandOutcome<GraphData>> {
   const home = options.home ?? homedir();
   const out = redactingLogger(logger, options.json ? 'export' : 'display', { home });
-  const { observed, resolved, interpretation, diagnostics } = await loadInterpretation(
-    cwd,
-    options.snapshot,
-    home,
-  );
+  const run = await loadInterpretation(cwd, options.snapshot, home);
+  const { observed, resolved, interpretation, diagnostics } = run;
   for (const diagnostic of diagnostics) {
     out.warn(diagnostic.message, { code: diagnostic.code, path: diagnostic.path ?? undefined });
   }
 
   const model = buildGraphModel(observed, resolved, interpretation);
+  const provenance = interpretationProvenance(run);
   if (options.json) {
     // Nodes are ordered by id, as the document contract states; the human tree
     // keeps its path order. Paths are re-redacted at the export boundary, so a
@@ -46,7 +48,7 @@ export async function runGraph(
       .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
       .map((node) => ({ ...node, path: redactPath(node.path, { home }) }));
     return {
-      data: { ...model, nodes },
+      data: { ...model, nodes, interpretation: provenance },
       diagnostics,
       completeness: observed.completeness,
     };
@@ -55,5 +57,9 @@ export async function runGraph(
   for (const line of renderGraph(model, detectTreeStyle())) {
     out.info(line);
   }
-  return { data: model, diagnostics, completeness: observed.completeness };
+  return {
+    data: { ...model, interpretation: provenance },
+    diagnostics,
+    completeness: observed.completeness,
+  };
 }

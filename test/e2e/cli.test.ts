@@ -1,11 +1,13 @@
 import { execFile, spawn } from 'node:child_process';
-import { rm, readFile } from 'node:fs/promises';
+import { rm, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { EXIT_CODES } from '../../src/cli/exit-codes.js';
 import { elementIdFor, runtimeId } from '../../src/core/ids.js';
+import { resolveProjectContext } from '../../src/discovery/project-identity.js';
+import { interpretationsDir, readLatestPointer, snapshotsDir } from '../../src/snapshot/store.js';
 import {
   grantConsent,
   materialize,
@@ -383,6 +385,93 @@ describe('pfl CLI end to end', () => {
     expect(document.data).toBeTypeOf('object');
   });
 
+  it('reads the stored interpretation payload back', async () => {
+    const m = await fixture();
+    await runCli(m, ['inspect', '--runtime', 'claude-code']);
+    const projectId = (await resolveProjectContext(m.projectRoot)).id;
+    const pointer = await readLatestPointer(projectId, m.home);
+    if (pointer === null) throw new Error('expected a latest pointer after inspect');
+    const artifact = join(interpretationsDir(projectId, m.home), `${pointer.resolved}.json`);
+
+    // Mutate the stored classifier version: the report must return the stored
+    // value, which proves it read the artifact rather than recomputing.
+    const raw = JSON.parse(await readFile(artifact, 'utf8')) as {
+      classifier: { version: string };
+    };
+    raw.classifier.version = '999';
+    await writeFile(artifact, `${JSON.stringify(raw)}\n`);
+
+    const stored = JSON.parse((await runCli(m, ['report', '--json'])).stdout) as {
+      data: { interpretation: { classifierVersion: string; origin: string } };
+    };
+    expect(stored.data.interpretation).toEqual({ classifierVersion: '999', origin: 'stored' });
+  });
+
+  it('recomputes when no interpretation is stored, and fails closed when it is corrupt', async () => {
+    const m = await fixture();
+    await runCli(m, ['inspect', '--runtime', 'claude-code']);
+    const projectId = (await resolveProjectContext(m.projectRoot)).id;
+    const pointer = await readLatestPointer(projectId, m.home);
+    if (pointer === null) throw new Error('expected a latest pointer after inspect');
+    const artifact = join(interpretationsDir(projectId, m.home), `${pointer.resolved}.json`);
+
+    // Absence (a pre-v1.0 run) is not an error: the report recomputes and says so.
+    await rm(artifact);
+    const human = await runCli(m, ['report']);
+    expect(human.code, human.stderr).toBe(EXIT_CODES.SUCCESS);
+    expect(human.stdout).toContain('Interpretation recomputed');
+    const recomputed = JSON.parse((await runCli(m, ['report', '--json'])).stdout) as {
+      data: { interpretation: { origin: string } };
+    };
+    expect(recomputed.data.interpretation.origin).toBe('recomputed');
+
+    // A corrupt stored interpretation is not absence: it fails closed with a
+    // diagnostic, rather than masking store corruption with a recomputation.
+    await writeFile(artifact, '{ not json');
+    const corrupt = await runCli(m, ['report', '--json']);
+    expect(corrupt.code).toBe(EXIT_CODES.CONFIG_ERROR);
+    const document = JSON.parse(corrupt.stdout) as {
+      data: { error: { code: string } };
+      diagnostics: { code: string }[];
+    };
+    expect(document.data.error.code).toBe('CONFIG_ERROR');
+    expect(document.diagnostics[0]?.code).toBe('invalid-snapshot');
+  });
+
+  it('fails a named read closed on a corrupt or unsupported interpretation', async () => {
+    const m = await fixture();
+    await runCli(m, ['inspect', '--runtime', 'claude-code']);
+    const projectId = (await resolveProjectContext(m.projectRoot)).id;
+    const pointer = await readLatestPointer(projectId, m.home);
+    if (pointer === null) throw new Error('expected a latest pointer after inspect');
+    // A named read resolves the run through the scan, but the interpretation is
+    // located by the resolved snapshot id, so its failure is attributed to this
+    // run rather than mistaken for absence.
+    const artifact = join(interpretationsDir(projectId, m.home), `${pointer.resolved}.json`);
+
+    // Match by code rather than position: the diagnostic may come from the
+    // direct read or from the scan that resolved the named id.
+    await writeFile(artifact, '{ not json');
+    for (const id of [pointer.observed, pointer.resolved]) {
+      const corrupt = await runCli(m, ['report', '--snapshot', id, '--json']);
+      expect(corrupt.code, id).toBe(EXIT_CODES.CONFIG_ERROR);
+      const codes = (
+        JSON.parse(corrupt.stdout) as { diagnostics: { code: string }[] }
+      ).diagnostics.map((diagnostic) => diagnostic.code);
+      expect(codes, id).toContain('invalid-snapshot');
+    }
+
+    // A snapshot the schema does not support is the same fail-closed path.
+    await writeFile(artifact, '{"schemaVersion":"2"}\n');
+    const future = await runCli(m, ['report', '--snapshot', pointer.observed, '--json']);
+    expect(future.code).toBe(EXIT_CODES.CONFIG_ERROR);
+    expect(
+      (JSON.parse(future.stdout) as { diagnostics: { code: string }[] }).diagnostics.map(
+        (diagnostic) => diagnostic.code,
+      ),
+    ).toContain('unsupported-snapshot-schema');
+  });
+
   it('emits the failure envelope on a non-zero exit', async () => {
     const m = await fixture();
 
@@ -448,6 +537,47 @@ describe('pfl CLI end to end', () => {
     const noCommand = await runCli(m, []);
     expect(noCommand.code).toBe(EXIT_CODES.SUCCESS);
     expect(noCommand.stdout).toContain('Usage');
+  });
+
+  it('degrades an unsupported snapshot schema to a diagnostic, not exit 6', async () => {
+    const m = await fixture();
+    await runCli(m, ['inspect', '--runtime', 'claude-code']);
+    const projectId = (await resolveProjectContext(m.projectRoot)).id;
+    const pointer = await readLatestPointer(projectId, m.home);
+    if (pointer === null) throw new Error('expected a latest pointer after inspect');
+    const artifact = join(snapshotsDir(projectId, m.home), `${pointer.resolved}.json`);
+    const raw = JSON.parse(await readFile(artifact, 'utf8')) as Record<string, unknown>;
+    await writeFile(artifact, `${JSON.stringify({ ...raw, schemaVersion: '2' })}\n`);
+
+    // `report` defaults to latest, which now points at a schema-2 snapshot.
+    const result = await runCli(m, ['report', '--json']);
+
+    expect(result.code).toBe(EXIT_CODES.CONFIG_ERROR);
+    const document = JSON.parse(result.stdout) as {
+      ok: boolean;
+      data: { error: { code: string; message: string } };
+      diagnostics: { code: string; message: string }[];
+    };
+    expect(document.ok).toBe(false);
+    expect(document.data.error.code).toBe('CONFIG_ERROR');
+    expect(document.diagnostics[0]?.code).toBe('unsupported-snapshot-schema');
+    expect(document.diagnostics[0]?.message).toContain('2');
+
+    // A named read of the same unreadable snapshot says it could not be read,
+    // rather than calling a present artifact "unknown".
+    for (const id of [pointer.observed, pointer.resolved]) {
+      const named = await runCli(m, ['report', '--snapshot', id, '--json']);
+      expect(named.code, id).toBe(EXIT_CODES.CONFIG_ERROR);
+      const namedDocument = JSON.parse(named.stdout) as {
+        data: { error: { message: string } };
+        diagnostics: { code: string }[];
+      };
+      expect(namedDocument.data.error.message, id).toMatch(/could not read/);
+      expect(
+        namedDocument.diagnostics.map((diagnostic) => diagnostic.code),
+        id,
+      ).toContain('unsupported-snapshot-schema');
+    }
   });
 
   it('emits the missing consent scopes in the failure document', async () => {

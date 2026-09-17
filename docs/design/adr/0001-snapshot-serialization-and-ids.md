@@ -73,9 +73,32 @@ Implemented in `src/snapshot/serialization.ts` as `serializeSnapshot` /
 
 - `pfl snapshots` and the read commands (#4) can list and parse stored snapshots
   and must treat `UnsupportedSchemaVersionError` / `InvalidSnapshotError` as
-  diagnostics, not crashes.
+  diagnostics, not crashes. Issue #82 fixes how, since the two read paths had
+  diverged:
+  - A **scan** (`listRuns`, the `snapshots` command) skips the artifact and adds
+    a diagnostic naming the version found and the versions supported; the scan
+    and the command succeed.
+  - A **direct read** of a specific artifact (`report` / `list` / `show` /
+    `graph` / `diff`, whether the id is named or `latest`) cannot produce data
+    from an artifact it cannot interpret, so it fails with exit 2
+    (`CONFIG_ERROR`), not 6. The failure document carries the same diagnostic in
+    its `diagnostics` array, so a consumer acts on it rather than on prose, and
+    the message states the version found and the versions supported. Exit 6 is
+    reserved for a store that could not be read at all.
+  - Both conditions are handled identically; a malformed artifact is not a
+    different failure from an unsupported version.
+  - The `latest` pointer is the one mutable artifact, not an immutable snapshot,
+    so a corrupt or unreadable pointer remains a store failure (exit 6). It
+    carries no `schemaVersion` to refuse; being unable to read it means the
+    store itself could not be read.
 - Any change to a persisted snapshot shape must bump `SNAPSHOT_SCHEMA_VERSION`
   and add the new value to `SUPPORTED_SNAPSHOT_SCHEMA_VERSIONS`.
+- A run writes several artifacts in turn — observed snapshot, resolved
+  snapshot, interpretation — and only then replaces `latest`. Each write is
+  atomic and immutable, but the run as a whole is not one transaction: a failure
+  between writes leaves an artifact the pointer does not name. `latest` is the
+  publish boundary, so such an artifact is not visible to a read command; it is
+  an orphan for `pfl gc` to reclaim (#87), not a corruption to repair.
 - Element ids are opaque (`el_<16 hex>`); humans read `source.path`, not the id.
 - `ElementId` currently derives from runtime + origin + path only. If two
   distinct elements can share all three, the derivation must be extended (for

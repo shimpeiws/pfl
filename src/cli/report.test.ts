@@ -191,7 +191,8 @@ describe('runReport', () => {
 
     await runReport(projectRoot, { home, snapshot: 'res_test' }, logger);
 
-    expect(warns.join('\n')).toContain('unreadable-snapshot');
+    // #82: the malformed artifact reports its specific diagnostic.
+    expect(warns.join('\n')).toContain('invalid-snapshot');
   });
 
   it('fails clearly when no snapshot is stored', async () => {
