@@ -75,16 +75,28 @@ pfl diff <snapshot-a> <snapshot-b>
 
 The default snapshot for read commands is `latest`.
 
+## Machine-readable output (`--json`)
+
+Every output-producing command accepts `--json` and writes **exactly one JSON
+document to stdout**, with all logs on stderr. The document is a common
+envelope — `pflVersion`, `command`, `ok`, `completeness`, `diagnostics`, `data` —
+so a consumer parses it without knowing which command produced it, and failures
+emit the same envelope with `ok: false`. The full contract is in
+[`docs/design/pfl-json-contract.md`](docs/design/pfl-json-contract.md).
+
 ## Exit codes
 
-| Code | Meaning                                                                        |
-| ---- | ------------------------------------------------------------------------------ |
-| 0    | Success                                                                        |
-| 2    | Configuration error — a missing or invalid argument                            |
-| 3    | Runtime unsupported — the requested runtime id is unknown                      |
-| 4    | Inspection failed — an unexpected error during inspection                      |
-| 5    | Consent required — a read outside the project needs consent and none was given |
-| 6    | Snapshot store failure — writing or reading `~/.pfl/` failed                   |
+| Code | Stable name             | Meaning                                                                        |
+| ---- | ----------------------- | ------------------------------------------------------------------------------ |
+| 0    | `SUCCESS`               | Success, including partial results                                             |
+| 2    | `CONFIG_ERROR`          | Configuration error — a missing or invalid argument                            |
+| 3    | `RUNTIME_UNSUPPORTED`   | Runtime unsupported — the requested runtime id is unknown                      |
+| 4    | `INSPECTION_FAILED`     | Inspection failed — an unexpected error during inspection                      |
+| 5    | `CONSENT_REQUIRED`      | Consent required — a read outside the project needs consent and none was given |
+| 6    | `SNAPSHOT_STORE_FAILED` | Snapshot store failure — writing or reading `~/.pfl/` failed                   |
+
+A `--json` failure document carries the stable name in `data.error.code`, not
+the number.
 
 ## Examples
 

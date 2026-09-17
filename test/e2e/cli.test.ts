@@ -105,8 +105,8 @@ describe('pfl CLI end to end', () => {
     const m = await fixture();
     await runCli(m, ['inspect', '--runtime', 'claude-code']);
     const snapshots = await runCli(m, ['snapshots', '--json']);
-    const payload = JSON.parse(snapshots.stdout.trim().split('\n').at(-1) ?? '{}');
-    const resolvedId: string = payload.runs[0].resolvedId;
+    const payload = JSON.parse(snapshots.stdout);
+    const resolvedId: string = payload.data.runs[0].resolvedId;
 
     const result = await runCli(m, ['diff', resolvedId, resolvedId]);
 
@@ -137,8 +137,8 @@ describe('pfl CLI end to end', () => {
     expect(snapshots.stdout).toContain('codex@');
 
     const list = await runCli(m, ['list', '--json']);
-    const listed = JSON.parse(list.stdout.trim().split('\n').at(-1) ?? '{}');
-    const userElement = listed.elements.find(
+    const listed = JSON.parse(list.stdout);
+    const userElement = listed.data.elements.find(
       (element: { origin: string }) => element.origin === 'user',
     );
     const show = await runCli(m, ['show', userElement.id]);
@@ -146,8 +146,8 @@ describe('pfl CLI end to end', () => {
     expect(show.stdout).toContain('~/.codex');
 
     const snapshotsJson = await runCli(m, ['snapshots', '--json']);
-    const payload = JSON.parse(snapshotsJson.stdout.trim().split('\n').at(-1) ?? '{}');
-    const resolvedId: string = payload.runs[0].resolvedId;
+    const payload = JSON.parse(snapshotsJson.stdout);
+    const resolvedId: string = payload.data.runs[0].resolvedId;
     const diff = await runCli(m, ['diff', resolvedId, resolvedId]);
     expect(diff.code, diff.stderr).toBe(EXIT_CODES.SUCCESS);
     expect(diff.stdout).toContain('+ 0 added');
@@ -163,7 +163,7 @@ describe('pfl CLI end to end', () => {
     const show = async (path: string, kind: string) => {
       const result = await runCli(m, ['show', idFor(path, kind), '--json']);
       expect(result.code, `${path}: ${result.stderr}`).toBe(EXIT_CODES.SUCCESS);
-      return JSON.parse(result.stdout.trim().split('\n').at(-1) ?? '{}') as {
+      return JSON.parse(result.stdout).data as {
         observed: { native: { kind: string; origin: string; scope: string } };
         resolved: { status: string; applicability: { type: string; target?: string } };
       };
@@ -211,7 +211,7 @@ describe('pfl CLI end to end', () => {
     const show = async (path: string, kind: string) => {
       const result = await runCli(m, ['show', idFor(path, kind), '--json']);
       expect(result.code, `${path}: ${result.stderr}`).toBe(EXIT_CODES.SUCCESS);
-      return JSON.parse(result.stdout.trim().split('\n').at(-1) ?? '{}') as {
+      return JSON.parse(result.stdout).data as {
         observed: {
           native: { kind: string; origin: string; scope: string };
           metadata: Record<string, unknown>;
@@ -263,7 +263,7 @@ describe('pfl CLI end to end', () => {
       const id = elementIdFor({ runtimeId: runtimeId('claude-code'), origin, path, kind });
       const result = await runCli(m, ['show', id, '--json']);
       expect(result.code, `${path}: ${result.stderr}`).toBe(EXIT_CODES.SUCCESS);
-      return JSON.parse(result.stdout.trim().split('\n').at(-1) ?? '{}') as {
+      return JSON.parse(result.stdout).data as {
         observed: {
           native: { kind: string; origin: string; scope: string };
           metadata: Record<string, unknown>;
@@ -337,5 +337,111 @@ describe('pfl CLI end to end', () => {
 
     expect(result.code).toBe(EXIT_CODES.SUCCESS);
     expect(result.stdout.trim()).toContain(manifest.version);
+  });
+
+  it('emits exactly one JSON document on stdout and sends logs to stderr', async () => {
+    const m = await fixture();
+    await runCli(m, ['inspect', '--runtime', 'claude-code']);
+
+    const result = await runCli(m, ['report', '--json']);
+
+    expect(result.code).toBe(EXIT_CODES.SUCCESS);
+    // A single JSON.parse over the whole stdout proves there is one document.
+    const document = JSON.parse(result.stdout) as {
+      pflVersion: string;
+      command: string;
+      ok: boolean;
+      completeness: string;
+      diagnostics: unknown[];
+      data: unknown;
+    };
+    expect(document).toMatchObject({ command: 'report', ok: true });
+    expect(document.pflVersion).toMatch(/^\d+\.\d+\.\d+/);
+    expect(document.completeness).toBe('partial');
+    expect(Array.isArray(document.diagnostics)).toBe(true);
+    expect(document.data).toBeTypeOf('object');
+  });
+
+  it('emits the failure envelope on a non-zero exit', async () => {
+    const m = await fixture();
+
+    // No snapshot is stored, so report fails with a configuration error.
+    const result = await runCli(m, ['report', '--json']);
+
+    expect(result.code).toBe(EXIT_CODES.CONFIG_ERROR);
+    const document = JSON.parse(result.stdout) as {
+      command: string;
+      ok: boolean;
+      data: { error: { code: string; message: string } };
+    };
+    expect(document.command).toBe('report');
+    expect(document.ok).toBe(false);
+    expect(document.data.error.code).toBe('CONFIG_ERROR');
+  });
+
+  it('emits the failure envelope for a parser error, not a stack trace', async () => {
+    const m = await fixture();
+
+    // An unknown option is rejected by `cac` before the action runs.
+    const unknownOption = await runCli(m, ['report', '--json', '--bogus']);
+    expect(unknownOption.code).toBe(EXIT_CODES.CONFIG_ERROR);
+    const unknownDocument = JSON.parse(unknownOption.stdout) as {
+      command: string;
+      ok: boolean;
+      data: { error: { code: string; message: string } };
+    };
+    expect(unknownDocument).toMatchObject({ command: 'report', ok: false });
+    expect(unknownDocument.data.error.code).toBe('CONFIG_ERROR');
+    expect(unknownOption.stderr).not.toContain('CACError');
+
+    // A missing required positional is also rejected before the action.
+    const missingArg = await runCli(m, ['show', '--json']);
+    expect(missingArg.code).toBe(EXIT_CODES.CONFIG_ERROR);
+    expect(JSON.parse(missingArg.stdout)).toMatchObject({
+      command: 'show',
+      ok: false,
+      data: { error: { code: 'CONFIG_ERROR' } },
+    });
+    expect(missingArg.stderr).not.toContain('CACError');
+  });
+
+  it('rejects an unknown command and shows help when no command is given', async () => {
+    const m = await fixture();
+
+    const unknown = await runCli(m, ['bogus', '--json']);
+    expect(unknown.code).toBe(EXIT_CODES.CONFIG_ERROR);
+    const unknownDocument = JSON.parse(unknown.stdout) as {
+      command: string;
+      ok: boolean;
+      data: { error: { code: string } };
+    };
+    expect(unknownDocument).toMatchObject({ command: 'pfl', ok: false });
+    expect(unknownDocument.data.error.code).toBe('CONFIG_ERROR');
+
+    // `--json` with nothing to document is still a failure document.
+    const noCommandJson = await runCli(m, ['--json']);
+    expect(noCommandJson.code).toBe(EXIT_CODES.CONFIG_ERROR);
+    expect(JSON.parse(noCommandJson.stdout)).toMatchObject({ ok: false });
+
+    // No command at all is help, not a silent exit.
+    const noCommand = await runCli(m, []);
+    expect(noCommand.code).toBe(EXIT_CODES.SUCCESS);
+    expect(noCommand.stdout).toContain('Usage');
+  });
+
+  it('emits the missing consent scopes in the failure document', async () => {
+    const m = await materialize('claude');
+    materialized.push(m);
+
+    const result = await runCli(m, ['inspect', '--runtime', 'claude-code', '--json']);
+
+    expect(result.code).toBe(EXIT_CODES.CONSENT_REQUIRED);
+    const document = JSON.parse(result.stdout) as {
+      ok: boolean;
+      data: { error: { code: string }; missingScopes?: string[] };
+    };
+    expect(document.ok).toBe(false);
+    expect(document.data.error.code).toBe('CONSENT_REQUIRED');
+    expect(document.data.missingScopes).toContain('claude-code:user');
   });
 });

@@ -12,11 +12,14 @@ export function createLogger(format: LogFormat): Logger {
     message: string,
     data?: Record<string, unknown>,
   ) => {
-    const stream = level === 'error' ? console.error : console.log;
+    // Under `--json` stdout carries exactly one document (the envelope), so
+    // every log line — progress, warning, and error — goes to stderr. Human
+    // output is unchanged: info/warn are the rendering, error is a failure.
     if (format === 'json') {
-      stream(JSON.stringify({ level, message, ...data }));
+      console.error(JSON.stringify({ level, message, ...data }));
       return;
     }
+    const stream = level === 'error' ? console.error : console.log;
     stream(data ? `${message} ${JSON.stringify(data)}` : message);
   };
 

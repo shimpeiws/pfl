@@ -195,15 +195,16 @@ describe('runList', () => {
     expect(byObserved.lines).toHaveLength(1);
   });
 
-  it('emits JSON', async () => {
+  it('emits JSON with elements ordered by id', async () => {
     const { projectRoot, home } = await fixture();
-    const { lines, logger } = fakeLogger();
+    const { logger } = fakeLogger();
 
-    await runList(projectRoot, { home, json: true }, logger);
+    const outcome = await runList(projectRoot, { home, json: true }, logger);
 
-    const payload = JSON.parse(lines[0] ?? '{}');
-    expect(payload.count).toBe(4);
-    expect(payload.elements[0]).toHaveProperty('facets');
+    expect(outcome.data.count).toBe(4);
+    expect(outcome.data.elements[0]).toHaveProperty('facets');
+    const ids = outcome.data.elements.map((element) => element.id);
+    expect(ids).toEqual([...ids].sort());
   });
 
   it('fails on an invalid facet and lists valid values', async () => {

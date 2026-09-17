@@ -1,7 +1,11 @@
 import { homedir } from 'node:os';
 import type { ElementId } from '../core/ids.js';
-import { redactingLogger } from '../redact/output.js';
+import type { Interpretation } from '../core/interpretation.js';
+import type { ObservedElement } from '../core/observed.js';
+import type { Relation, ResolvedElement } from '../core/resolved.js';
+import { redactElementSource, redactingLogger } from '../redact/output.js';
 import type { Logger } from '../util/logger.js';
+import { type CommandOutcome } from './document.js';
 import { EXIT_CODES, PflError } from './exit-codes.js';
 import { loadInterpretation } from './read.js';
 
@@ -10,6 +14,14 @@ export interface ShowOptions {
   json?: boolean;
   /** Injected for tests; defaults to the current user's home. */
   home?: string;
+}
+
+export interface ShowData {
+  observed: ObservedElement;
+  resolved: ResolvedElement | null;
+  interpretation: Interpretation['elements'][number] | null;
+  relations: Relation[];
+  findings: Interpretation['findings'];
 }
 
 /**
@@ -23,7 +35,7 @@ export async function runShow(
   elementId: string,
   options: ShowOptions,
   logger: Logger,
-): Promise<void> {
+): Promise<CommandOutcome<ShowData>> {
   const home = options.home ?? homedir();
   const out = redactingLogger(logger, options.json ? 'export' : 'display', { home });
   const { observed, resolved, interpretation, diagnostics } = await loadInterpretation(
@@ -50,15 +62,18 @@ export async function runShow(
     finding.elementIds.includes(elementId as ElementId),
   );
 
+  const data: ShowData = {
+    // Re-assert the export redaction at the boundary: the element comes from a
+    // stored artifact, and an artifact that predates redaction (or was tampered
+    // with) must not print a raw path through `--json`.
+    observed: redactElementSource(observedElement, { home }),
+    resolved: resolvedElement ?? null,
+    interpretation: interpretationElement ?? null,
+    relations,
+    findings,
+  };
   if (options.json) {
-    out.info('show', {
-      observed: observedElement,
-      resolved: resolvedElement ?? null,
-      interpretation: interpretationElement ?? null,
-      relations,
-      findings,
-    });
-    return;
+    return { data, diagnostics, completeness: observed.completeness };
   }
 
   out.info(`Element ${elementId}`);
@@ -117,4 +132,5 @@ export async function runShow(
       out.info(`  ${finding.message}`);
     }
   }
+  return { data, diagnostics, completeness: observed.completeness };
 }

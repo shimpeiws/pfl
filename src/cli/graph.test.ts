@@ -169,14 +169,16 @@ describe('runGraph', () => {
 
   it('emits nodes and edges as JSON', async () => {
     const { projectRoot, home } = await fixture();
-    const { lines, logger } = fakeLogger();
+    const { logger } = fakeLogger();
 
-    await runGraph(projectRoot, { home, json: true }, logger);
+    const outcome = await runGraph(projectRoot, { home, json: true }, logger);
 
-    const payload = JSON.parse(lines[0] ?? '{}');
-    expect(payload.resolvedSnapshotId).toBe('res_test');
-    expect(payload.nodes).toHaveLength(5);
-    expect(payload.edges.map((edge: { type: string }) => edge.type)).toContain('accumulates-with');
-    expect(payload.edges.map((edge: { type: string }) => edge.type)).toContain('shadows');
+    expect(outcome.data.resolvedSnapshotId).toBe('res_test');
+    expect(outcome.data.nodes).toHaveLength(5);
+    expect(outcome.data.edges.map((edge) => edge.type)).toContain('accumulates-with');
+    expect(outcome.data.edges.map((edge) => edge.type)).toContain('shadows');
+    // Nodes are ordered by id in the document.
+    const ids = outcome.data.nodes.map((node) => node.id);
+    expect(ids).toEqual([...ids].sort());
   });
 });
