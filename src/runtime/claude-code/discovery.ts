@@ -7,6 +7,7 @@ import { filterToAllowlist } from '../../discovery/metadata.js';
 import { buildObservedElement } from '../../discovery/observed-element.js';
 import { walkHarnessPaths } from '../../discovery/walk.js';
 import type { Diagnostic } from '../../core/diagnostics.js';
+import { withFragment } from '../../core/element-path.js';
 import { runtimeId } from '../../core/ids.js';
 import type {
   NativeOrigin,
@@ -589,7 +590,7 @@ async function collectSettings(
   const permissions = parsed['permissions'];
   if (isRecord(permissions)) {
     elements.push(
-      configElement(origin, scope, 'permissions', `${displayPath}#permissions`, {
+      configElement(origin, scope, 'permissions', withFragment(displayPath, 'permissions'), {
         allowCount: arrayLength(permissions['allow']),
         denyCount: arrayLength(permissions['deny']),
         askCount: arrayLength(permissions['ask']),
@@ -599,7 +600,7 @@ async function collectSettings(
     // there is no top-level `defaultMode`.
     if (typeof permissions['defaultMode'] === 'string') {
       elements.push(
-        configElement(origin, scope, 'approval-policy', `${displayPath}#defaultMode`, {
+        configElement(origin, scope, 'approval-policy', withFragment(displayPath, 'defaultMode'), {
           approvalPolicy: permissions['defaultMode'],
         }),
       );
@@ -609,7 +610,7 @@ async function collectSettings(
   if (isRecord(hooks)) {
     const hookMatchers = matcherStrings(hooks);
     elements.push(
-      configElement(origin, scope, 'hooks', `${displayPath}#hooks`, {
+      configElement(origin, scope, 'hooks', withFragment(displayPath, 'hooks'), {
         eventNames: Object.keys(hooks),
         hookMatchers,
         hookMatcherCount: hookMatchers.length,
@@ -618,7 +619,7 @@ async function collectSettings(
   }
   if (typeof parsed['outputStyle'] === 'string') {
     elements.push(
-      configElement(origin, scope, 'output-style', `${displayPath}#outputStyle`, {
+      configElement(origin, scope, 'output-style', withFragment(displayPath, 'outputStyle'), {
         outputStyle: parsed['outputStyle'],
       }),
     );
@@ -626,7 +627,7 @@ async function collectSettings(
   const mcpServers = parsed['mcpServers'];
   if (isRecord(mcpServers)) {
     elements.push(
-      configElement(origin, scope, 'mcp-configuration', `${displayPath}#mcpServers`, {
+      configElement(origin, scope, 'mcp-configuration', withFragment(displayPath, 'mcpServers'), {
         serverNames: Object.keys(mcpServers),
       }),
     );
@@ -634,7 +635,7 @@ async function collectSettings(
   const enabledPlugins = parsed['enabledPlugins'];
   if (isRecord(enabledPlugins)) {
     elements.push(
-      configElement(origin, scope, 'plugin', `${displayPath}#enabledPlugins`, {
+      configElement(origin, scope, 'plugin', withFragment(displayPath, 'enabledPlugins'), {
         pluginNames: Object.keys(enabledPlugins),
         enabledPluginCount: Object.keys(enabledPlugins).length,
       }),
@@ -725,7 +726,7 @@ async function collectMcpFile(
   const mcpServers = parsed['mcpServers'];
   if (isRecord(mcpServers)) {
     elements.push(
-      configElement(origin, scope, 'mcp-configuration', `${displayPath}#mcpServers`, {
+      configElement(origin, scope, 'mcp-configuration', withFragment(displayPath, 'mcpServers'), {
         serverNames: Object.keys(mcpServers),
       }),
     );

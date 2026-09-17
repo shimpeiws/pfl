@@ -12,7 +12,12 @@ import { RESOLUTION_SEMANTICS_VERSION, assembleResolvedSnapshot } from './assemb
 
 function resolvedElement(path: string, status: ResolvedStatus): ResolvedElement {
   return {
-    id: elementIdFor({ runtimeId: runtimeId('claude-code'), origin: 'project', path }),
+    id: elementIdFor({
+      runtimeId: runtimeId('claude-code'),
+      origin: 'project',
+      path,
+      kind: 'instructions',
+    }),
     status,
     applicability: { type: 'project' },
     activation: 'always',
@@ -23,7 +28,7 @@ function resolvedElement(path: string, status: ResolvedStatus): ResolvedElement 
 function observedElement(path: string, kind: string): ObservedElement {
   const origin = path.startsWith('~/') ? 'user' : 'project';
   return {
-    id: elementIdFor({ runtimeId: runtimeId('claude-code'), origin, path }),
+    id: elementIdFor({ runtimeId: runtimeId('claude-code'), origin, path, kind }),
     native: { kind, origin, scope: origin },
     source: { path },
     inspectability: 'observable',

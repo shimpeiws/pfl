@@ -5,7 +5,12 @@ import { harnessContentDigest, resolvedSnapshotDigest } from './digest.js';
 
 function element(id: string, inspectability: ObservedElement['inspectability']): ObservedElement {
   return {
-    id: elementIdFor({ runtimeId: runtimeId('claude-code'), origin: 'project', path: `${id}.md` }),
+    id: elementIdFor({
+      runtimeId: runtimeId('claude-code'),
+      origin: 'project',
+      path: `${id}.md`,
+      kind: 'instructions',
+    }),
     native: { kind: 'instructions', origin: 'project', scope: null },
     source: { path: `${id}.md` },
     inspectability,

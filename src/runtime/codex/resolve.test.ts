@@ -24,7 +24,7 @@ function element(
   } = {},
 ): ObservedElement {
   return {
-    id: elementIdFor({ runtimeId: rid, origin, path }),
+    id: elementIdFor({ runtimeId: rid, origin, path, kind }),
     native: { kind, origin, scope: origin === 'builtin' ? null : origin },
     source: { path },
     inspectability: kind === 'runtime-provided-instructions' ? 'opaque' : 'observable',

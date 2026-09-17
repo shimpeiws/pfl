@@ -73,7 +73,7 @@ function pair(
   } = {},
 ): Pair {
   const origin = options.origin ?? (path.startsWith('~/') ? 'user' : 'project');
-  const id = elementIdFor({ runtimeId: rid, origin, path });
+  const id = elementIdFor({ runtimeId: rid, origin, path, kind });
   return {
     observed: {
       id,
@@ -243,7 +243,10 @@ describe('computeDiff', () => {
     expect(result.structural.added).toBe(1);
   });
 
-  it('detects a kind change for the same path', () => {
+  it('treats a kind change for the same path as a distinct element', () => {
+    // Kind is part of the id (ADR 0003), so a different kind at one path is a
+    // different element: it cannot silently share an id and be reported as a
+    // one-element "change". It is a removal plus an addition.
     const a = makeRun({
       projectId: 'p1',
       runtimeId: 'claude-code',
@@ -261,8 +264,9 @@ describe('computeDiff', () => {
 
     const result = computeDiff(a, b);
 
-    expect(result.structural.changed).toBe(1);
-    expect(result.structural.added).toBe(0);
+    expect(result.structural.removed).toBe(1);
+    expect(result.structural.added).toBe(1);
+    expect(result.structural.changed).toBe(0);
   });
 
   it('returns id lists in a deterministic order', () => {

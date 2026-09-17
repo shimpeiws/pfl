@@ -36,7 +36,7 @@ interface Options {
 
 function makePair(kind: string, path: string, options: Options = {}) {
   const origin = options.origin ?? 'project';
-  const id = elementIdFor({ runtimeId: rid, origin, path });
+  const id = elementIdFor({ runtimeId: rid, origin, path, kind });
   const observed: ObservedElement = {
     id,
     native: { kind, origin, scope: origin },

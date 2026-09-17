@@ -204,6 +204,60 @@ describe('collectClaudeCodeHarness', () => {
     expect(pluginSkill?.native.kind).toBe('skills');
   });
 
+  it('derives ids from display paths, independent of where home and project sit', async () => {
+    // The id digests the display path, never an absolute one: the user scope
+    // renders as `~/.claude/...` and project paths are project-relative. Two
+    // checkouts with identical content at different absolute locations produce
+    // identical ids (ADR 0003). The per-project memory area is omitted because
+    // its display path embeds Claude Code's encoded project root by the
+    // runtime's own layout.
+    const plant = async (base: string, name: string) => {
+      const root = join(base, name);
+      const home = join(base, `${name}-home`);
+      await mkdir(join(root, '.claude'), { recursive: true });
+      await writeFile(join(root, 'CLAUDE.md'), '# project instructions\n');
+      await writeFile(
+        join(root, '.claude', 'settings.json'),
+        JSON.stringify({ permissions: { allow: ['Bash(ls:*)'] } }),
+      );
+      await mkdir(userConfigDir(home), { recursive: true });
+      await writeFile(join(userConfigDir(home), 'CLAUDE.md'), '# user instructions\n');
+      await writeFile(
+        join(userConfigDir(home), 'settings.json'),
+        JSON.stringify({ permissions: { allow: ['Bash(ls:*)'] } }),
+      );
+      return { root, home };
+    };
+
+    const a = await plant(await tempDir('pfl-claude-a-'), 'project-a');
+    const b = await plant(await tempDir('pfl-claude-b-'), 'project-b');
+    const missingManaged = join(a.root, 'no-managed-scope');
+    const context = (root: string) => ({
+      id: 'proj',
+      displayName: 'owner/repo',
+      root,
+      remote: 'github.com/owner/repo',
+    });
+
+    const first = await collectClaudeCodeHarness(
+      context(a.root),
+      CONSENTED,
+      a.home,
+      missingManaged,
+    );
+    const second = await collectClaudeCodeHarness(
+      context(b.root),
+      CONSENTED,
+      b.home,
+      missingManaged,
+    );
+    const ids = (snapshot: typeof first): string[] =>
+      snapshot.elements.map((element) => element.id).sort();
+
+    expect(ids(first).length).toBeGreaterThan(0);
+    expect(ids(second)).toEqual(ids(first));
+  });
+
   it('discovers the CLAUDE.md tree: root, nested, parent, and managed', async () => {
     const fixture = await makeFixture();
 
