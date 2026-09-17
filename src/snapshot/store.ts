@@ -496,6 +496,16 @@ function artifactPath(dir: string, id: string): string {
   return join(dir, `${id}${ARTIFACT_SUFFIX}`);
 }
 
+/** A path to one artifact, rejecting an id that could escape the store directory. */
+export function artifactFilePath(dir: string, id: string): string {
+  return artifactPath(dir, id);
+}
+
+/** Whether `value` is safe to use as a single path segment. */
+export function isSafeSegment(value: string): boolean {
+  return SAFE_SEGMENT.test(value);
+}
+
 /** A store-relative label that names the artifact class, e.g. `snapshots/res_x.json`. */
 function artifactLabel(target: string, artifactClass: ArtifactClass): string {
   return `${artifactClass}/${basename(target)}`;

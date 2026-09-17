@@ -63,7 +63,9 @@ export async function loadInterpretation(
   const context = await resolveProjectContext(cwd, {
     allowExternalGit: await hasAnyUserConsent(home),
   });
-  const storedProject = await resolveStoredProjectId(context, home);
+  // A read does not mutate the store; it computes the same id an `inspect`
+  // would persist (roadmap #86).
+  const storedProject = await resolveStoredProjectId(context, home, { write: false });
   const { resolvedId, diagnostics } = await resolveResolvedId(storedProject.id, requestedId, home);
   diagnostics.unshift(...storedProject.diagnostics);
   const resolved = await readResolvedSnapshot(storedProject.id, resolvedId, home);

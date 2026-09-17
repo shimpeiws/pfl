@@ -33,7 +33,7 @@ export async function runSnapshots(
   const context = await resolveProjectContext(cwd, {
     allowExternalGit: await hasAnyUserConsent(home),
   });
-  const stored = await resolveStoredProjectId(context, home);
+  const stored = await resolveStoredProjectId(context, home, { write: false });
   const { runs, diagnostics } = await listRuns(stored.id, home);
   diagnostics.unshift(...stored.diagnostics);
 

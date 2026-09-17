@@ -1,4 +1,4 @@
-import { access, mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -22,9 +22,10 @@ import {
   writeLatestPointer,
   writeObservedSnapshot,
   writeResolvedSnapshot,
+  type StoredRunSummary,
 } from '../snapshot/store.js';
 import type { Logger } from '../util/logger.js';
-import { runGc } from './gc.js';
+import { planRetention, runGc } from './gc.js';
 
 const silent: Logger = { info: () => undefined, warn: () => undefined, error: () => undefined };
 const tempDirs: string[] = [];
@@ -103,6 +104,38 @@ function runPaths(home: string, projectId: string, run: RunIds): string[] {
   ];
 }
 
+function run(observedId: string): StoredRunSummary {
+  return {
+    observedId,
+    resolvedId: `res_${observedId}`,
+    interpretationId: `int_${observedId}`,
+    capturedAt: '2026-01-01T00:00:00.000Z',
+    runtime: { id: 'claude-code', version: null },
+    completeness: 'complete',
+  };
+}
+
+describe('planRetention', () => {
+  it('keeps the newest runs and always keeps the latest, even when it points elsewhere', () => {
+    const runs = [run('obs_1'), run('obs_2'), run('obs_3')];
+
+    const normal = planRetention(runs, 'obs_1', 2);
+    expect(normal.retained.map((entry) => entry.observedId)).toEqual(['obs_1', 'obs_2']);
+    expect(normal.reclaimed.map((entry) => entry.observedId)).toEqual(['obs_3']);
+
+    // latest points at the oldest run, which must still survive.
+    const pinned = planRetention(runs, 'obs_3', 1);
+    expect(pinned.retained.map((entry) => entry.observedId)).toEqual(['obs_3']);
+    expect(pinned.reclaimed.map((entry) => entry.observedId)).toEqual(['obs_1', 'obs_2']);
+  });
+
+  it('ignores a latest id that names no run', () => {
+    const runs = [run('obs_1'), run('obs_2')];
+    const result = planRetention(runs, 'obs_missing', 1);
+    expect(result.retained.map((entry) => entry.observedId)).toEqual(['obs_1']);
+  });
+});
+
 describe('runGc', () => {
   it('retains the newest runs, reclaims the rest as a unit, and always keeps latest', async () => {
     const projectRoot = await tempDir('pfl-gc-project-');
@@ -166,10 +199,13 @@ describe('runGc', () => {
     expect(await exists(runPaths(home, projectId, latest)[0] as string)).toBe(true);
   });
 
-  it('lists orphans and reclaims them only under --prune-orphans', async () => {
+  it('reclaims a root-gone history but never an unreferenced one', async () => {
     const projectRoot = await tempDir('pfl-gc-project-');
     const home = await tempDir('pfl-gc-home-');
+    // Unreferenced: the index has no entry, so its root is unknown and it must
+    // not be destroyed (it may be a history not yet adopted).
     const unclaimed = 'orphan-dir1';
+    // Orphan: the index names it, but every root it claims is gone.
     const rootGone = 'orphan-dir2';
     await mkdir(projectDir(unclaimed, home), { recursive: true });
     await mkdir(projectDir(rootGone, home), { recursive: true });
@@ -179,12 +215,51 @@ describe('runGc', () => {
     );
 
     const listed = await runGc(projectRoot, { home }, silent);
-    expect(listed.data.orphans.map((orphan) => orphan.id).sort()).toEqual([unclaimed, rootGone]);
-    expect(await exists(projectDir(unclaimed, home))).toBe(true);
+    expect(listed.data.orphans.map((orphan) => orphan.id)).toEqual([rootGone]);
+    expect(listed.data.unreferenced.map((entry) => entry.id)).toEqual([unclaimed]);
+    expect(listed.data.orphansReclaimed).toBe(false);
+
+    // A dry run with --prune-orphans still deletes nothing.
+    const dry = await runGc(projectRoot, { home, pruneOrphans: true, dryRun: true }, silent);
+    expect(dry.data.orphansReclaimed).toBe(false);
+    expect(await exists(projectDir(rootGone, home))).toBe(true);
 
     const pruned = await runGc(projectRoot, { home, pruneOrphans: true }, silent);
-    expect(pruned.data.orphans).toHaveLength(2);
-    expect(await exists(projectDir(unclaimed, home))).toBe(false);
+    expect(pruned.data.orphansReclaimed).toBe(true);
     expect(await exists(projectDir(rootGone, home))).toBe(false);
+    expect(await exists(projectDir(unclaimed, home))).toBe(true);
+  });
+
+  it('reclaims the interpretation even when it could not be parsed', async () => {
+    const projectRoot = await tempDir('pfl-gc-project-');
+    const home = await tempDir('pfl-gc-home-');
+    const projectId = (await resolveProjectContext(projectRoot)).id;
+    const older = await seedRun(home, projectId, '2026-01-01T00:00:00.000Z');
+    const newer = await seedRun(home, projectId, '2026-02-01T00:00:00.000Z');
+    await writeLatestPointer(
+      projectId,
+      {
+        observed: newer.observedId,
+        resolved: newer.resolvedId,
+        interpretation: newer.interpretationId,
+      },
+      home,
+    );
+    // Corrupt the older interpretation: `listRuns` then reports it and leaves
+    // the run's `interpretationId` null, but the file still belongs to the run.
+    await writeFile(
+      join(interpretationsDir(projectId, home), `${older.resolvedId}.json`),
+      '{ not json',
+    );
+    // A stray unparseable observation that belongs to no run is reported, not deleted.
+    await writeFile(join(observationsDir(projectId, home), 'obs_broken.json'), '{ not json');
+
+    const outcome = await runGc(projectRoot, { home, keep: 1 }, silent);
+
+    for (const path of runPaths(home, projectId, older)) {
+      expect(await exists(path), path).toBe(false);
+    }
+    expect(await exists(join(observationsDir(projectId, home), 'obs_broken.json'))).toBe(true);
+    expect(outcome.diagnostics.map((entry) => entry.code)).toContain('invalid-snapshot');
   });
 });

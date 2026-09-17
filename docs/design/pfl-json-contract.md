@@ -252,18 +252,24 @@ with `--dry-run` and `--keep <n>` deciding what that is:
   dryRun, keep,
   retained:  [{ observedId, resolvedId, interpretationId }],
   reclaimed: [{ observedId, resolvedId, interpretationId }],
-  orphans:   [{ id, path, reason }]
+  orphans:   [{ id, path, reason }],
+  orphansReclaimed,
+  unreferenced: [{ id, path, reason }]
 }
 ```
 
 `retained` is the runs kept (newest first; the run named by `latest` is always
 among them). `reclaimed` is the runs deleted — or, under `--dry-run`, the runs
 that would be. A run is reclaimed as a whole: its observed snapshot, resolved
-snapshot, and interpretation together. `orphans` is the orphaned project
-histories found; they are deleted only with `--prune-orphans` and never under
-`--dry-run`, so the list is stable to inspect first. An artifact that cannot be
-parsed is reported as a diagnostic and never deleted. `snapshots` and `gc`
-report `completeness: "unknown"`.
+snapshot, and interpretation together.
+
+`orphans` are histories the index references whose every project root is gone.
+They are deleted only with `--prune-orphans` and never under `--dry-run`;
+`orphansReclaimed` says whether this run deleted them. `unreferenced` are store
+directories the index does not reference — their root is unknown, so they are
+reported and never deleted. An artifact that cannot be parsed is reported as a
+diagnostic and never deleted. `snapshots` and `gc` report
+`completeness: "unknown"`.
 
 ## Redaction
 

@@ -171,13 +171,25 @@ cli
 cli
   .command('gc', 'Reclaim old snapshots and orphaned histories')
   .option('--dry-run', 'List what would be reclaimed without deleting')
-  .option('--keep <n>', 'Runs to retain per project (default 20)')
+  .option('--keep <n>', 'Runs to retain for this project (default 20)')
   .option('--prune-orphans', 'Also reclaim orphaned project directories')
   .option('--json', 'Output as JSON')
   .action(
     withErrorHandling(
       'gc',
-      async (flags: { dryRun?: boolean; keep?: string; pruneOrphans?: boolean } & CommonFlags) => {
+      async (
+        flags: {
+          dryRun?: boolean;
+          keep?: string | number | boolean;
+          pruneOrphans?: boolean;
+        } & CommonFlags,
+      ) => {
+        // A value-less `--keep` arrives as `true`; `Number(true)` would turn it
+        // into 1 (keep only latest), so refuse it instead. A numeric value may
+        // arrive as a number or a string depending on the parser.
+        if (flags.keep === true || flags.keep === '') {
+          throw new PflError('--keep requires a value', EXIT_CODES.CONFIG_ERROR);
+        }
         const keep = flags.keep === undefined ? undefined : Number(flags.keep);
         return runGc(
           process.cwd(),

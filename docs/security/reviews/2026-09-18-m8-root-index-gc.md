@@ -5,7 +5,8 @@
   the design invariants (design doc §19; roadmap §3.1, §3.2)
 - Trigger: `src/snapshot/store.ts` and `src/discovery/project-identity.ts`
   changed; the store gains its first deletion path.
-- Result: pending the adversarial round
+- Result: one data-loss class and several smaller issues found and remediated;
+  no accepted risks added
 
 ## What changed
 
@@ -44,9 +45,51 @@ in `pfl` that deletes.
 
 ## Findings and disposition
 
-To be completed after the adversarial review.
+The adversarial review found a data-loss class and several smaller issues. All
+were remediated in this pull request:
+
+1. **An unreferenced directory was treated as an orphan and `--prune-orphans`
+   deleted it.** On the first v1.0 run the index is empty, so a real history
+   that had not been adopted yet had no root recorded and was destroyed by a
+   command run for a different project. Fixed: an orphan is now a directory the
+   index references whose every root is gone; a directory the index does not
+   reference is reported as `unreferenced` and never deleted. A dry run with
+   `--prune-orphans` still deletes nothing, and both are tested.
+2. **`planRetention` could drop or reorder the `latest` run.** The swap rebuilt
+   the list out of order and only handled a latest run already in the reclaimed
+   tail. Fixed: retention is a set that always includes the run named by
+   `latest`, rebuilt in snapshot order; a dangling pointer is ignored.
+3. **Deletion paths were built from unvalidated ids.** Index ids and an
+   artifact's `snapshotId` (which the shape predicate accepts as any string)
+   became path segments. Fixed: the index refuses an id that is not a safe
+   segment (`isSafeSegment`), and `reclaimRun` builds every path through
+   `artifactFilePath`, which asserts it. Both are tested.
+4. **Read commands wrote the index.** `report`/`list`/`show`/`graph`/`diff`/
+   `snapshots` now resolve the id with `{ write: false }`, so a read computes
+   the same id an `inspect` would persist without mutating the store.
+5. **`gc` did not print diagnostics in text mode**, so an unparseable artifact
+   or a declined adoption was invisible without `--json`. Fixed: `runGc` logs
+   the diagnostics before the summary.
+6. **`--dry-run --prune-orphans` mislabeled its output and the data could not
+   say whether orphans were deleted.** Fixed: `orphansReclaimed` in the
+   document and "would reclaim" wording; tested.
+7. **A corrupt index gave a pathless message, was written without `fsync`, and
+   was a read-modify-write that could lose a concurrent entry.** Fixed: the
+   message names the file and how to recover, the temp file is synced before
+   the rename, and the entry is merged into a fresh read before writing. A lock
+   remains out of scope for #86.
+8. **A value-less `--keep` became `1`.** The parser passes `true`, which
+   `Number(true)` turned into 1 (keep only latest). Fixed: it is refused.
+9. **`mostRecentLatest` used `stat`, following a symlinked `latest`,** contrary
+   to the inventory. Fixed: `lstat`.
 
 ## Verification
 
-- Full gate green: `test` (55 files, 471 tests), `check`, `format`, `build`,
+- Full gate green: `test` (55 files, 476 tests), `check`, `format`, `build`,
   `typecheck:test`, `knip`.
+- New tests: retention keeps the newest and the latest (including a dangling
+  pointer); a dry run deletes nothing; an unparseable artifact is kept and
+  reported while the rest of its run is reclaimed; a root-gone history is
+  reclaimed but an unreferenced one never is; a corrupt, wrong-version, or
+  unsafe index fails closed with the path in the message; a read-only
+  resolution writes no index; the CLI `gc` end to end.

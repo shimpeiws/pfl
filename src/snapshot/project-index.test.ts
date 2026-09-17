@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, utimes, writeFile } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, readFile, rm, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -113,7 +113,7 @@ describe('project index', () => {
     expect(index.projects['/clone-b']).toBe(second.id);
   });
 
-  it('refuses a corrupt index rather than guessing', async () => {
+  it('refuses a corrupt index rather than guessing, naming the file', async () => {
     const home = await tempHome();
     await mkdir(join(home, '.pfl'), { recursive: true });
     await writeFile(projectIndexPath(home), '{ not json');
@@ -121,5 +121,31 @@ describe('project index', () => {
     const error = await resolveStoredProjectId(gitContext('/repo'), home).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(PflError);
     expect((error as PflError).exitCode).toBe(EXIT_CODES.SNAPSHOT_STORE_FAILED);
+    expect((error as PflError).message).toContain(projectIndexPath(home));
+  });
+
+  it('refuses an unsupported index version or an unsafe id', async () => {
+    const home = await tempHome();
+    await mkdir(join(home, '.pfl'), { recursive: true });
+
+    await writeFile(projectIndexPath(home), '{"indexVersion":"2","projects":{}}\n');
+    await expect(resolveStoredProjectId(gitContext('/repo'), home)).rejects.toMatchObject({
+      exitCode: EXIT_CODES.SNAPSHOT_STORE_FAILED,
+    });
+
+    await writeFile(
+      projectIndexPath(home),
+      '{"indexVersion":"1","projects":{"/repo":"../../etc"}}\n',
+    );
+    await expect(resolveStoredProjectId(gitContext('/repo'), home)).rejects.toMatchObject({
+      exitCode: EXIT_CODES.SNAPSHOT_STORE_FAILED,
+    });
+  });
+
+  it('does not write the index for a read-only resolution', async () => {
+    const home = await tempHome();
+    const resolved = await resolveStoredProjectId(gitContext('/repo'), home, { write: false });
+    expect(resolved.id).toBe(LEGACY);
+    await expect(access(projectIndexPath(home))).rejects.toThrow();
   });
 });

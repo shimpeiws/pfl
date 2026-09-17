@@ -7,6 +7,7 @@ import { resolveProjectContext } from '../discovery/project-identity.js';
 import { redactingLogger } from '../redact/output.js';
 import { readProjectIndex, resolveStoredProjectId } from '../snapshot/project-index.js';
 import {
+  artifactFilePath,
   interpretationsDir,
   listProjectIds,
   listRuns,
@@ -41,6 +42,7 @@ export interface GcRunRef {
 
 export interface GcOrphanRef {
   id: string;
+  /** Display path, home-relative so it carries no account name. */
   path: string;
   reason: string;
 }
@@ -50,8 +52,12 @@ export interface GcData {
   keep: number;
   retained: GcRunRef[];
   reclaimed: GcRunRef[];
-  /** Orphaned histories, listed always; deleted only with `--prune-orphans`. */
+  /** Orphaned histories (every claiming root is gone); deleted with `--prune-orphans`. */
   orphans: GcOrphanRef[];
+  /** Whether this run actually deleted the orphans. */
+  orphansReclaimed: boolean;
+  /** Store directories the index does not reference; reported, never auto-deleted. */
+  unreferenced: GcOrphanRef[];
 }
 
 /**
@@ -96,10 +102,11 @@ export async function runGc(
     }
   }
 
-  const orphans = await findOrphans(stored.id, home);
-  if (pruneOrphans && !dryRun) {
+  const { orphans, unreferenced } = await findOrphans(stored.id, home);
+  const orphansReclaimed = pruneOrphans && !dryRun && orphans.length > 0;
+  if (orphansReclaimed) {
     for (const orphan of orphans) {
-      await rm(orphan.path, { recursive: true, force: true });
+      await rm(projectDir(orphan.id, home), { recursive: true, force: true });
     }
   } else if (orphans.length > 0 && !pruneOrphans) {
     diagnostics.push({
@@ -109,35 +116,42 @@ export async function runGc(
     });
   }
 
+  for (const diagnostic of diagnostics) {
+    out.warn(diagnostic.message, { code: diagnostic.code, path: diagnostic.path ?? undefined });
+  }
+
   const data: GcData = {
     dryRun,
     keep,
     retained: retained.map(toRunRef),
     reclaimed: dryRun ? reclaimed.map(toRunRef) : reclaimedRuns,
     orphans,
+    orphansReclaimed,
+    unreferenced,
   };
   const outcome = { data, diagnostics, completeness: 'unknown' as const };
 
   if (options.json) return outcome;
 
-  const prefix = dryRun ? 'Would reclaim' : 'Reclaimed';
+  const verb = dryRun ? 'Would reclaim' : 'Reclaimed';
   out.info(
-    `${dryRun ? 'Dry run for' : 'Garbage collection for'} ${context.displayName}: keep ${keep}, retain ${data.retained.length}, ${prefix.toLowerCase()} ${data.reclaimed.length} run(s).`,
+    `${dryRun ? 'Dry run for' : 'Garbage collection for'} ${context.displayName}: keep ${keep}, retain ${data.retained.length}, ${verb.toLowerCase()} ${data.reclaimed.length} run(s).`,
   );
   for (const run of data.reclaimed) {
-    out.info(
-      `  ${prefix} ${run.observedId}${run.resolvedId !== null ? ` → ${run.resolvedId}` : ''}`,
-    );
+    out.info(`  ${verb} ${run.observedId}${run.resolvedId !== null ? ` → ${run.resolvedId}` : ''}`);
   }
   if (orphans.length > 0) {
     out.info(
-      pruneOrphans && !dryRun
+      orphansReclaimed
         ? `Reclaimed ${orphans.length} orphaned histor(y/ies).`
-        : `${orphans.length} orphaned histor(y/ies) (use --prune-orphans to reclaim).`,
+        : dryRun
+          ? `Would reclaim ${orphans.length} orphaned histor(y/ies) (--prune-orphans).`
+          : `${orphans.length} orphaned histor(y/ies) (use --prune-orphans to reclaim).`,
     );
-    for (const orphan of orphans) {
-      out.info(`  ${orphan.id}  ${orphan.path}  (${orphan.reason})`);
-    }
+    for (const orphan of orphans) out.info(`  ${orphan.id}  ${orphan.path}  (${orphan.reason})`);
+  }
+  for (const entry of unreferenced) {
+    out.info(`  unreferenced: ${entry.id}  ${entry.path}  (${entry.reason})`);
   }
   return outcome;
 }
@@ -153,35 +167,37 @@ function normalizeKeep(value: number | undefined): number {
 
 /**
  * The newest `keep` runs are retained, and the run named by `latest` is always
- * among them. Runs are newest first, so the tail is the oldest.
+ * among them, in the snapshot order (newest first). Runs are newest first, so
+ * the tail is the oldest.
  */
 export function planRetention(
   runs: readonly StoredRunSummary[],
   latestObservedId: string | undefined,
   keep: number,
 ): { retained: StoredRunSummary[]; reclaimed: StoredRunSummary[] } {
-  const retained = runs.slice(0, keep);
-  const reclaimed = runs.slice(keep);
-  if (
-    latestObservedId !== undefined &&
-    !retained.some((run) => run.observedId === latestObservedId)
-  ) {
-    const index = reclaimed.findIndex((run) => run.observedId === latestObservedId);
-    const latestRun = index >= 0 ? reclaimed.splice(index, 1)[0] : undefined;
-    const displaced = retained.pop();
-    if (latestRun !== undefined) retained.push(latestRun);
-    if (displaced !== undefined) reclaimed.unshift(displaced);
+  const retainedIds = new Set<string>();
+  if (latestObservedId !== undefined && runs.some((run) => run.observedId === latestObservedId)) {
+    retainedIds.add(latestObservedId);
   }
-  return { retained, reclaimed };
+  for (const run of runs) {
+    if (retainedIds.size >= keep) break;
+    retainedIds.add(run.observedId);
+  }
+  return {
+    retained: runs.filter((run) => retainedIds.has(run.observedId)),
+    reclaimed: runs.filter((run) => !retainedIds.has(run.observedId)),
+  };
 }
 
 async function reclaimRun(projectId: string, run: StoredRunSummary, home: string): Promise<void> {
-  const targets = [join(observationsDir(projectId, home), `${run.observedId}.json`)];
+  // Ids come from parsed artifacts; validate each before it becomes a path
+  // segment so a crafted id cannot make gc delete outside the store.
+  const targets = [artifactFilePath(observationsDir(projectId, home), run.observedId)];
   if (run.resolvedId !== null) {
-    targets.push(join(snapshotsDir(projectId, home), `${run.resolvedId}.json`));
-    if (run.interpretationId !== null) {
-      targets.push(join(interpretationsDir(projectId, home), `${run.resolvedId}.json`));
-    }
+    targets.push(artifactFilePath(snapshotsDir(projectId, home), run.resolvedId));
+    // The interpretation is keyed by the resolved id and belongs to the run even
+    // when its payload could not be parsed (then `interpretationId` is null).
+    targets.push(artifactFilePath(interpretationsDir(projectId, home), run.resolvedId));
   }
   for (const target of targets) {
     await unlink(target).catch((error: unknown) => {
@@ -195,11 +211,16 @@ async function reclaimRun(projectId: string, run: StoredRunSummary, home: string
 }
 
 /**
- * A project directory is orphaned when the index does not reference it, or when
- * every root that claims it no longer exists on disk. The current project is
- * never orphaned. Orphans are listed; only `--prune-orphans` deletes them.
+ * Orphans are project directories the index references whose every root is gone
+ * on disk; only those are deletable. A directory the index does not reference
+ * has an unknown root, so it is reported as unreferenced and never deleted — a
+ * history that has not been adopted yet must not be destroyed by a command run
+ * for a different project. The current project is neither.
  */
-async function findOrphans(currentId: string, home: string): Promise<GcOrphanRef[]> {
+async function findOrphans(
+  currentId: string,
+  home: string,
+): Promise<{ orphans: GcOrphanRef[]; unreferenced: GcOrphanRef[] }> {
   const index = await readProjectIndex(home);
   const rootsById = new Map<string, string[]>();
   for (const [root, id] of Object.entries(index.projects)) {
@@ -209,13 +230,14 @@ async function findOrphans(currentId: string, home: string): Promise<GcOrphanRef
   }
 
   const orphans: GcOrphanRef[] = [];
+  const unreferenced: GcOrphanRef[] = [];
   for (const id of await listProjectIds(home)) {
     if (id === currentId) continue;
     const roots = rootsById.get(id);
     if (roots === undefined) {
-      orphans.push({
+      unreferenced.push({
         id,
-        path: projectDir(id, home),
+        path: displayProjectDir(id),
         reason: 'not referenced by the project index',
       });
       continue;
@@ -224,12 +246,16 @@ async function findOrphans(currentId: string, home: string): Promise<GcOrphanRef
     if (!exists) {
       orphans.push({
         id,
-        path: projectDir(id, home),
+        path: displayProjectDir(id),
         reason: 'its project root no longer exists',
       });
     }
   }
-  return orphans;
+  return { orphans, unreferenced };
+}
+
+function displayProjectDir(id: string): string {
+  return join('~/.pfl', 'projects', id);
 }
 
 async function pathExists(path: string): Promise<boolean> {

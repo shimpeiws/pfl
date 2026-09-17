@@ -240,7 +240,7 @@ under `lstat`, so it is never followed or reported.
 | ------------------------------ | --------------------------------------------------------- | -------------- |
 | `readFile` `~/.pfl/index.json` | `readTextFileGuarded` (base: `~/.pfl`); modes re-asserted | store          |
 | `lstat` a project directory    | leaf-only; a symlink is not a directory                   | store          |
-| `stat` `projects/<id>/latest`  | leaf-only (mtime comparison; symlink not followed)        | store          |
+| `lstat` `projects/<id>/latest` | leaf-only (mtime comparison; symlink not followed)        | store          |
 
 The index is **store metadata, not a snapshot**: mutable by design, its own
 version, outside `SNAPSHOT_SCHEMA_VERSION`. It is written atomically (temp +
