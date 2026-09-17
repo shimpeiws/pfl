@@ -1,5 +1,15 @@
 import { randomBytes } from 'node:crypto';
-import { access, chmod, link, mkdir, readdir, rename, unlink, writeFile } from 'node:fs/promises';
+import {
+  access,
+  chmod,
+  link,
+  lstat,
+  mkdir,
+  readdir,
+  rename,
+  unlink,
+  writeFile,
+} from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { EXIT_CODES, PflError } from '../cli/exit-codes.js';
@@ -133,6 +143,27 @@ export function interpretationsDir(projectId: string, home: string = homedir()):
 
 export function latestPath(projectId: string, home: string = homedir()): string {
   return join(projectDir(projectId, home), LATEST_FILE);
+}
+
+/**
+ * The project ids with a directory under the store. Used by `pfl gc` to find
+ * histories the index no longer references. A name that is not a safe segment
+ * or not a real directory (a symlinked project directory is never followed) is
+ * skipped.
+ */
+export async function listProjectIds(home: string = homedir()): Promise<string[]> {
+  const root = join(pflHome(home), 'projects');
+  const names = await readdir(root).catch((error: unknown) => {
+    if (isNotFound(error)) return [] as string[];
+    throw snapshotStoreError(`could not read the project store: ${errorMessage(error)}`);
+  });
+  const ids: string[] = [];
+  for (const name of names) {
+    if (!SAFE_SEGMENT.test(name)) continue;
+    const entry = await lstat(join(root, name)).catch(() => null);
+    if (entry?.isDirectory() === true) ids.push(name);
+  }
+  return ids;
 }
 
 /** A run's stable facts: one observation event and its resolved snapshot (§23). */

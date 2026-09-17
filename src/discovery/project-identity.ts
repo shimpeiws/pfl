@@ -211,3 +211,21 @@ function hashedProjectId(prefix: 'git' | 'path', key: string): string {
   const digest = sha256Digest(key);
   return `${prefix}-${digest.slice('sha256:'.length, 'sha256:'.length + 16)}`;
 }
+
+/** The v0.1 path-derived id, used to adopt a history written before the index. */
+export function pathDerivedProjectId(canonicalRoot: string): string {
+  return hashedProjectId('path', canonicalRoot);
+}
+
+/**
+ * A root-scoped id for a root that cannot keep the legacy id because another
+ * root already claimed it (issue #86). Two clones of one remote therefore get
+ * distinct histories, while a project already in the index keeps the id it was
+ * first assigned regardless of later remote changes.
+ */
+export function rootScopedProjectId(context: ProjectContext): string {
+  if (context.remote !== undefined) {
+    return hashedProjectId('git', `${context.remote}\0${context.root}`);
+  }
+  return hashedProjectId('path', context.root);
+}

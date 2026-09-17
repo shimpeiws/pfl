@@ -10,6 +10,7 @@ import { resolveProjectContext } from '../discovery/project-identity.js';
 import { resolveHarness } from '../resolution/resolver.js';
 import { getAdapter, getConsentRequest } from '../runtime/registry.js';
 import type { RuntimeDetection } from '../runtime/types.js';
+import { resolveStoredProjectId } from '../snapshot/project-index.js';
 import { SNAPSHOT_SCHEMA_VERSION } from '../snapshot/serialization.js';
 import {
   writeInterpretation,
@@ -83,9 +84,13 @@ export async function runInspect(
 
   // Identity is resolved after consent: a `.git` file's `gitdir:` and an
   // ancestor `.git` are out-of-project reads (roadmap S5).
-  const project = await resolveProjectContext(cwd, {
+  const context = await resolveProjectContext(cwd, {
     allowExternalGit: access.allowOutsideProject,
   });
+  // The stored id is assigned once and pinned by the index, so a later remote
+  // change does not move the project's history (roadmap #86).
+  const stored = await resolveStoredProjectId(context, home);
+  const project = { ...context, id: stored.id };
 
   const detection = await adapter.detect(project, access, home, options.pathValue);
   const observed = await adapter.discover(project, access, home, options.pathValue);
@@ -99,7 +104,7 @@ export async function runInspect(
   // classification failure must not cost the captured run: the observed and
   // resolved snapshots are already stored, a read recomputes a missing
   // interpretation, and the failure is recorded as a diagnostic.
-  const diagnostics = [...observed.diagnostics, ...resolved.diagnostics];
+  const diagnostics = [...stored.diagnostics, ...observed.diagnostics, ...resolved.diagnostics];
   let interpretationId: string | undefined;
   try {
     const interpretation: Interpretation = {

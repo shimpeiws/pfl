@@ -229,6 +229,25 @@ a path segment. M6 adds the artifact size limit (S7), a symlink / non-regular
 refusal (`MAX_ARTIFACT_BYTES`), and deepens `isObservedSnapshot` validation
 (S11).
 
+M8 (`listProjectIds`) adds a `readdir` of `~/.pfl/projects` and an `lstat` of
+each entry, to find histories the index no longer references. A name that is not
+a safe segment is skipped, and a symlinked project directory is not a directory
+under `lstat`, so it is never followed or reported.
+
+### `snapshot/project-index.ts`
+
+| Read                           | Guard                                                     | Classification |
+| ------------------------------ | --------------------------------------------------------- | -------------- |
+| `readFile` `~/.pfl/index.json` | `readTextFileGuarded` (base: `~/.pfl`); modes re-asserted | store          |
+| `lstat` a project directory    | leaf-only; a symlink is not a directory                   | store          |
+| `stat` `projects/<id>/latest`  | leaf-only (mtime comparison; symlink not followed)        | store          |
+
+The index is **store metadata, not a snapshot**: mutable by design, its own
+version, outside `SNAPSHOT_SCHEMA_VERSION`. It is written atomically (temp +
+`rename`, modes re-asserted) like the `latest` pointer. It maps a canonical
+project root to the project id its snapshots live under, so a remote change does
+not move a history and a v0.1 history is adopted rather than abandoned (#86).
+
 ## Correspondence to consent scopes
 
 M8 freezes `--allow-scope <runtime>:<scope>`. The scope names map onto this

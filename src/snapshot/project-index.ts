@@ -1,0 +1,187 @@
+import { randomBytes } from 'node:crypto';
+import { chmod, lstat, mkdir, rename, stat, unlink, writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
+import { homedir } from 'node:os';
+import { EXIT_CODES, PflError } from '../cli/exit-codes.js';
+import type { Diagnostic } from '../core/diagnostics.js';
+import { pathDerivedProjectId, rootScopedProjectId } from '../discovery/project-identity.js';
+import { MAX_ARTIFACT_BYTES } from '../limits.js';
+import type { ProjectContext } from '../runtime/types.js';
+import { readTextFileGuarded } from '../util/fs.js';
+import { pflHome, projectDir } from './store.js';
+
+/**
+ * The project index (roadmap M8, issue #86). It maps a canonical project root to
+ * the project id its snapshots live under, so the id is assigned once and does
+ * not move when a git remote is added, changed, or removed.
+ *
+ * The index is **store metadata, not a snapshot**: it is mutable by design and
+ * carries its own version, outside `SNAPSHOT_SCHEMA_VERSION`, which continues to
+ * govern the immutable artifacts alone. Introducing it therefore does not bump
+ * the snapshot schema and does not make a v0.1 snapshot unreadable — those
+ * snapshots are what it exists to adopt.
+ */
+
+export const PROJECT_INDEX_VERSION = '1';
+
+const INDEX_FILE = 'index.json';
+const DIR_MODE = 0o700;
+const FILE_MODE = 0o600;
+
+/** Root (canonical) to project id. */
+export interface ProjectIndex {
+  indexVersion: string;
+  projects: Record<string, string>;
+}
+
+export function projectIndexPath(home: string = homedir()): string {
+  return join(pflHome(home), INDEX_FILE);
+}
+
+export interface ResolvedProjectId {
+  id: string;
+  /** What happened, when adopting or declining a legacy history. */
+  diagnostics: Diagnostic[];
+}
+
+/**
+ * Resolves the stored project id for a context, consulting the index first and
+ * minting an id only when the root is unseen. A history written by v0.1 (before
+ * the index) is adopted rather than abandoned, exclusively, so two clones of one
+ * remote do not both claim the same shared legacy directory.
+ */
+export async function resolveStoredProjectId(
+  context: ProjectContext,
+  home: string = homedir(),
+): Promise<ResolvedProjectId> {
+  const index = await readProjectIndex(home);
+  const existing = index.projects[context.root];
+  if (existing !== undefined) return { id: existing, diagnostics: [] };
+
+  const diagnostics: Diagnostic[] = [];
+  const claimed = (id: string): boolean =>
+    Object.entries(index.projects).some(([root, value]) => value === id && root !== context.root);
+
+  // Both the remote-derived (v0.1 git) and path-derived directories may exist
+  // for this root. Prefer the one whose `latest` is more recent, and leave the
+  // other unclaimed for `pfl gc` to report as reclaimable.
+  const candidates: string[] = [];
+  if (await isDirectory(projectDir(context.id, home))) candidates.push(context.id);
+  const pathId = pathDerivedProjectId(context.root);
+  if (pathId !== context.id && (await isDirectory(projectDir(pathId, home)))) {
+    candidates.push(pathId);
+  }
+
+  let chosen = context.id;
+  if (candidates.length === 1) {
+    [chosen] = candidates as [string];
+  } else if (candidates.length > 1) {
+    chosen = await mostRecentLatest(candidates, home);
+  }
+
+  if (claimed(chosen)) {
+    // The legacy id is shared by every clone of one remote; another root got
+    // here first. Start this root's own history and say where the shared one is.
+    const shared = chosen;
+    chosen = rootScopedProjectId(context);
+    diagnostics.push({
+      severity: 'warning',
+      code: 'shared-legacy-history',
+      message: `a shared legacy history exists at ${projectDir(shared, home)} but is claimed by another root; starting a new history under ${chosen}`,
+    });
+  } else if (candidates.length > 0) {
+    diagnostics.push({
+      severity: 'info',
+      code: 'adopted-legacy-history',
+      message: `adopted the existing history under ${chosen}`,
+    });
+  }
+
+  index.projects[context.root] = chosen;
+  await writeProjectIndex(index, home);
+  return { id: chosen, diagnostics };
+}
+
+export async function readProjectIndex(home: string = homedir()): Promise<ProjectIndex> {
+  const read = await readTextFileGuarded(projectIndexPath(home), MAX_ARTIFACT_BYTES, pflHome(home));
+  if (read.status === 'missing') return { indexVersion: PROJECT_INDEX_VERSION, projects: {} };
+  if (read.status !== 'ok') {
+    throw indexError(`the project index could not be read: ${read.status}`);
+  }
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(read.text);
+  } catch {
+    throw indexError('the project index is not valid JSON');
+  }
+  if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+    throw indexError('the project index is not a JSON object');
+  }
+  const { indexVersion, projects } = parsed as {
+    indexVersion?: unknown;
+    projects?: unknown;
+  };
+  if (typeof indexVersion !== 'string' || indexVersion !== PROJECT_INDEX_VERSION) {
+    throw indexError(`unsupported project index version: ${String(indexVersion)}`);
+  }
+  if (typeof projects !== 'object' || projects === null || Array.isArray(projects)) {
+    throw indexError('the project index has no projects map');
+  }
+  const entries: Record<string, string> = {};
+  for (const [root, id] of Object.entries(projects)) {
+    if (typeof id !== 'string') throw indexError('the project index has a non-string id');
+    entries[root] = id;
+  }
+  return { indexVersion, projects: entries };
+}
+
+/** Writes the index atomically; it is the one mutable store document besides `latest`. */
+export async function writeProjectIndex(
+  index: ProjectIndex,
+  home: string = homedir(),
+): Promise<void> {
+  const target = projectIndexPath(home);
+  await mkdir(dirname(target), { recursive: true, mode: DIR_MODE });
+  await chmod(dirname(target), DIR_MODE).catch(() => undefined);
+  const temp = `${target}.${randomBytes(6).toString('hex')}.tmp`;
+  try {
+    await writeFile(temp, `${JSON.stringify(index)}\n`, { mode: FILE_MODE });
+    await chmod(temp, FILE_MODE);
+    await rename(temp, target);
+  } catch (error) {
+    throw indexError(`could not write the project index: ${errorMessage(error)}`);
+  } finally {
+    await unlink(temp).catch(() => undefined);
+  }
+}
+
+async function isDirectory(path: string): Promise<boolean> {
+  // `lstat`: a symlinked project directory is not an existing history and is
+  // never followed.
+  const entry = await lstat(path).catch(() => null);
+  return entry?.isDirectory() === true;
+}
+
+async function mostRecentLatest(ids: string[], home: string): Promise<string> {
+  let best = ids[0] as string;
+  let bestTime = -1;
+  for (const id of ids) {
+    const time = await stat(join(projectDir(id, home), 'latest'))
+      .then((value) => value.mtimeMs)
+      .catch(() => -1);
+    if (time > bestTime) {
+      bestTime = time;
+      best = id;
+    }
+  }
+  return best;
+}
+
+function indexError(message: string): PflError {
+  return new PflError(message, EXIT_CODES.SNAPSHOT_STORE_FAILED);
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}

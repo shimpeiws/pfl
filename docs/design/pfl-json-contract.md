@@ -242,17 +242,28 @@ stored interpretation is never an error; a stored interpretation this binary
 cannot interpret is not absence and fails the read like any other uninterpretable
 artifact.
 
-### `gc` (implemented under issue #87)
+### `gc`
 
 The envelope applies unchanged. `data` lists what was or would be reclaimed,
 with `--dry-run` and `--keep <n>` deciding what that is:
 
 ```text
-{ dryRun, keep, retained: [...], reclaimed: [...], orphans: [...] }
+{
+  dryRun, keep,
+  retained:  [{ observedId, resolvedId, interpretationId }],
+  reclaimed: [{ observedId, resolvedId, interpretationId }],
+  orphans:   [{ id, path, reason }]
+}
 ```
 
-The exact id fields land with #87; the envelope and the failure shape above are
-fixed here.
+`retained` is the runs kept (newest first; the run named by `latest` is always
+among them). `reclaimed` is the runs deleted — or, under `--dry-run`, the runs
+that would be. A run is reclaimed as a whole: its observed snapshot, resolved
+snapshot, and interpretation together. `orphans` is the orphaned project
+histories found; they are deleted only with `--prune-orphans` and never under
+`--dry-run`, so the list is stable to inspect first. An artifact that cannot be
+parsed is reported as a diagnostic and never deleted. `snapshots` and `gc`
+report `completeness: "unknown"`.
 
 ## Redaction
 

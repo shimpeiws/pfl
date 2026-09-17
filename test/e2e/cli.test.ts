@@ -472,6 +472,31 @@ describe('pfl CLI end to end', () => {
     ).toContain('unsupported-snapshot-schema');
   });
 
+  it('reclaims old runs with gc, listing a dry run first', async () => {
+    const m = await fixture();
+    await runCli(m, ['inspect', '--runtime', 'claude-code']);
+    await runCli(m, ['inspect', '--runtime', 'claude-code']);
+
+    const dry = await runCli(m, ['gc', '--keep', '1', '--dry-run', '--json']);
+    expect(dry.code, dry.stderr).toBe(EXIT_CODES.SUCCESS);
+    const dryDocument = JSON.parse(dry.stdout) as {
+      command: string;
+      data: { dryRun: boolean; retained: unknown[]; reclaimed: unknown[] };
+    };
+    expect(dryDocument.command).toBe('gc');
+    expect(dryDocument.data.dryRun).toBe(true);
+    expect(dryDocument.data.retained).toHaveLength(1);
+    expect(dryDocument.data.reclaimed).toHaveLength(1);
+
+    const applied = await runCli(m, ['gc', '--keep', '1']);
+    expect(applied.code, applied.stderr).toBe(EXIT_CODES.SUCCESS);
+
+    const snapshots = JSON.parse((await runCli(m, ['snapshots', '--json'])).stdout) as {
+      data: { runs: unknown[] };
+    };
+    expect(snapshots.data.runs).toHaveLength(1);
+  });
+
   it('emits the failure envelope on a non-zero exit', async () => {
     const m = await fixture();
 

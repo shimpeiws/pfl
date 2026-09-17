@@ -8,6 +8,7 @@ import type { ObservedSnapshot } from '../core/observed.js';
 import type { ResolvedSnapshot } from '../core/resolved.js';
 import { hasAnyUserConsent } from '../discovery/consent.js';
 import { resolveProjectContext } from '../discovery/project-identity.js';
+import { resolveStoredProjectId } from '../snapshot/project-index.js';
 import { SNAPSHOT_SCHEMA_VERSION } from '../snapshot/serialization.js';
 import {
   listRuns,
@@ -59,19 +60,21 @@ export async function loadInterpretation(
   requestedId: string | undefined,
   home: string = homedir(),
 ): Promise<InterpretedRun> {
-  const project = await resolveProjectContext(cwd, {
+  const context = await resolveProjectContext(cwd, {
     allowExternalGit: await hasAnyUserConsent(home),
   });
-  const { resolvedId, diagnostics } = await resolveResolvedId(project.id, requestedId, home);
-  const resolved = await readResolvedSnapshot(project.id, resolvedId, home);
-  const observed = await readObservedSnapshot(project.id, resolved.observedSnapshotId, home);
+  const storedProject = await resolveStoredProjectId(context, home);
+  const { resolvedId, diagnostics } = await resolveResolvedId(storedProject.id, requestedId, home);
+  diagnostics.unshift(...storedProject.diagnostics);
+  const resolved = await readResolvedSnapshot(storedProject.id, resolvedId, home);
+  const observed = await readObservedSnapshot(storedProject.id, resolved.observedSnapshotId, home);
 
   // `null` means no interpretation is stored (a pre-v1.0 run): absence is
   // normal and the interpretation is recomputed. A stored interpretation this
   // binary cannot interpret is not absence — it fails closed like any other
   // direct read of an uninterpretable artifact (#82), so store corruption is
   // not masked by a fresh recomputation.
-  const stored = await readInterpretationForResolved(project.id, resolved.snapshotId, home);
+  const stored = await readInterpretationForResolved(storedProject.id, resolved.snapshotId, home);
   if (stored !== null) {
     return {
       observed,

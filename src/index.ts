@@ -9,6 +9,7 @@ import {
   type CommandOutcome,
 } from './cli/document.js';
 import { EXIT_CODES, PflError } from './cli/exit-codes.js';
+import { runGc } from './cli/gc.js';
 import { runGraph } from './cli/graph.js';
 import { runInspect } from './cli/inspect.js';
 import { runList } from './cli/list.js';
@@ -165,6 +166,31 @@ cli
     withErrorHandling('snapshots', async (flags: CommonFlags) => {
       return runSnapshots(process.cwd(), { json: flags.json ?? false }, loggerForFlags(flags));
     }),
+  );
+
+cli
+  .command('gc', 'Reclaim old snapshots and orphaned histories')
+  .option('--dry-run', 'List what would be reclaimed without deleting')
+  .option('--keep <n>', 'Runs to retain per project (default 20)')
+  .option('--prune-orphans', 'Also reclaim orphaned project directories')
+  .option('--json', 'Output as JSON')
+  .action(
+    withErrorHandling(
+      'gc',
+      async (flags: { dryRun?: boolean; keep?: string; pruneOrphans?: boolean } & CommonFlags) => {
+        const keep = flags.keep === undefined ? undefined : Number(flags.keep);
+        return runGc(
+          process.cwd(),
+          {
+            dryRun: flags.dryRun ?? false,
+            ...(keep !== undefined ? { keep } : {}),
+            pruneOrphans: flags.pruneOrphans ?? false,
+            json: flags.json ?? false,
+          },
+          loggerForFlags(flags),
+        );
+      },
+    ),
   );
 
 cli
