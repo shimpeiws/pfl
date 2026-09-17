@@ -7,6 +7,7 @@ import { filterToAllowlist } from '../../discovery/metadata.js';
 import { buildObservedElement } from '../../discovery/observed-element.js';
 import { walkHarnessPaths, type DiscoveredPath } from '../../discovery/walk.js';
 import type { Diagnostic } from '../../core/diagnostics.js';
+import { withFragment } from '../../core/element-path.js';
 import { runtimeId } from '../../core/ids.js';
 import type {
   NativeOrigin,
@@ -310,7 +311,9 @@ async function collectToml(
   const sandboxMode = scalarString(root, 'sandbox_mode');
   if (sandboxMode !== undefined) approval['sandboxMode'] = sandboxMode;
   if (Object.keys(approval).length > 0) {
-    elements.push(configElement('approval-sandbox', `${displayPath}#approval`, approval));
+    elements.push(
+      configElement('approval-sandbox', withFragment(displayPath, 'approval'), approval),
+    );
   }
 
   const modelConfig: Record<string, SafeMetadataValue> = {};
@@ -321,7 +324,9 @@ async function collectToml(
   const serviceTier = scalarString(root, 'service_tier');
   if (serviceTier !== undefined) modelConfig['serviceTier'] = serviceTier;
   if (Object.keys(modelConfig).length > 0) {
-    elements.push(configElement('model-configuration', `${displayPath}#model`, modelConfig));
+    elements.push(
+      configElement('model-configuration', withFragment(displayPath, 'model'), modelConfig),
+    );
   }
 
   // The context controls are the actual compaction inputs, distinct from the
@@ -334,13 +339,15 @@ async function collectToml(
   const autoCompactTokenLimit = scalarInteger(root, 'model_auto_compact_token_limit');
   if (autoCompactTokenLimit !== undefined) context['autoCompactTokenLimit'] = autoCompactTokenLimit;
   if (Object.keys(context).length > 0) {
-    elements.push(configElement('compaction-controls', `${displayPath}#context`, context));
+    elements.push(
+      configElement('compaction-controls', withFragment(displayPath, 'context'), context),
+    );
   }
 
   const mcpServers = root.tables.get('mcp_servers');
   if (mcpServers !== undefined && mcpServers.tables.size > 0) {
     elements.push(
-      configElement('mcp-configuration', `${displayPath}#mcp_servers`, {
+      configElement('mcp-configuration', withFragment(displayPath, 'mcp_servers'), {
         serverNames: [...mcpServers.tables.keys()],
       }),
     );
@@ -353,7 +360,7 @@ async function collectToml(
       if (plugin.scalars.get('enabled') === true) enabled += 1;
     }
     elements.push(
-      configElement('plugin', `${displayPath}#plugins`, {
+      configElement('plugin', withFragment(displayPath, 'plugins'), {
         pluginNames: [...plugins.tables.keys()],
         enabledPluginCount: enabled,
       }),
@@ -363,7 +370,7 @@ async function collectToml(
   const marketplaces = root.tables.get('marketplaces');
   if (marketplaces !== undefined && marketplaces.tables.size > 0) {
     elements.push(
-      configElement('plugin', `${displayPath}#marketplaces`, {
+      configElement('plugin', withFragment(displayPath, 'marketplaces'), {
         marketplaceNames: [...marketplaces.tables.keys()],
       }),
     );
@@ -378,7 +385,11 @@ async function collectToml(
     if (writableRoots !== undefined) metadata['writableRootCount'] = writableRoots;
     if (Object.keys(metadata).length > 0) {
       elements.push(
-        configElement('approval-sandbox', `${displayPath}#sandbox_workspace_write`, metadata),
+        configElement(
+          'approval-sandbox',
+          withFragment(displayPath, 'sandbox_workspace_write'),
+          metadata,
+        ),
       );
     }
   }
@@ -392,7 +403,11 @@ async function collectToml(
     if (set !== undefined) metadata['setKeyCount'] = set.scalars.size;
     if (Object.keys(metadata).length > 0) {
       elements.push(
-        configElement('shell-environment', `${displayPath}#shell_environment_policy`, metadata),
+        configElement(
+          'shell-environment',
+          withFragment(displayPath, 'shell_environment_policy'),
+          metadata,
+        ),
       );
     }
   }
@@ -405,7 +420,7 @@ async function collectToml(
       elements.push(
         configElement(
           'project-configuration',
-          `${displayPath}#projects.${project.root}`,
+          withFragment(displayPath, `projects.${project.root}`),
           { trustLevel },
           'user',
           'project',
@@ -424,7 +439,11 @@ async function collectToml(
       if (profileSandbox !== undefined) metadata['sandboxMode'] = profileSandbox;
       if (Object.keys(metadata).length > 0) {
         elements.push(
-          configElement('approval-sandbox', `${displayPath}#profiles.${name}`, metadata),
+          configElement(
+            'approval-sandbox',
+            withFragment(displayPath, `profiles.${name}`),
+            metadata,
+          ),
         );
       }
     }
@@ -434,7 +453,7 @@ async function collectToml(
   // a new runtime section surfaces instead of disappearing (roadmap §5 M7).
   for (const section of root.tables.keys()) {
     if ((MODELLED_CONFIG_SECTIONS as readonly string[]).includes(section)) continue;
-    elements.push(unsupportedConfigSection(`${displayPath}#${section}`));
+    elements.push(unsupportedConfigSection(withFragment(displayPath, section)));
   }
 }
 
@@ -488,7 +507,9 @@ async function collectHooks(
   const hooks = parsed['hooks'];
   if (isRecord(hooks)) {
     elements.push(
-      configElement('hooks', `${displayPath}#hooks`, { eventNames: Object.keys(hooks) }),
+      configElement('hooks', withFragment(displayPath, 'hooks'), {
+        eventNames: Object.keys(hooks),
+      }),
     );
   }
 }
@@ -647,7 +668,7 @@ function pushPermissionsFragment(
       origin,
       scope,
       kind: 'permissions',
-      path: `${displayPath}#permissions`,
+      path: withFragment(displayPath, 'permissions'),
       digest: entry.digest,
       ...(entry.sizeBytes !== undefined ? { sizeBytes: entry.sizeBytes } : {}),
       metadata: toSafeMetadata({ allowCount, denyCount }),

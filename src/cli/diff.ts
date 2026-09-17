@@ -174,9 +174,18 @@ function byId(a: string, b: string): number {
 }
 
 /**
- * Structural equality of two observed elements. `native.origin` is part of the
- * element id (so it cannot differ here), but `native.kind` and `native.scope`
- * are not, so they are compared explicitly alongside the digest and metadata.
+ * Structural equality of two observed elements that share an id. Runtime,
+ * origin, path, and kind are part of the id (ADR 0003), so for elements built
+ * under the current derivation they cannot differ here; the element's scope and
+ * content are compared explicitly.
+ *
+ * `native.kind` is compared anyway, and must stay. It can never fire for two
+ * elements built under the current derivation, but a snapshot captured under the
+ * previous one — where the id covered runtime, origin and path only — can pair
+ * one id with two kinds: `.codex/skills/AGENTS.md` was recorded as `instructions`
+ * in one capture and as `skills` in another. Dropping the comparison reports that
+ * pair as unchanged, and the compatibility promise is that an old snapshot diffs
+ * against another old snapshot exactly as before.
  */
 function sameElement(a: ObservedElement, b: ObservedElement): boolean {
   return (

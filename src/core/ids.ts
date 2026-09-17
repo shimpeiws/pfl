@@ -73,17 +73,32 @@ export function generateInterpretationId(): InterpretationId {
 /**
  * The stable identity of a harness element. Deliberately separate from
  * `ElementId` so the derivation rule is visible where elements are built.
+ *
+ * `kind` is the element's native kind (design doc §11) and is part of the
+ * identity because several elements can share one file. A `settings.json`
+ * yields permissions, hooks, MCP servers, output style, and plugins; the
+ * display path usually carries a synthetic `#fragment` to tell them apart, but
+ * that convention is enforced by nothing. Including the kind — a required,
+ * always-assigned property — means two elements built from one file with
+ * different kinds can never collide, even when an adapter forgets a fragment.
+ * Two elements of the *same* kind still need distinct paths (see ADR 0003).
  */
 export interface ElementIdentity {
   runtimeId: RuntimeId;
   origin: string;
   path: string;
+  kind: string;
 }
 
 /**
- * Derives an `ElementId` from runtime + origin + path, so the same element
- * keeps the same id across runs and snapshot diffing does not report spurious
- * churn (issue #3). Never random.
+ * Derives an `ElementId` from runtime + origin + path + kind, so the same
+ * element keeps the same id across runs and snapshot diffing does not report
+ * spurious churn (issue #3). Never random.
+ *
+ * The identity uses the *display* path (`~/.claude/…`, project-relative), never
+ * an absolute one, so an id does not embed the account name or a machine's file
+ * layout. Changing a component changes the id: this derivation is the diff key,
+ * so a change is a compatibility event (ADR 0003).
  */
 export function elementIdFor(identity: ElementIdentity): ElementId {
   const digest = sha256Digest(canonicalJsonStringify(identity));
