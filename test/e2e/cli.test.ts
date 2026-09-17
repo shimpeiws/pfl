@@ -488,6 +488,10 @@ describe('pfl CLI end to end', () => {
     expect(dryDocument.data.retained).toHaveLength(1);
     expect(dryDocument.data.reclaimed).toHaveLength(1);
 
+    // A value-less `--keep` (here `--no-keep`) must not silently mean "keep 1".
+    const badKeep = await runCli(m, ['gc', '--no-keep', '--json']);
+    expect(badKeep.code).toBe(EXIT_CODES.CONFIG_ERROR);
+
     const applied = await runCli(m, ['gc', '--keep', '1']);
     expect(applied.code, applied.stderr).toBe(EXIT_CODES.SUCCESS);
 

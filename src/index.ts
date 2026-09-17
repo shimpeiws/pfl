@@ -27,6 +27,23 @@ interface CommonFlags {
 }
 
 /**
+ * Parses `gc --keep`. A value-less option arrives as `true` (and `--no-keep` as
+ * `false`), and a whitespace-only string coerces to 0; each would silently
+ * reclaim every run but the latest, so they are refused rather than clamped.
+ */
+function parseKeep(value: string | number | boolean | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value === 'boolean' || (typeof value === 'string' && value.trim() === '')) {
+    throw new PflError('--keep requires a non-negative integer', EXIT_CODES.CONFIG_ERROR);
+  }
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new PflError('--keep requires a non-negative integer', EXIT_CODES.CONFIG_ERROR);
+  }
+  return parsed;
+}
+
+/**
  * Wraps a command so a `--json` run emits exactly one document — the success
  * envelope on completion, or the failure envelope on any exit. The exit code is
  * set on every failure, exactly when `ok` is false. Human runs are unchanged.
@@ -184,13 +201,7 @@ cli
           pruneOrphans?: boolean;
         } & CommonFlags,
       ) => {
-        // A value-less `--keep` arrives as `true`; `Number(true)` would turn it
-        // into 1 (keep only latest), so refuse it instead. A numeric value may
-        // arrive as a number or a string depending on the parser.
-        if (flags.keep === true || flags.keep === '') {
-          throw new PflError('--keep requires a value', EXIT_CODES.CONFIG_ERROR);
-        }
-        const keep = flags.keep === undefined ? undefined : Number(flags.keep);
+        const keep = parseKeep(flags.keep);
         return runGc(
           process.cwd(),
           {

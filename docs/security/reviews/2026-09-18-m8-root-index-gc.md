@@ -82,10 +82,39 @@ were remediated in this pull request:
    `Number(true)` turned into 1 (keep only latest). Fixed: it is refused.
 9. **`mostRecentLatest` used `stat`, following a symlinked `latest`,** contrary
    to the inventory. Fixed: `lstat`.
+10. **A value-less `--keep` could still mean 1.** `--no-keep` arrives as
+    `false` and a whitespace string coerces to 0, so `Number(...)` would have
+    reclaimed every run but the latest. Fixed: `parseKeep` refuses a boolean or
+    blank value and requires a non-negative integer.
+11. **An unreadable root was treated as gone.** `access` failure of any kind
+    (for example a permission error) made a live project look orphaned and thus
+    deletable. Fixed: only `ENOENT`/`ENOTDIR` means gone; anything else is
+    `unknown` and treated as present. `--prune-orphans` also catches a per-orphan
+    failure instead of aborting mid-sweep.
+12. **A partial reclamation could leave a run's base without its dependents.**
+    Deletion now runs interpretation → resolved → observed and stops at the first
+    failure, so a resolved snapshot is never left without its interpretation, and
+    a run is reported as reclaimed only when every artifact is gone.
+13. **Two unseen clones could both claim the same legacy id** when run
+    concurrently, then share one directory and have each other's runs reclaimed.
+    The write path now re-reads the index and, if another root took the chosen
+    id, falls back to this root's own id. A lock remains out of scope for #86.
+14. **`gc` claimed or adopted histories** by writing the index. Fixed: it
+    resolves with `{ write: false }`, like the read commands.
+15. **Retention treated `keep` as a budget that `latest` consumes**, so
+    `--keep 1` with an older `latest` deleted the newest run. Fixed: the newest
+    `keep` runs are retained _and_ the run named by `latest` is added.
+16. **The index accepted a non-absolute root**, which would be resolved against
+    the working directory when checking whether an orphan's root exists. Fixed:
+    a root must be absolute.
+
+The comment that a path-derived sibling is "reported by `pfl gc` as reclaimable"
+was corrected: after the first fix it is reported as unreferenced and never
+deleted automatically, because its root is unknown.
 
 ## Verification
 
-- Full gate green: `test` (55 files, 476 tests), `check`, `format`, `build`,
+- Full gate green: `test` (55 files, 477 tests), `check`, `format`, `build`,
   `typecheck:test`, `knip`.
 - New tests: retention keeps the newest and the latest (including a dangling
   pointer); a dry run deletes nothing; an unparseable artifact is kept and

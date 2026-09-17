@@ -73,8 +73,9 @@ export async function resolveStoredProjectId(
     Object.entries(index.projects).some(([root, value]) => value === id && root !== context.root);
 
   // Both the remote-derived (v0.1 git) and path-derived directories may exist
-  // for this root. Prefer the one whose `latest` is more recent, and leave the
-  // other unclaimed for `pfl gc` to report as reclaimable.
+  // for this root. Prefer the one whose `latest` is more recent and leave the
+  // other unclaimed; `pfl gc` reports it as unreferenced (it is never deleted
+  // automatically, because an unclaimed root is unknown).
   const candidates: string[] = [];
   if (await isDirectory(projectDir(context.id, home))) candidates.push(context.id);
   const pathId = pathDerivedProjectId(context.root);
@@ -108,10 +109,21 @@ export async function resolveStoredProjectId(
   }
 
   if (options.write !== false) {
-    // Re-read and merge before writing: two projects indexed concurrently would
-    // otherwise lose each other's entry to last-write-wins. This narrows the
-    // window; a lock is out of scope for #86.
+    // Re-read before writing: two projects indexed concurrently would otherwise
+    // lose each other's entry to last-write-wins, and two unseen clones could
+    // both claim the same legacy id. If a fresh read shows another root took it,
+    // fall back to this root's own id. A lock is still out of scope for #86.
     const fresh = await readProjectIndex(home);
+    if (
+      Object.entries(fresh.projects).some(([root, id]) => id === chosen && root !== context.root)
+    ) {
+      chosen = rootScopedProjectId(context);
+      diagnostics.push({
+        severity: 'warning',
+        code: 'shared-legacy-history',
+        message: `another root claimed the shared legacy history concurrently; starting a new history under ${chosen}`,
+      });
+    }
     fresh.projects[context.root] = chosen;
     await writeProjectIndex(fresh, home);
   }
@@ -150,6 +162,11 @@ export async function readProjectIndex(home: string = homedir()): Promise<Projec
     // escape it rather than let a later command delete outside the store.
     if (typeof id !== 'string' || !isSafeSegment(id)) {
       throw indexError('the project index has an invalid project id', home);
+    }
+    // Roots are canonical absolute paths; a relative one would be resolved
+    // against the working directory and could misclassify an orphan.
+    if (!root.startsWith('/')) {
+      throw indexError('the project index has a non-absolute project root', home);
     }
     entries[root] = id;
   }

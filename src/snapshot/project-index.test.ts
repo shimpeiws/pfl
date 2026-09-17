@@ -11,7 +11,7 @@ import {
   readProjectIndex,
   resolveStoredProjectId,
 } from './project-index.js';
-import { projectDir } from './store.js';
+import { isSafeSegment, projectDir } from './store.js';
 
 const tempDirs: string[] = [];
 
@@ -140,6 +140,20 @@ describe('project index', () => {
     await expect(resolveStoredProjectId(gitContext('/repo'), home)).rejects.toMatchObject({
       exitCode: EXIT_CODES.SNAPSHOT_STORE_FAILED,
     });
+
+    await writeFile(
+      projectIndexPath(home),
+      '{"indexVersion":"1","projects":{"relative/path":"path-0123456789abcdef"}}\n',
+    );
+    await expect(resolveStoredProjectId(gitContext('/repo'), home)).rejects.toMatchObject({
+      exitCode: EXIT_CODES.SNAPSHOT_STORE_FAILED,
+    });
+  });
+
+  it('checks a safe segment without regex state leaking between calls', () => {
+    expect(isSafeSegment('path-0123456789abcdef')).toBe(true);
+    expect(isSafeSegment('path-0123456789abcdef')).toBe(true);
+    expect(isSafeSegment('../etc')).toBe(false);
   });
 
   it('does not write the index for a read-only resolution', async () => {

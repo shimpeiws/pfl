@@ -123,10 +123,11 @@ describe('planRetention', () => {
     expect(normal.retained.map((entry) => entry.observedId)).toEqual(['obs_1', 'obs_2']);
     expect(normal.reclaimed.map((entry) => entry.observedId)).toEqual(['obs_3']);
 
-    // latest points at the oldest run, which must still survive.
+    // latest points at the oldest run, which must survive in addition to the
+    // newest `keep` runs.
     const pinned = planRetention(runs, 'obs_3', 1);
-    expect(pinned.retained.map((entry) => entry.observedId)).toEqual(['obs_3']);
-    expect(pinned.reclaimed.map((entry) => entry.observedId)).toEqual(['obs_1', 'obs_2']);
+    expect(pinned.retained.map((entry) => entry.observedId)).toEqual(['obs_1', 'obs_3']);
+    expect(pinned.reclaimed.map((entry) => entry.observedId)).toEqual(['obs_2']);
   });
 
   it('ignores a latest id that names no run', () => {

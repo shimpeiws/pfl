@@ -85,7 +85,9 @@ export async function runGc(
   const context = await resolveProjectContext(cwd, {
     allowExternalGit: await hasAnyUserConsent(home),
   });
-  const stored = await resolveStoredProjectId(context, home);
+  // A collection command does not claim or adopt histories: resolve the id
+  // without writing the index.
+  const stored = await resolveStoredProjectId(context, home, { write: false });
   const diagnostics: Diagnostic[] = [...stored.diagnostics];
 
   const { runs, diagnostics: runDiagnostics } = await listRuns(stored.id, home);
@@ -97,18 +99,33 @@ export async function runGc(
   const reclaimedRuns: GcRunRef[] = [];
   if (!dryRun) {
     for (const run of reclaimed) {
-      await reclaimRun(stored.id, run, home);
-      reclaimedRuns.push(toRunRef(run));
+      const failures = await reclaimRun(stored.id, run, home);
+      diagnostics.push(...failures);
+      // Report a run as reclaimed only when every artifact is gone; a partial
+      // deletion stays out of the document and in the diagnostics.
+      if (failures.length === 0) reclaimedRuns.push(toRunRef(run));
     }
   }
 
   const { orphans, unreferenced } = await findOrphans(stored.id, home);
-  const orphansReclaimed = pruneOrphans && !dryRun && orphans.length > 0;
-  if (orphansReclaimed) {
+  const prunedOrphans: GcOrphanRef[] = [];
+  if (pruneOrphans && !dryRun) {
     for (const orphan of orphans) {
-      await rm(projectDir(orphan.id, home), { recursive: true, force: true });
+      try {
+        await rm(projectDir(orphan.id, home), { recursive: true, force: true });
+        prunedOrphans.push(orphan);
+      } catch (error) {
+        diagnostics.push({
+          severity: 'warning',
+          code: 'reclaim-failed',
+          message: `could not reclaim ${orphan.path}: ${error instanceof Error ? error.message : String(error)}`,
+          path: orphan.path,
+        });
+      }
     }
-  } else if (orphans.length > 0 && !pruneOrphans) {
+  }
+  const orphansReclaimed = prunedOrphans.length > 0;
+  if (!orphansReclaimed && orphans.length > 0 && !pruneOrphans) {
     diagnostics.push({
       severity: 'info',
       code: 'orphans-not-reclaimed',
@@ -166,22 +183,19 @@ function normalizeKeep(value: number | undefined): number {
 }
 
 /**
- * The newest `keep` runs are retained, and the run named by `latest` is always
- * among them, in the snapshot order (newest first). Runs are newest first, so
- * the tail is the oldest.
+ * The newest `keep` runs are retained, **and** the run named by `latest` is
+ * always retained. When `latest` is older than the newest `keep`, that is
+ * `keep + 1` runs; the run the pointer names is never reclaimed. Runs are newest
+ * first, so the tail is the oldest.
  */
 export function planRetention(
   runs: readonly StoredRunSummary[],
   latestObservedId: string | undefined,
   keep: number,
 ): { retained: StoredRunSummary[]; reclaimed: StoredRunSummary[] } {
-  const retainedIds = new Set<string>();
-  if (latestObservedId !== undefined && runs.some((run) => run.observedId === latestObservedId)) {
+  const retainedIds = new Set(runs.slice(0, keep).map((run) => run.observedId));
+  if (latestObservedId !== undefined) {
     retainedIds.add(latestObservedId);
-  }
-  for (const run of runs) {
-    if (retainedIds.size >= keep) break;
-    retainedIds.add(run.observedId);
   }
   return {
     retained: runs.filter((run) => retainedIds.has(run.observedId)),
@@ -189,24 +203,52 @@ export function planRetention(
   };
 }
 
-async function reclaimRun(projectId: string, run: StoredRunSummary, home: string): Promise<void> {
+/**
+ * Deletes one run's artifacts dependents-first, so a failure never leaves a
+ * resolved snapshot whose observed base is gone. Returns a diagnostic per
+ * artifact that could not be removed; the run is reported as reclaimed only
+ * when this is empty.
+ */
+async function reclaimRun(
+  projectId: string,
+  run: StoredRunSummary,
+  home: string,
+): Promise<Diagnostic[]> {
   // Ids come from parsed artifacts; validate each before it becomes a path
   // segment so a crafted id cannot make gc delete outside the store.
-  const targets = [artifactFilePath(observationsDir(projectId, home), run.observedId)];
+  const targets: string[] = [];
   if (run.resolvedId !== null) {
-    targets.push(artifactFilePath(snapshotsDir(projectId, home), run.resolvedId));
     // The interpretation is keyed by the resolved id and belongs to the run even
     // when its payload could not be parsed (then `interpretationId` is null).
     targets.push(artifactFilePath(interpretationsDir(projectId, home), run.resolvedId));
+    targets.push(artifactFilePath(snapshotsDir(projectId, home), run.resolvedId));
   }
+  targets.push(artifactFilePath(observationsDir(projectId, home), run.observedId));
+
+  const failures: Diagnostic[] = [];
   for (const target of targets) {
-    await unlink(target).catch((error: unknown) => {
-      if ((error as { code?: string }).code === 'ENOENT') return;
-      throw new PflError(
-        `could not reclaim ${target}: ${error instanceof Error ? error.message : String(error)}`,
-        EXIT_CODES.SNAPSHOT_STORE_FAILED,
-      );
-    });
+    const failure = await removeArtifact(target);
+    if (failure !== undefined) {
+      failures.push(failure);
+      break;
+    }
+  }
+  return failures;
+}
+
+/** Removes one artifact; `undefined` on success (including already absent). */
+async function removeArtifact(target: string): Promise<Diagnostic | undefined> {
+  try {
+    await unlink(target);
+    return undefined;
+  } catch (error) {
+    if ((error as { code?: string }).code === 'ENOENT') return undefined;
+    return {
+      severity: 'warning',
+      code: 'reclaim-failed',
+      message: `could not reclaim ${target}: ${error instanceof Error ? error.message : String(error)}`,
+      path: target,
+    };
   }
 }
 
@@ -242,8 +284,12 @@ async function findOrphans(
       });
       continue;
     }
-    const exists = (await Promise.all(roots.map(pathExists))).some(Boolean);
-    if (!exists) {
+    // Only a root that is definitely gone makes an orphan. An unreadable root
+    // (a permission error) is `unknown`, and unknown is treated as present, so a
+    // transient error cannot turn a live history into a deletable one.
+    const states = await Promise.all(roots.map(rootState));
+    const active = states.some((state) => state !== 'gone');
+    if (!active) {
       orphans.push({
         id,
         path: displayProjectDir(id),
@@ -258,11 +304,15 @@ function displayProjectDir(id: string): string {
   return join('~/.pfl', 'projects', id);
 }
 
-async function pathExists(path: string): Promise<boolean> {
-  return access(path).then(
-    () => true,
-    () => false,
-  );
+/** Whether a root is present, definitely absent, or unreadable (treated as present). */
+async function rootState(path: string): Promise<'present' | 'gone' | 'unknown'> {
+  try {
+    await access(path);
+    return 'present';
+  } catch (error) {
+    const code = (error as { code?: string }).code;
+    return code === 'ENOENT' || code === 'ENOTDIR' ? 'gone' : 'unknown';
+  }
 }
 
 function toRunRef(run: StoredRunSummary): GcRunRef {
