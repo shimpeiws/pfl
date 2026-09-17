@@ -39,6 +39,15 @@ M6 adds: refuse regular files with `lstat().nlink > 1` (S3); refuse to open
 non-regular entries (already typed `unknown`); enforce the entry, depth, and
 per-file-byte limits (S7).
 
+M7 adds no read here. It adds an optional `describeFile(relativePath, content)`
+callback that runs on the bytes the walk already read to hash, so
+content-derived structural metadata (frontmatter keys, tool names, lengths) can
+be resolved without exposing the bytes. Only the callback's allowlisted,
+redacted record is attached to the entry; raw content never leaves the walk, a
+throwing callback is a diagnostic rather than an abort, and the metadata output
+is bounded by the `MAX_FRONTMATTER_KEYS` / `MAX_TOOL_NAMES` /
+`MAX_TOOL_NAME_LENGTH` ceilings in `src/limits.ts`.
+
 ### `discovery/project-identity.ts`
 
 | Read                                                     | Guard                               | Classification |

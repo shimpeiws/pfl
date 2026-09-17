@@ -7,17 +7,12 @@
  * values, or secret values.
  */
 export const CLAUDE_CODE_SAFE_METADATA_ALLOWLIST: readonly string[] = [
-  'kind',
   'format',
-  'sizeBytes',
-  'isSymlink',
-  'entryCount',
   'hasFrontmatter',
   'frontmatterKeys',
   'descriptionLength',
-  'commandCount',
-  'eventNames',
   'toolNames',
+  'eventNames',
   'permissionMode',
   'approvalPolicy',
   'allowCount',
@@ -26,5 +21,4 @@ export const CLAUDE_CODE_SAFE_METADATA_ALLOWLIST: readonly string[] = [
   'serverNames',
   'outputStyle',
   'enabledPluginCount',
-  'model',
 ];

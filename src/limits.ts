@@ -26,6 +26,18 @@ export const MAX_ARTIFACT_BYTES = 16_777_216;
 /** Bytes fed to a JSON or TOML parser (settings files, `config.toml`, `hooks.json`). */
 export const MAX_PARSE_BYTES = 1_048_576;
 
+/**
+ * Frontmatter-derived metadata shape ceilings (roadmap §5 M7, issue #68). The
+ * parse input is already bounded by `MAX_FILE_BYTES`, but a hostile file can
+ * still declare an unbounded number of keys or tool names, so the *output* is
+ * bounded too and a cap hit is recorded as malformed rather than silently
+ * truncated. Shared with the tests, so a value cannot change without the corpus
+ * moving with it.
+ */
+export const MAX_FRONTMATTER_KEYS = 64;
+export const MAX_TOOL_NAMES = 64;
+export const MAX_TOOL_NAME_LENGTH = 200;
+
 export type LimitName =
   | 'MAX_FILE_BYTES'
   | 'MAX_WALK_ENTRIES'

@@ -2,6 +2,7 @@ import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, join } from 'node:path';
 import { assembleObservedSnapshot } from '../../discovery/assemble.js';
+import { frontmatterMetadata, readFrontmatter } from '../../discovery/frontmatter.js';
 import { filterToAllowlist } from '../../discovery/metadata.js';
 import { buildObservedElement } from '../../discovery/observed-element.js';
 import { walkHarnessPaths } from '../../discovery/walk.js';
@@ -246,7 +247,16 @@ async function addWalkedArea(
   elements: ObservedElement[],
   diagnostics: Diagnostic[],
 ): Promise<void> {
-  const walked = await walkHarnessPaths(root, [subpath]);
+  const walked = await walkHarnessPaths(root, [subpath], {
+    describeFile: (relativePath, content) => {
+      const kind = resolveKind(relativePath);
+      if (kind === null || kind === 'unknown') return {};
+      const displayPath = displayPrefix ? `${displayPrefix}/${relativePath}` : relativePath;
+      const read = readFrontmatter(content);
+      if (read.malformed) diagnostics.push(malformedFrontmatterDiagnostic(displayPath));
+      return toSafeMetadata(frontmatterMetadata(read.facts));
+    },
+  });
   diagnostics.push(...walked.diagnostics);
 
   for (const entry of walked.entries) {
@@ -289,7 +299,7 @@ async function addWalkedArea(
         path: displayPath,
         digest: entry.digest,
         ...(entry.sizeBytes !== undefined ? { sizeBytes: entry.sizeBytes } : {}),
-        metadata: metadataForPath(displayPath),
+        metadata: { ...metadataForPath(displayPath), ...(entry.metadata ?? {}) },
       }),
     );
   }
@@ -721,6 +731,15 @@ function hardlinkDiagnostic(displayPath: string): Diagnostic {
     severity: 'warning',
     code: 'hardlink-not-followed',
     message: `hardlink not followed: ${displayPath}`,
+    path: displayPath,
+  };
+}
+
+function malformedFrontmatterDiagnostic(displayPath: string): Diagnostic {
+  return {
+    severity: 'warning',
+    code: 'invalid-frontmatter',
+    message: `frontmatter is malformed or unterminated: ${displayPath}`,
     path: displayPath,
   };
 }

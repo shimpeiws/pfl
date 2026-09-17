@@ -53,9 +53,26 @@ async function makeFixture(): Promise<Fixture> {
       mysteryField: 'SENTINEL_UNKNOWN_FIELD',
     }),
   );
-  await writeFile(join(root, '.claude', 'skills', 'foo', 'SKILL.md'), '# Foo skill\n');
-  await writeFile(join(root, '.claude', 'agents', 'reviewer.md'), '# Reviewer\n');
-  await writeFile(join(root, '.claude', 'commands', 'deploy.md'), '# Deploy\n');
+  await writeFile(
+    join(root, '.claude', 'skills', 'foo', 'SKILL.md'),
+    [
+      '---',
+      'name: foo',
+      'description: "A foo skill that does foo things"',
+      'allowed-tools: Read, Grep',
+      '---',
+      '# Foo skill',
+      '',
+    ].join('\n'),
+  );
+  await writeFile(
+    join(root, '.claude', 'agents', 'reviewer.md'),
+    ['---', 'name: reviewer', 'tools:', '  - Read', '  - Bash', '---', '# Reviewer', ''].join('\n'),
+  );
+  await writeFile(
+    join(root, '.claude', 'commands', 'deploy.md'),
+    ['---', 'description: Deploy the app', '---', '# Deploy', ''].join('\n'),
+  );
   await writeFile(join(root, '.claude', 'rules', 'rule.md'), '# Rule\n');
   await writeFile(join(root, '.claude', 'output-styles', 'terse.md'), '# Terse\n');
   await writeFile(join(root, '.claude', 'hooks', 'pre.sh'), 'echo hook\n');
@@ -194,6 +211,51 @@ describe('collectClaudeCodeHarness', () => {
     expect(JSON.stringify(snapshot.elements)).not.toContain('sk-ant-should-not-persist');
     // Allowlist: an unknown field is not persisted even when it is not secret.
     expect(JSON.stringify(snapshot.elements)).not.toContain('SENTINEL_UNKNOWN_FIELD');
+  });
+
+  it('resolves frontmatter structure for skills, subagents, and commands', async () => {
+    const { project, home } = await makeFixture();
+
+    const snapshot = await collectClaudeCodeHarness(project, CONSENTED, home);
+    const paths = byPath(snapshot.elements);
+
+    expect(paths.get('.claude/skills/foo/SKILL.md')?.metadata).toEqual({
+      format: 'md',
+      hasFrontmatter: true,
+      frontmatterKeys: ['name', 'description', 'allowed-tools'],
+      descriptionLength: 'A foo skill that does foo things'.length,
+      toolNames: ['Read', 'Grep'],
+    });
+    expect(paths.get('.claude/agents/reviewer.md')?.metadata).toEqual({
+      format: 'md',
+      hasFrontmatter: true,
+      frontmatterKeys: ['name', 'tools'],
+      toolNames: ['Read', 'Bash'],
+    });
+    expect(paths.get('.claude/commands/deploy.md')?.metadata).toEqual({
+      format: 'md',
+      hasFrontmatter: true,
+      frontmatterKeys: ['description'],
+      descriptionLength: 'Deploy the app'.length,
+    });
+    // Only structural facts are persisted; the description value never is.
+    expect(JSON.stringify(snapshot.elements)).not.toContain('A foo skill that does foo things');
+  });
+
+  it('records malformed frontmatter as a diagnostic and keeps the element', async () => {
+    const { project, home } = await makeFixture();
+    await mkdir(join(project.root, '.claude', 'skills', 'malformed'), { recursive: true });
+    await writeFile(
+      join(project.root, '.claude', 'skills', 'malformed', 'SKILL.md'),
+      ['---', 'name: malformed', 'description: no closing fence'].join('\n'),
+    );
+
+    const snapshot = await collectClaudeCodeHarness(project, CONSENTED, home);
+    const element = byPath(snapshot.elements).get('.claude/skills/malformed/SKILL.md');
+
+    expect(element?.status).toBe('observed');
+    expect(element?.metadata).toMatchObject({ hasFrontmatter: true });
+    expect(snapshot.diagnostics.map((entry) => entry.code)).toContain('invalid-frontmatter');
   });
 
   it('records the built-in instruction layer as opaque', async () => {

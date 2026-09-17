@@ -68,7 +68,18 @@ async function makeFixture(): Promise<Fixture> {
     join(configDir, 'hooks.json'),
     JSON.stringify({ hooks: { SessionStart: [{ matcher: 'startup', hooks: [] }] } }),
   );
-  await writeFile(join(configDir, 'skills', 'SKILL.md'), '# Skill\n');
+  await writeFile(
+    join(configDir, 'skills', 'SKILL.md'),
+    [
+      '---',
+      'name: tool',
+      'description: "A Codex skill"',
+      'allowed-tools: Read, Write',
+      '---',
+      '# Skill',
+      '',
+    ].join('\n'),
+  );
   await writeFile(join(configDir, 'agents', 'reviewer.md'), '# Reviewer\n');
   await writeFile(join(configDir, 'rules', 'rule.md'), '# Rule\n');
   await writeFile(join(configDir, 'memories', 'MEMORY.md'), '# Memory\n');
@@ -121,6 +132,22 @@ describe('collectCodexHarness', () => {
     expect(paths.get('~/.codex/hooks.json#hooks')?.metadata).toEqual({
       eventNames: ['SessionStart'],
     });
+  });
+
+  it('resolves frontmatter structure for walked skill files', async () => {
+    const { project, home } = await makeFixture();
+
+    const snapshot = await collectCodexHarness(project, CONSENTED, home);
+    const element = byPath(snapshot.elements).get('~/.codex/skills/SKILL.md');
+
+    expect(element?.metadata).toEqual({
+      format: 'md',
+      hasFrontmatter: true,
+      frontmatterKeys: ['name', 'description', 'allowed-tools'],
+      descriptionLength: 'A Codex skill'.length,
+      toolNames: ['Read', 'Write'],
+    });
+    expect(JSON.stringify(snapshot.elements)).not.toContain('A Codex skill');
   });
 
   it('does not open user scope when consent is denied', async () => {

@@ -146,6 +146,17 @@ Semantics:
   limit moves the hostile-input corpus with it; changing a value requires a
   security review under §3.3.
 
+**M7 addition — content-derived metadata shape ceilings.** The shared frontmatter
+parser (M7, issue #68) bounds its *output* as well as its input, because a
+hostile file can declare an unbounded number of keys or tool names inside the
+per-file byte ceiling. `MAX_FRONTMATTER_KEYS` (64), `MAX_TOOL_NAMES` (64), and
+`MAX_TOOL_NAME_LENGTH` (200) cap the keys, tool names, and per-name length
+recorded for one element; exceeding a cap drops the excess and marks the
+frontmatter malformed, so the caller records a diagnostic rather than persisting
+a truncated fragment. A declared tool candidate that is not a tool-name shape —
+an identifier with at most one parenthesized specifier — is dropped, so arbitrary
+prose or `key: value` text is never persisted as a tool name.
+
 ### 5. Path containment (S12)
 
 `isPathWithin` composes its comparison with the path module rather than a
