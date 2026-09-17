@@ -1,9 +1,10 @@
-import { mkdtemp, rm, stat } from 'node:fs/promises';
+import { mkdir, mkdtemp, readdir, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { EXIT_CODES, PflError } from '../cli/exit-codes.js';
 import { runtimeId } from '../core/ids.js';
+import { getConsentRequest } from '../runtime/registry.js';
 import { permissionsPath } from '../snapshot/store.js';
 import {
   consentScopeKey,
@@ -63,6 +64,12 @@ describe('consent store', () => {
       grantedScopes: ['claude-code:user'],
     });
     expect(((await stat(permissionsPath(home))).mode & 0o777).toString(8)).toBe('600');
+    // The store is written the way the snapshot store writes artifacts: the
+    // directory mode is re-asserted and no temp file is left behind (S10).
+    expect(((await stat(dirname(permissionsPath(home)))).mode & 0o777).toString(8)).toBe('700');
+    expect((await readdir(dirname(permissionsPath(home)))).some((n) => n.endsWith('.tmp'))).toBe(
+      false,
+    );
   });
 
   it('stores consent per runtime + scope', async () => {
@@ -86,6 +93,28 @@ describe('consent store', () => {
     // runtimes. This crossing is accepted risk A3 until M8 scopes it.
     await grantConsent(consentScopeKey(runtimeId('claude-code'), 'user'), home);
     expect(await hasAnyUserConsent(home)).toBe(true);
+  });
+
+  it('maps a store write failure to exit 6', async () => {
+    const home = await tempHome();
+    // A file where the store directory should go makes mkdir fail.
+    await writeFile(join(home, '.pfl'), 'not a directory');
+
+    await expect(grantConsent('claude-code:user', home)).rejects.toMatchObject({
+      exitCode: EXIT_CODES.SNAPSHOT_STORE_FAILED,
+    });
+  });
+
+  it('refuses a symlinked store path', async () => {
+    const home = await tempHome();
+    const outside = join(home, 'outside');
+    await mkdir(outside, { recursive: true });
+    await symlink(outside, join(home, '.pfl'));
+
+    expect(await loadConsentStore(home)).toEqual({ grantedScopes: [] });
+    await expect(grantConsent('claude-code:user', home)).rejects.toMatchObject({
+      exitCode: EXIT_CODES.SNAPSHOT_STORE_FAILED,
+    });
   });
 });
 
@@ -156,16 +185,30 @@ describe('resolveAccessPolicy', () => {
 });
 
 describe('renderConsentPrompt', () => {
-  it('renders the §24 locations and the fixed will/will-not block', () => {
-    const prompt = renderConsentPrompt(request);
+  it('renders the real locations and the fixed will/will-not block', () => {
+    // The real request, not a hand-written stand-in: this is what keeps the
+    // prompt from silently underreporting the read scope (roadmap S2).
+    const prompt = renderConsentPrompt(getConsentRequest('claude-code'));
 
     for (const line of [
       'Inventory needs read-only access to the following locations:',
       '  Project',
       '    ./CLAUDE.md',
+      '    ./CLAUDE.local.md',
       '    ./.claude/**',
+      '    ./.mcp.json',
       '  User',
+      '    ~/.claude/CLAUDE.md',
       '    ~/.claude/settings.json',
+      '    ~/.claude/settings.local.json',
+      '    ~/.claude/commands/**',
+      '    ~/.claude/projects/**/memory/**',
+      '    ~/.claude/plugins/**',
+      '    ~/.claude.json',
+      '  Installation and version metadata',
+      '    ~/.local/share/claude',
+      '    ~/.local/bin/claude',
+      '    ~/.claude/.last-update-result.json',
       'Inventory will:',
       '  ✓ Read files needed to resolve the effective harness',
       '  ✓ Check the installed runtime version',
@@ -174,7 +217,7 @@ describe('renderConsentPrompt', () => {
       '  ✗ Store file contents',
       '  ✗ Store environment values or credentials',
       '  ✗ Execute Claude Code or any discovered tool',
-      '  ✗ Follow symlinks',
+      '  ✗ Follow symlinks inside the listed locations',
     ]) {
       expect(prompt).toContain(line);
     }

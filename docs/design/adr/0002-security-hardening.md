@@ -56,9 +56,12 @@ home/root path prefix (for example `/var` → `/private/var` on macOS, or a
 of the consent statement — the statement describes pfl's traversal of the
 harness it discovers, not the operating system's resolution of a fixed prefix.
 
-With this decision the `✗ Follow symlinks` line in the consent prompt (§24) is
-true, and the test that pins the previous wording is updated in the same change
-that lands the last read-path guard.
+With this decision the consent prompt's line reads `✗ Follow symlinks inside
+the listed locations`, which is true: a symlink discovered in a searched area,
+or at a fixed read target, is refused. The scope base itself — a symlinked
+`$HOME`, or the home/root path prefix — is resolved by the operating system as a
+path prefix and is not counted as following a link. The test that pins the
+prompt wording asserts this qualified line.
 
 ### 2. Project identity: implicit vs gated reads (S5)
 

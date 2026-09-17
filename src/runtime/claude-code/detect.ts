@@ -30,6 +30,15 @@ import {
  */
 export const VERIFIED_CLAUDE_CODE_RANGE: VersionRange = { min: '2.1.0', max: '2.2.0' };
 
+/**
+ * Installation and version-metadata locations, relative to the home directory.
+ * Exported so the consent prompt lists exactly what detection reads (roadmap
+ * S2) rather than a hand-maintained subset.
+ */
+export const INSTALL_LOCATIONS = ['.local/share/claude', '.local/bin/claude'] as const;
+export const VERSIONS_DIR = '.local/share/claude/versions';
+export const UPDATE_RESULT_FILE = '.claude/.last-update-result.json';
+
 const RUNTIME_ID = runtimeId('claude-code');
 
 export async function detectClaudeCode(home: string = homedir()): Promise<RuntimeDetection> {
@@ -70,21 +79,17 @@ export async function detectClaudeCode(home: string = homedir()): Promise<Runtim
 }
 
 async function claudeCodeIsPresent(home: string): Promise<boolean> {
-  const installations = [
-    join(home, '.local', 'share', 'claude'),
-    join(home, '.local', 'bin', 'claude'),
-  ];
-  const found = await Promise.all(installations.map((location) => pathExists(location)));
+  const found = await Promise.all(
+    INSTALL_LOCATIONS.map((location) => pathExists(home, join(home, location))),
+  );
   return found.some(Boolean);
 }
 
 async function readClaudeCodeVersion(home: string): Promise<string | null> {
-  const fromUpdate = await readUpdateResultVersion(
-    join(home, '.claude', '.last-update-result.json'),
-  );
+  const fromUpdate = await readUpdateResultVersion(join(home, UPDATE_RESULT_FILE));
   if (fromUpdate !== null) return fromUpdate;
 
-  const versions = await readDirectoryNames(join(home, '.local', 'share', 'claude', 'versions'));
+  const versions = await readDirectoryNames(home, join(home, VERSIONS_DIR));
   return highestVersion(versions);
 }
 

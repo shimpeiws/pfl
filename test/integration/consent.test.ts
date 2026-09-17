@@ -6,7 +6,14 @@ import { runInspect } from '../../src/cli/inspect.js';
 import { resolveProjectContext } from '../../src/discovery/project-identity.js';
 import { readLatestPointer, readObservedSnapshot } from '../../src/snapshot/store.js';
 import type { Logger } from '../../src/util/logger.js';
-import { materialize, readStoreArtifacts, type Materialized } from '../fixtures/materialize.js';
+import {
+  RUNTIME_IDS,
+  grantConsent,
+  materialize,
+  readStoreArtifacts,
+  type FixtureRuntime,
+  type Materialized,
+} from '../fixtures/materialize.js';
 
 const silent: Logger = { info: () => undefined, warn: () => undefined, error: () => undefined };
 
@@ -18,15 +25,20 @@ afterEach(async () => {
   );
 });
 
-describe('consent boundary', () => {
+const USER_SENTINEL: Record<FixtureRuntime, string> = {
+  claude: 'SENTINEL_CLAUDE_USER',
+  codex: 'SENTINEL_CODEX_USER',
+};
+
+describe.each<FixtureRuntime>(['claude', 'codex'])('%s consent boundary', (runtime) => {
   it('opens nothing outside the project when consent is denied', async () => {
-    const m = await materialize('claude');
+    const m = await materialize(runtime);
     materialized.push(m);
 
     await runInspect(
       m.projectRoot,
       {
-        runtime: 'claude-code',
+        runtime: RUNTIME_IDS[runtime],
         home: m.home,
         interactive: true,
         io: { readAnswer: async () => 'n' },
@@ -40,24 +52,51 @@ describe('consent boundary', () => {
     if (pointer === null) throw new Error('expected a latest pointer');
     const observed = await readObservedSnapshot(projectId, pointer.observed, m.home);
     expect(observed.elements.some((element) => element.native.origin === 'user')).toBe(false);
-    expect(await readStoreArtifacts(m.home)).not.toContain('SENTINEL_CLAUDE_USER');
+
+    const artifacts = await readStoreArtifacts(m.home);
+    // Positive control: a negative assertion over an empty store proves nothing.
+    expect(artifacts.length).toBeGreaterThan(0);
+    expect(artifacts).not.toContain(USER_SENTINEL[runtime]);
   });
 
   it('fails closed in a non-interactive run without consent', async () => {
-    const m = await materialize('claude');
+    const m = await materialize(runtime);
     materialized.push(m);
 
     await expect(
       runInspect(
         m.projectRoot,
-        { runtime: 'claude-code', home: m.home, interactive: false },
+        { runtime: RUNTIME_IDS[runtime], home: m.home, interactive: false },
         silent,
       ),
     ).rejects.toMatchObject({ exitCode: EXIT_CODES.CONSENT_REQUIRED });
   });
 
+  it('surfaces user-origin elements once consent is granted', async () => {
+    // The contrast that makes the deny test meaningful: without this, "no user
+    // element" could be true because user discovery never runs at all.
+    const m = await materialize(runtime);
+    materialized.push(m);
+    await grantConsent(m.home, runtime);
+
+    await runInspect(
+      m.projectRoot,
+      { runtime: RUNTIME_IDS[runtime], home: m.home, interactive: false },
+      silent,
+    );
+
+    const projectId = (await resolveProjectContext(m.projectRoot)).id;
+    const pointer = await readLatestPointer(projectId, m.home);
+    if (pointer === null) throw new Error('expected a latest pointer');
+    const observed = await readObservedSnapshot(projectId, pointer.observed, m.home);
+    const userElements = observed.elements.filter((element) => element.native.origin === 'user');
+    expect(userElements.length).toBeGreaterThan(0);
+    // User-scope elements are displayed under `~`, i.e. they were discovered.
+    expect(userElements.some((element) => (element.source.path ?? '').startsWith('~/'))).toBe(true);
+  });
+
   it('does not read an out-of-project .git file before consent', async () => {
-    const m = await materialize('claude');
+    const m = await materialize(runtime);
     materialized.push(m);
     const outsideGit = join(m.outsideDir, 'gitdir');
     await mkdir(outsideGit, { recursive: true });
@@ -70,7 +109,7 @@ describe('consent boundary', () => {
     await runInspect(
       m.projectRoot,
       {
-        runtime: 'claude-code',
+        runtime: RUNTIME_IDS[runtime],
         home: m.home,
         interactive: true,
         io: { readAnswer: async () => 'n' },
@@ -80,6 +119,20 @@ describe('consent boundary', () => {
 
     // The gitdir target is out of project: it must not have been read, so its
     // remote never reaches the store.
-    expect(await readStoreArtifacts(m.home)).not.toContain('SECRET_LEAK_REMOTE');
+    const artifacts = await readStoreArtifacts(m.home);
+    expect(artifacts.length).toBeGreaterThan(0);
+    expect(artifacts).not.toContain('SECRET_LEAK_REMOTE');
+  });
+});
+
+describe('consent is per runtime + scope', () => {
+  it("does not spend one runtime's grant on another runtime", async () => {
+    const m = await materialize('codex');
+    materialized.push(m);
+    await grantConsent(m.home, 'claude');
+
+    await expect(
+      runInspect(m.projectRoot, { runtime: 'codex', home: m.home, interactive: false }, silent),
+    ).rejects.toMatchObject({ exitCode: EXIT_CODES.CONSENT_REQUIRED });
   });
 });
