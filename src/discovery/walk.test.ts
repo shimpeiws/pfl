@@ -156,6 +156,44 @@ describe('walkHarnessPaths', () => {
       [...first.entries.map((e) => e.relativePath)].sort(),
     );
   });
+
+  it('prunes a named directory without recording it or descending into it', async () => {
+    const fixture = await makeFixture();
+    await mkdir(join(fixture.root, '.claude', 'node_modules', 'inner'), { recursive: true });
+    await writeFile(join(fixture.root, '.claude', 'node_modules', 'inner', 'SKILL.md'), '# hidden');
+
+    const { entries } = await walkHarnessPaths(fixture.root, ['.claude'], {
+      pruneDirectories: ['node_modules'],
+    });
+
+    expect(entries.some((entry) => entry.relativePath.includes('node_modules'))).toBe(false);
+    // Positive control: a sibling inside the same area is still walked.
+    expect(entries.some((entry) => entry.relativePath === '.claude/skills/foo/SKILL.md')).toBe(
+      true,
+    );
+  });
+
+  it('reads and records only the files selectFile accepts', async () => {
+    const fixture = await makeFixture();
+    const read: string[] = [];
+
+    const { entries } = await walkHarnessPaths(fixture.root, ['.claude'], {
+      selectFile: (relativePath) => relativePath.endsWith('SKILL.md'),
+      describeFile: (relativePath) => {
+        read.push(relativePath);
+        return {};
+      },
+    });
+
+    // Unselected regular files are never read (the positive control) and never
+    // listed; directories and symlinks are still recorded.
+    expect(read).toEqual(['.claude/skills/foo/SKILL.md']);
+    expect(entries.filter((entry) => entry.kind === 'file').map((e) => e.relativePath)).toEqual([
+      '.claude/skills/foo/SKILL.md',
+    ]);
+    expect(entries.some((entry) => entry.relativePath === '.claude/skills')).toBe(true);
+    expect(entries.some((entry) => entry.relativePath === '.claude/link')).toBe(true);
+  });
 });
 
 describe('walkHarnessPaths content-derived metadata', () => {

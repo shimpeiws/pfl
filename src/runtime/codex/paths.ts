@@ -9,8 +9,11 @@ import { join } from 'node:path';
  *
  * ```text
  * Project scope (implicit)
- *   AGENTS.md                 instructions
- *   AGENTS.override.md        fallback instructions (override semantics are M2)
+ *   AGENTS.md                 instructions (project root, nested directories,
+ *                             and — read under consent — parent directories)
+ *   AGENTS.override.md        fallback instructions; replaces the base file in
+ *                             the same directory only, never across directories
+ *   .codex/skills/**          skills (project-scoped)
  *
  * User scope (requires consent), under <home>/.codex
  *   AGENTS.md                 instructions
@@ -32,6 +35,15 @@ import { join } from 'node:path';
 
 /** Project-scoped instruction files, in fallback order. */
 export const PROJECT_INSTRUCTION_FILES = ['AGENTS.md', 'AGENTS.override.md'] as const;
+
+/** Project configuration directory, relative to the project root. */
+export const PROJECT_CONFIG_DIR = '.codex';
+
+/** Project-scoped element directory under `PROJECT_CONFIG_DIR`. */
+export const PROJECT_SKILLS_DIR = 'skills';
+
+/** Directories a project-wide instruction walk must not descend into. */
+export const PROJECT_WALK_PRUNE_DIRECTORIES = ['node_modules', '.git'] as const;
 
 /** User instruction file, relative to the user config directory. */
 export const USER_INSTRUCTION_FILE = 'AGENTS.md';

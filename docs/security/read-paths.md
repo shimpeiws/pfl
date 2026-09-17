@@ -13,14 +13,15 @@ consent choke point.
 
 ## Classification vocabulary
 
-| Term                 | Meaning                                                                                                                  |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| **project-implicit** | A read inside the project root. No consent required (design doc §19).                                                    |
-| **user-scope**       | A read under the runtime's user harness (`~/.claude`, `~/.codex`). Requires the `<runtime>:user` grant.                  |
-| **install-scope**    | Runtime installation / version metadata. Requires the `<runtime>:install` grant.                                         |
-| **store**            | A read of `pfl`'s own `~/.pfl` storage. No consent gate; artifact ids are charset-validated.                             |
-| **implicit-git**     | Project-identity reads kept project-local and implicit (ADR 0002 §2).                                                    |
-| **gated-git**        | Project-identity reads outside the root (a `.git` file's `gitdir:`, an ancestor `.git`). Gated once M6 lands the S5 fix. |
+| Term                 | Meaning                                                                                                                             |
+| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| **project-implicit** | A read inside the project root. No consent required (design doc §19).                                                               |
+| **user-scope**       | A read under the runtime's user harness (`~/.claude`, `~/.codex`). Requires the `<runtime>:user` grant.                             |
+| **install-scope**    | Runtime installation / version metadata. Requires the `<runtime>:install` grant.                                                    |
+| **store**            | A read of `pfl`'s own `~/.pfl` storage. No consent gate; artifact ids are charset-validated.                                        |
+| **implicit-git**     | Project-identity reads kept project-local and implicit (ADR 0002 §2).                                                               |
+| **gated-git**        | Project-identity reads outside the root (a `.git` file's `gitdir:`, an ancestor `.git`). Gated once M6 lands the S5 fix.            |
+| **external-gated**   | A read above the project root (a parent-directory `AGENTS.md`). Gated on out-of-project consent and bounded by `MAX_ANCESTOR_DIRS`. |
 
 Guard vocabulary: **lstat** = the target is `lstat`ed and a symlink is refused
 before any content read; **realpath** = canonical comparison only; **—** = none.
@@ -39,14 +40,19 @@ M6 adds: refuse regular files with `lstat().nlink > 1` (S3); refuse to open
 non-regular entries (already typed `unknown`); enforce the entry, depth, and
 per-file-byte limits (S7).
 
-M7 adds no read here. It adds an optional `describeFile(relativePath, content)`
+M7 adds no new read here. It adds an optional `describeFile(relativePath, content)`
 callback that runs on the bytes the walk already read to hash, so
 content-derived structural metadata (frontmatter keys, tool names, lengths) can
 be resolved without exposing the bytes. Only the callback's allowlisted,
 redacted record is attached to the entry; raw content never leaves the walk, a
 throwing callback is a diagnostic rather than an abort, and the metadata output
 is bounded by the `MAX_FRONTMATTER_KEYS` / `MAX_TOOL_NAMES` /
-`MAX_TOOL_NAME_LENGTH` ceilings in `src/limits.ts`.
+`MAX_TOOL_NAME_LENGTH` ceilings in `src/limits.ts`. M7 also adds
+`pruneDirectories` (`.git`, `node_modules`): a pruned directory is neither
+recorded nor descended into, so a project-wide walk does not read a
+version-control or dependency tree. It adds `selectFile`: a rejected regular
+file is neither read nor recorded, so a search for a few known filenames
+(`AGENTS.md`) does not open every file in the tree.
 
 ### `discovery/project-identity.ts`
 
@@ -104,14 +110,17 @@ reports the size for the caller to bound. `readTextFileGuarded` builds on it.
 
 ### `runtime/codex`
 
-| Location       | Read                                                               | Guard                              | Classification                |
-| -------------- | ------------------------------------------------------------------ | ---------------------------------- | ----------------------------- |
-| `detect.ts`    | `lstat` + `readdir` of `~/.codex/packages/standalone/releases`     | ancestor guard (base: `~/.codex`)  | install-scope                 |
-| `detect.ts`    | `lstat` of `~/.codex/packages/standalone/releases`, `…/standalone` | ancestor guard (base: `~/.codex`)  | install-scope                 |
-| `discovery.ts` | `readFile` known instruction files                                 | `inspectFileTarget(root, …)`       | project-implicit / user-scope |
-| `discovery.ts` | walk `~/.codex/<dirs>/**`                                          | walk guards                        | user-scope                    |
-| `discovery.ts` | `readFile` `config.toml`                                           | `readTextFileGuarded` + scope base | user-scope                    |
-| `discovery.ts` | `readFile` `hooks.json`                                            | `readTextFileGuarded` + scope base | user-scope                    |
+| Location       | Read                                                               | Guard                                                                                                                            | Classification                |
+| -------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
+| `detect.ts`    | `lstat` + `readdir` of `~/.codex/packages/standalone/releases`     | ancestor guard (base: `~/.codex`)                                                                                                | install-scope                 |
+| `detect.ts`    | `lstat` of `~/.codex/packages/standalone/releases`, `…/standalone` | ancestor guard (base: `~/.codex`)                                                                                                | install-scope                 |
+| `discovery.ts` | `readFile` known instruction files                                 | `inspectFileTarget(root, …)`                                                                                                     | project-implicit / user-scope |
+| `discovery.ts` | walk `<root>/**` for `AGENTS.md` / `AGENTS.override.md`            | walk guards; `selectFile` reads only those names, excluding the project config directory by path; `.git` / `node_modules` pruned | project-implicit              |
+| `discovery.ts` | walk `<root>/.codex/skills/**`                                     | walk guards                                                                                                                      | project-implicit              |
+| `discovery.ts` | `readFile` parent-directory `AGENTS.md` / `AGENTS.override.md`     | `inspectFileTarget(dir, …)`; consent-gated; `MAX_ANCESTOR_DIRS`                                                                  | **external-gated**            |
+| `discovery.ts` | walk `~/.codex/<dirs>/**`                                          | walk guards                                                                                                                      | user-scope                    |
+| `discovery.ts` | `readFile` `config.toml`                                           | `readTextFileGuarded` + scope base                                                                                               | user-scope                    |
+| `discovery.ts` | `readFile` `hooks.json`                                            | `readTextFileGuarded` + scope base                                                                                               | user-scope                    |
 
 M7 models more of `config.toml` (`[sandbox_workspace_write]`, `[projects.*]`,
 `[shell_environment_policy]`, `[marketplaces.*]`, `[plugins.*]`, `[profiles.*]`)
@@ -120,6 +129,17 @@ same single guarded `readFile` — and `[shell_environment_policy.set]` values a
 never persisted, only their key count. M7 also removes `~/.codex/agents/` as a
 search area (it is absent in the verified range), so the walk covers fewer
 directories, not more.
+
+M7 Phase 3 adds two project-scoped read paths and one gated one. Project-scoped
+skills are walked under `<root>/.codex/skills/**`, and `AGENTS.md` /
+`AGENTS.override.md` are found by a project-subtree walk that prunes `.git`,
+`node_modules`, and the project config directory. Both are project-implicit.
+`AGENTS.md` is also read from the project's parent directories, one directory at
+a time up to `MAX_ANCESTOR_DIRS` (16): that is **external-gated**, refused
+without out-of-project consent, recorded as `../AGENTS.md` … , and never follows
+a symlink (`inspectFileTarget` refuses one at the leaf). A project deeper than
+the ceiling reports a `limit-exceeded` diagnostic naming `MAX_ANCESTOR_DIRS`
+rather than silently dropping its ancestors.
 
 ### `snapshot/store.ts`
 
@@ -146,6 +166,11 @@ inventory:
 External `.git` references are not a scope: under ADR 0002 §2 they are not read
 before consent at all. Project-local reads (**project-implicit**, **store**,
 **implicit-git**) need no grant.
+
+The **external-gated** parent-directory instruction read is keyed on the same
+out-of-project consent (`allowOutsideProject`), which today the `<runtime>:user`
+grant provides; the M8 scope taxonomy assigns it its final scope. It is listed
+in the consent prompt under **External references**.
 
 The consent prompt's location groups are derived from the same adapter path
 constants discovery uses, and a per-adapter test asserts the groups cover every

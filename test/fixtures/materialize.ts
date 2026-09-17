@@ -44,6 +44,10 @@ export const SENTINELS = [
   'SENTINEL_CLAUDE_SETTINGS',
   'SENTINEL_CODEX_PROJECT',
   'SENTINEL_CODEX_OVERRIDE',
+  'SENTINEL_CODEX_PROJECT_SKILL',
+  'SENTINEL_CODEX_NESTED',
+  'SENTINEL_CODEX_PARENT',
+  'SENTINEL_CODEX_PARENT_OVERRIDE',
   'SENTINEL_CODEX_USER',
   'SENTINEL_CODEX_BROKEN',
   'SENTINEL_CODEX_MEMORY',
@@ -84,6 +88,19 @@ export async function materialize(runtime: FixtureRuntime): Promise<Materialized
   const home = join(base, 'home');
   await cp(join(fixturesRoot, runtime, 'project'), projectRoot, { recursive: true });
   await cp(join(fixturesRoot, runtime, 'home'), home, { recursive: true });
+
+  // A committed `parent/` tree is materialized beside the project root, so a
+  // runtime that reads instruction files above the project (Codex `AGENTS.md`)
+  // has an ancestor to find. Runtimes without one have no such directory.
+  const parentFixture = join(fixturesRoot, runtime, 'parent');
+  if (
+    await stat(parentFixture).then(
+      () => true,
+      () => false,
+    )
+  ) {
+    await cp(parentFixture, base, { recursive: true });
+  }
 
   const outsideDir = join(base, 'outside');
   await mkdir(outsideDir, { recursive: true });

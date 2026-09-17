@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import type { ObservedElement } from '../../core/observed.js';
-import { MAX_PARSE_BYTES } from '../../limits.js';
+import { MAX_ANCESTOR_DIRS, MAX_PARSE_BYTES } from '../../limits.js';
 import { collectCodexHarness } from './discovery.js';
 import { userConfigDir } from './paths.js';
 
@@ -35,6 +35,8 @@ async function makeFixture(): Promise<Fixture> {
   const configDir = userConfigDir(home);
 
   await mkdir(root, { recursive: true });
+  await mkdir(join(root, '.codex', 'skills', 'project-skill'), { recursive: true });
+  await mkdir(join(root, 'docs'), { recursive: true });
   await mkdir(join(configDir, 'skills'), { recursive: true });
   await mkdir(join(configDir, 'rules'), { recursive: true });
   await mkdir(join(configDir, 'memories'), { recursive: true });
@@ -48,6 +50,22 @@ async function makeFixture(): Promise<Fixture> {
 
   await writeFile(join(root, 'AGENTS.md'), '# Project agents\n');
   await writeFile(join(root, 'AGENTS.override.md'), '# Project override\n');
+  await writeFile(join(root, 'docs', 'AGENTS.md'), '# Nested docs agents\n');
+  await writeFile(
+    join(root, '.codex', 'skills', 'project-skill', 'SKILL.md'),
+    [
+      '---',
+      'name: project-tool',
+      'description: "A project-scoped Codex skill"',
+      '---',
+      '# Project skill',
+      '',
+    ].join('\n'),
+  );
+  // The project's parent directory (the fixture base) carries instruction files,
+  // which are out-of-project reads.
+  await writeFile(join(base, 'AGENTS.md'), '# Parent agents\n');
+  await writeFile(join(base, 'AGENTS.override.md'), '# Parent override\n');
   await writeFile(join(configDir, 'AGENTS.md'), '# User agents\n');
   await writeFile(
     join(configDir, 'config.toml'),
@@ -132,6 +150,117 @@ describe('collectCodexHarness', () => {
     expect(paths.get('~/.codex/skills/SKILL.md')?.native.kind).toBe('skills');
     expect(paths.get('~/.codex/rules/rule.md')?.native.kind).toBe('permissions');
     expect(paths.get('~/.codex/memories/MEMORY.md')?.native.kind).toBe('memory');
+  });
+
+  it('discovers project-scoped skills and nested and parent AGENTS.md', async () => {
+    const { project, home } = await makeFixture();
+
+    const snapshot = await collectCodexHarness(project, CONSENTED, home);
+    const paths = byPath(snapshot.elements);
+
+    expect(paths.get('.codex/skills/project-skill/SKILL.md')).toMatchObject({
+      native: { kind: 'skills', origin: 'project', scope: 'project' },
+      metadata: { hasFrontmatter: true, frontmatterKeys: ['name', 'description'] },
+    });
+    expect(paths.get('docs/AGENTS.md')?.native.kind).toBe('instructions');
+    // `dirname(root)` is the fixture base, one level above the project.
+    expect(paths.get('../AGENTS.md')?.native.kind).toBe('instructions');
+    expect(paths.get('../AGENTS.override.md')?.native.kind).toBe('fallback-instructions');
+  });
+
+  it('records each discovered file once, with unique element ids', async () => {
+    const { project, home } = await makeFixture();
+
+    const snapshot = await collectCodexHarness(project, CONSENTED, home);
+    const ids = snapshot.elements.map((element) => element.id);
+    const projectPaths = snapshot.elements
+      .map((element) => element.source.path)
+      .filter((path): path is string => path !== undefined);
+
+    // A second root-file loop would mint a duplicate id for AGENTS.md.
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(projectPaths.filter((path) => path === 'AGENTS.md')).toHaveLength(1);
+    expect(projectPaths.filter((path) => path === 'AGENTS.override.md')).toHaveLength(1);
+  });
+
+  it('does not exclude a nested directory that shares the project config name', async () => {
+    const { project, home } = await makeFixture();
+    await mkdir(join(project.root, 'docs', '.codex'), { recursive: true });
+    await writeFile(
+      join(project.root, 'docs', '.codex', 'AGENTS.md'),
+      '# Nested config-name dir\n',
+    );
+
+    const snapshot = await collectCodexHarness(project, CONSENTED, home);
+
+    // Only `<root>/.codex` is the config directory; a nested `.codex` must not be
+    // pruned, so its instruction file is still discovered.
+    expect(byPath(snapshot.elements).get('docs/.codex/AGENTS.md')?.native.kind).toBe(
+      'instructions',
+    );
+  });
+
+  it('does not double-record an AGENTS.md inside the project skills area', async () => {
+    const { project, home } = await makeFixture();
+    await writeFile(
+      join(project.root, '.codex', 'skills', 'project-skill', 'AGENTS.md'),
+      '# A skill file that happens to be named AGENTS.md\n',
+    );
+
+    const snapshot = await collectCodexHarness(project, CONSENTED, home);
+    const ids = snapshot.elements.map((element) => element.id);
+    const matches = snapshot.elements.filter(
+      (element) => element.source.path === '.codex/skills/project-skill/AGENTS.md',
+    );
+
+    // Without the path-aware exclusion the instruction walk records it a second
+    // time under the same id.
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(matches).toHaveLength(1);
+    expect(matches[0]?.native.kind).toBe('skills');
+  });
+
+  it('does not read parent directories when consent is denied', async () => {
+    const { project, home } = await makeFixture();
+
+    const snapshot = await collectCodexHarness(project, DENIED, home);
+
+    expect(snapshot.elements.some((element) => (element.source.path ?? '').startsWith('../'))).toBe(
+      false,
+    );
+  });
+
+  it('bounds the upward walk at MAX_ANCESTOR_DIRS and records the truncation', async () => {
+    const base = await tempDir('pfl-codex-deep-');
+    let root = base;
+    for (let level = 0; level <= MAX_ANCESTOR_DIRS; level += 1) {
+      root = join(root, `d${level}`);
+    }
+    await mkdir(root, { recursive: true });
+    await mkdir(userConfigDir(join(base, 'home')), { recursive: true });
+    // `base` is `MAX_ANCESTOR_DIRS + 1` levels above the root, so it is beyond
+    // the ceiling and must not be read.
+    await writeFile(join(base, 'AGENTS.md'), '# Out of reach\n');
+
+    const snapshot = await collectCodexHarness(
+      { id: 'proj', displayName: 'owner/repo', root, remote: 'github.com/owner/repo' },
+      CONSENTED,
+      join(base, 'home'),
+    );
+
+    expect(
+      snapshot.diagnostics.some(
+        (diagnostic) =>
+          diagnostic.code === 'limit-exceeded' && diagnostic.message.includes('MAX_ANCESTOR_DIRS'),
+      ),
+    ).toBe(true);
+    expect(
+      snapshot.elements.some(
+        (element) =>
+          element.native.kind === 'instructions' &&
+          (element.source.path ?? '').startsWith('../'.repeat(MAX_ANCESTOR_DIRS + 1)),
+      ),
+    ).toBe(false);
   });
 
   it('extracts config.toml structure without applying or persisting secrets', async () => {

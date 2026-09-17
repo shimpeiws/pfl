@@ -106,6 +106,59 @@ describe('resolveCodex', () => {
     expect(find(resolved.elements, nestedBase).status).toBe('effective');
   });
 
+  it('does not shadow a base in a different directory from the override', async () => {
+    const rootBase = element('AGENTS.md', 'instructions', 'project');
+    const nestedBase = element('docs/AGENTS.md', 'instructions', 'project');
+    // An override in the parent directory and one in a nested directory: neither
+    // is beside the root base, so neither may shadow it. Removing the dirname
+    // guard would shadow the root base from the parent override.
+    const parentOverride = element('../AGENTS.override.md', 'fallback-instructions', 'project');
+    const nestedOverride = element('docs/AGENTS.override.md', 'fallback-instructions', 'project');
+
+    const resolved = await resolveCodex(
+      snapshot([rootBase, nestedBase, parentOverride, nestedOverride]),
+    );
+
+    expect(find(resolved.elements, rootBase).status).toBe('effective');
+    expect(find(resolved.elements, nestedBase).status).toBe('shadowed');
+    expect(resolved.relations).not.toContainEqual({
+      type: 'shadows',
+      from: parentOverride.id,
+      to: rootBase.id,
+    });
+  });
+
+  it('derives instruction applicability from the file directory', async () => {
+    const root = element('AGENTS.md', 'instructions', 'project');
+    const nested = element('docs/AGENTS.md', 'instructions', 'project');
+    const deeper = element('docs/api/AGENTS.md', 'instructions', 'project');
+    const parent = element('../AGENTS.md', 'instructions', 'project');
+    const farParent = element('../../AGENTS.md', 'instructions', 'project');
+    const user = element('~/.codex/AGENTS.md', 'instructions', 'user');
+    const nestedOverride = element('docs/AGENTS.override.md', 'fallback-instructions', 'project');
+
+    const resolved = await resolveCodex(
+      snapshot([root, nested, deeper, parent, farParent, user, nestedOverride]),
+    );
+
+    expect(find(resolved.elements, root).applicability).toEqual({ type: 'project' });
+    expect(find(resolved.elements, nested).applicability).toEqual({
+      type: 'directory-subtree',
+      target: 'docs',
+    });
+    expect(find(resolved.elements, deeper).applicability).toEqual({
+      type: 'directory-subtree',
+      target: 'docs/api',
+    });
+    expect(find(resolved.elements, parent).applicability).toEqual({ type: 'global' });
+    expect(find(resolved.elements, farParent).applicability).toEqual({ type: 'global' });
+    expect(find(resolved.elements, user).applicability).toEqual({ type: 'global' });
+    expect(find(resolved.elements, nestedOverride).applicability).toEqual({
+      type: 'directory-subtree',
+      target: 'docs',
+    });
+  });
+
   it('treats on-demand skills and plugins as effective', async () => {
     const skill = element('~/.codex/skills/SKILL.md', 'skills', 'user');
     const plugin = element('~/.codex/config.toml#plugins', 'plugin', 'user');

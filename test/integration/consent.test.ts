@@ -57,6 +57,14 @@ describe.each<FixtureRuntime>(['claude', 'codex'])('%s consent boundary', (runti
     // Positive control: a negative assertion over an empty store proves nothing.
     expect(artifacts.length).toBeGreaterThan(0);
     expect(artifacts).not.toContain(USER_SENTINEL[runtime]);
+    if (runtime === 'codex') {
+      // The parent-directory AGENTS.md is an out-of-project read: without
+      // consent it is neither discovered nor persisted.
+      expect(
+        observed.elements.some((element) => (element.source.path ?? '').startsWith('../')),
+      ).toBe(false);
+      expect(artifacts).not.toContain('SENTINEL_CODEX_PARENT');
+    }
   });
 
   it('fails closed in a non-interactive run without consent', async () => {
@@ -93,6 +101,16 @@ describe.each<FixtureRuntime>(['claude', 'codex'])('%s consent boundary', (runti
     expect(userElements.length).toBeGreaterThan(0);
     // User-scope elements are displayed under `~`, i.e. they were discovered.
     expect(userElements.some((element) => (element.source.path ?? '').startsWith('~/'))).toBe(true);
+    if (runtime === 'codex') {
+      // The counterpoint to the deny case: under consent the parent-directory
+      // instruction file is read and displayed with a `../` prefix.
+      expect(
+        observed.elements.some(
+          (element) =>
+            element.native.kind === 'instructions' && (element.source.path ?? '').startsWith('../'),
+        ),
+      ).toBe(true);
+    }
   });
 
   it('does not read an out-of-project .git file before consent', async () => {

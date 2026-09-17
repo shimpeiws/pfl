@@ -18,8 +18,9 @@ import { resolveElements, type ElementResolutionInput } from '../../resolution/r
  *
  * ```text
  * kind                          applicability       strategy        activation
- * instructions                  project | global    accumulate      always
- * fallback-instructions         project             override        always   (replaces AGENTS.md)
+ * instructions                  global | project |  accumulate      always
+ *                               directory-subtree
+ * fallback-instructions         same as instructions override       always   (replaces the same-directory AGENTS.md)
  * skills                        project             available       on-demand (still effective)
  * permissions                   global              policy          always
  * memory                        project             accumulate      always
@@ -34,9 +35,18 @@ import { resolveElements, type ElementResolutionInput } from '../../resolution/r
  * anything else                 unknown             unknown         unknown  (unresolved)
  * ```
  *
- * `AGENTS.override.md` takes precedence over `AGENTS.md` in the same scope, so
- * the base file is `shadowed` when an override is present. Codex stores
- * project-scoped configuration centrally (`[projects.*]`), so there is no
+ * Instruction applicability is derived from where the file sits, not from its
+ * origin: `../…` (a parent directory read under consent) is `global`, a file in
+ * the project root is `project`, and a nested file governs its own directory
+ * subtree — which is what makes the classifier's `subtree-specific-instruction`
+ * rule reachable. A non-project instruction file (the user's `~/.codex/AGENTS.md`)
+ * stays `global`.
+ *
+ * `AGENTS.override.md` replaces the base `AGENTS.md` **in the same directory
+ * only**; across directories the files are independent and accumulate. The
+ * precedence is keyed on the file's directory and never crosses one, so a
+ * nested or parent-directory override cannot shadow an unrelated base. Codex
+ * stores project-scoped configuration centrally (`[projects.*]`), so there is no
  * cross-scope settings shadowing to apply. Skill dependencies are recorded as
  * observed structure, never inferred.
  */
@@ -83,12 +93,16 @@ function axesFor(element: ObservedElement): {
   switch (element.native.kind) {
     case 'instructions':
       return {
-        applicability: { type: element.native.origin === 'project' ? 'project' : 'global' },
+        applicability: instructionApplicability(element),
         strategy: 'accumulate',
         activation: 'always',
       };
     case 'fallback-instructions':
-      return { applicability: { type: 'project' }, strategy: 'override', activation: 'always' };
+      return {
+        applicability: instructionApplicability(element),
+        strategy: 'override',
+        activation: 'always',
+      };
     case 'skills':
       return { applicability: { type: 'project' }, strategy: 'available', activation: 'on-demand' };
     case 'plugin':
@@ -126,6 +140,21 @@ function eventTarget(element: ObservedElement): { target?: string } {
   if (!Array.isArray(events)) return {};
   const names = events.filter((value): value is string => typeof value === 'string');
   return names.length > 0 ? { target: names.join(',') } : {};
+}
+
+/**
+ * An instruction file's applicability comes from its directory: a parent read
+ * (`../AGENTS.md`) is global, the project-root file is project, and a nested file
+ * governs its directory subtree. The user harness instruction file is global by
+ * origin, since `~/.codex/AGENTS.md` is not a project-subtree instruction.
+ */
+function instructionApplicability(element: ObservedElement): Applicability {
+  if (element.native.origin !== 'project') return { type: 'global' };
+  const path = element.source.path;
+  if (path === undefined) return { type: 'unknown' };
+  const directory = dirname(path);
+  if (directory === '..' || directory.startsWith('../')) return { type: 'global' };
+  return directory === '.' ? { type: 'project' } : { type: 'directory-subtree', target: directory };
 }
 
 /**

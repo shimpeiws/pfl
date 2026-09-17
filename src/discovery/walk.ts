@@ -54,6 +54,20 @@ export type DescribeFile = (
 
 export interface WalkOptions {
   describeFile?: DescribeFile;
+  /**
+   * Only regular files matching this predicate are read and recorded; a file it
+   * rejects is neither opened nor listed. It keeps a search for a few known
+   * filenames (`AGENTS.md`) from reading and hashing every file in the tree, so
+   * the per-file byte ceiling and the read itself only apply to candidates
+   * (roadmap §5 M7, issue #75).
+   */
+  selectFile?: (relativePath: string) => boolean;
+  /**
+   * Directory names the walk must not descend into. A pruned directory is not
+   * recorded and its contents are never visited, so a walk over a whole project
+   * does not read `.git` or a package-manager tree (roadmap §5 M7, issue #75).
+   */
+  pruneDirectories?: readonly string[];
 }
 
 export interface WalkResult {
@@ -66,6 +80,10 @@ interface WalkState {
   entries: Map<string, DiscoveredPath>;
   diagnostics: Diagnostic[];
   describeFile?: DescribeFile;
+  /** Regular-file filter; a rejected file is neither read nor recorded. */
+  selectFile?: (relativePath: string) => boolean;
+  /** Directory names never descended into; see `WalkOptions.pruneDirectories`. */
+  pruneDirectories: ReadonlySet<string>;
   /** Entries examined so far, across every subpath, against `MAX_WALK_ENTRIES`. */
   walked: number;
   /** Set once the entry ceiling is hit, so the walk stops instead of roaming. */
@@ -81,7 +99,10 @@ interface WalkState {
  *
  * Hardlinks (`nlink > 1`) are refused because their inode is reachable from
  * outside the walked root, and resource ceilings bound the bytes read, the
- * number of entries, and the recursion depth (roadmap S3, S7).
+ * number of entries, and the recursion depth (roadmap S3, S7). `selectFile`
+ * narrows the walk to candidate filenames before they are read, and
+ * `pruneDirectories` names directories (`.git`, `node_modules`) that are neither
+ * recorded nor descended into.
  */
 export async function walkHarnessPaths(
   root: string,
@@ -94,7 +115,9 @@ export async function walkHarnessPaths(
     diagnostics: [],
     walked: 0,
     entryLimitHit: false,
+    pruneDirectories: new Set(options.pruneDirectories ?? []),
     ...(options.describeFile !== undefined ? { describeFile: options.describeFile } : {}),
+    ...(options.selectFile !== undefined ? { selectFile: options.selectFile } : {}),
   };
 
   for (const subpath of subpaths) {
@@ -134,7 +157,7 @@ export async function walkHarnessPaths(
       record(state, { relativePath, kind: 'directory' });
       await walkDirectory(state, target, 0);
     } else if (entry.isFile()) {
-      record(state, await fileEntry(state, target));
+      recordFile(state, await fileEntry(state, target));
     } else {
       state.diagnostics.push(nonRegularFile(relativePath));
       record(state, { relativePath, kind: 'unknown' });
@@ -192,10 +215,11 @@ async function walkDirectory(state: WalkState, dir: string, depth: number): Prom
       }
 
       if (dirent.isDirectory()) {
+        if (state.pruneDirectories.has(dirent.name)) continue;
         record(state, { relativePath, kind: 'directory' });
         await walkDirectory(state, full, depth + 1);
       } else if (dirent.isFile()) {
-        record(state, await fileEntry(state, full));
+        recordFile(state, await fileEntry(state, full));
       } else {
         state.diagnostics.push(nonRegularFile(relativePath));
         record(state, { relativePath, kind: 'unknown' });
@@ -206,8 +230,12 @@ async function walkDirectory(state: WalkState, dir: string, depth: number): Prom
   }
 }
 
-async function fileEntry(state: WalkState, full: string): Promise<DiscoveredPath> {
+async function fileEntry(state: WalkState, full: string): Promise<DiscoveredPath | null> {
   const relativePath = toRelative(state.root, full);
+
+  // A rejected candidate is never lstat'ed, opened, or recorded, so a search for
+  // a few known filenames does not pay the read cost for the whole tree.
+  if (state.selectFile !== undefined && !state.selectFile(relativePath)) return null;
 
   const entry = await lstat(full).catch(() => null);
   if (entry === null) {
@@ -288,6 +316,11 @@ function record(state: WalkState, entry: DiscoveredPath): void {
   if (!state.entries.has(entry.relativePath)) {
     state.entries.set(entry.relativePath, entry);
   }
+}
+
+/** Records a file entry, unless `selectFile` rejected it (then nothing is listed). */
+function recordFile(state: WalkState, entry: DiscoveredPath | null): void {
+  if (entry !== null) record(state, entry);
 }
 
 /**
