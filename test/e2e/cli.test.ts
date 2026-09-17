@@ -5,7 +5,12 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { EXIT_CODES } from '../../src/cli/exit-codes.js';
-import { grantConsent, materialize, type Materialized } from '../fixtures/materialize.js';
+import {
+  grantConsent,
+  materialize,
+  type FixtureRuntime,
+  type Materialized,
+} from '../fixtures/materialize.js';
 
 const execFileAsync = promisify(execFile);
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -47,10 +52,10 @@ function runCli(m: Materialized, args: string[]): Promise<CliResult> {
   });
 }
 
-async function fixture(): Promise<Materialized> {
-  const m = await materialize('claude');
+async function fixture(runtime: FixtureRuntime = 'claude'): Promise<Materialized> {
+  const m = await materialize(runtime);
   materialized.push(m);
-  await grantConsent(m.home, 'claude');
+  await grantConsent(m.home, runtime);
   return m;
 }
 
@@ -105,5 +110,18 @@ describe('pfl CLI end to end', () => {
     expect(result.code).toBe(EXIT_CODES.SUCCESS);
     expect(result.stdout).toContain('+ 0 added');
     expect(result.stdout).toContain('+ 0 newly effective');
+  });
+
+  it('inspects a Codex harness and runs the read commands', async () => {
+    const m = await fixture('codex');
+
+    const inspect = await runCli(m, ['inspect', '--runtime', 'codex']);
+    expect(inspect.code, inspect.stderr).toBe(EXIT_CODES.SUCCESS);
+    expect(inspect.stdout).toContain('Observed');
+
+    for (const args of [['report'], ['list'], ['graph'], ['snapshots']]) {
+      const result = await runCli(m, args);
+      expect(result.code, `${args.join(' ')}: ${result.stderr}`).toBe(EXIT_CODES.SUCCESS);
+    }
   });
 });

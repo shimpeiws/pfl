@@ -63,6 +63,8 @@ export interface Materialized {
   base: string;
   projectRoot: string;
   home: string;
+  /** The user harness directory that a consented run reads (`<home>/.claude` / `.codex`). */
+  userConfigDir: string;
   outsideDir: string;
   symlinkPath: string;
   /** The display path the snapshot uses for the symlink. */
@@ -121,6 +123,7 @@ export async function materialize(runtime: FixtureRuntime): Promise<Materialized
     base,
     projectRoot,
     home,
+    userConfigDir: runtime === 'claude' ? join(home, '.claude') : join(home, '.codex'),
     outsideDir,
     symlinkPath,
     symlinkRelativePath: runtime === 'claude' ? '.claude/link' : '~/.codex/skills/link',
@@ -144,9 +147,11 @@ export async function grantConsent(home: string, runtime: FixtureRuntime): Promi
 export interface FileFingerprint {
   hash: string;
   mtimeMs: number;
+  /** Permission bits, so a change to file mode is part of the fingerprint. */
+  mode: number;
 }
 
-/** Content hash and mtime for every regular file under `dir` (symlinks skipped). */
+/** Content hash, mtime, and mode for every regular file under `dir` (symlinks skipped). */
 export async function fingerprintTree(dir: string): Promise<Map<string, FileFingerprint>> {
   const fingerprints = new Map<string, FileFingerprint>();
   async function walk(current: string): Promise<void> {
@@ -163,6 +168,7 @@ export async function fingerprintTree(dir: string): Promise<Map<string, FileFing
         fingerprints.set(relative(dir, full), {
           hash: createHash('sha256').update(content).digest('hex'),
           mtimeMs: stats.mtimeMs,
+          mode: stats.mode & 0o777,
         });
       }
     }
@@ -171,7 +177,11 @@ export async function fingerprintTree(dir: string): Promise<Map<string, FileFing
   return fingerprints;
 }
 
-/** Concatenated text of every artifact the store wrote under `home/.pfl`. */
+/**
+ * Concatenated text of every artifact the store wrote under `home/.pfl`. Read
+ * errors are **not** swallowed: an empty result is a real result, so a caller
+ * asserting a negative must also assert this is non-empty (a positive control).
+ */
 export async function readStoreArtifacts(home: string): Promise<string> {
   const root = join(home, '.pfl');
   const chunks: string[] = [];
@@ -180,7 +190,7 @@ export async function readStoreArtifacts(home: string): Promise<string> {
     for (const entry of entries) {
       const full = join(current, entry.name);
       if (entry.isDirectory()) await walk(full);
-      else if (entry.isFile()) chunks.push(await readFile(full, 'utf8').catch(() => ''));
+      else if (entry.isFile()) chunks.push(await readFile(full, 'utf8'));
     }
   }
   await walk(root);

@@ -55,3 +55,31 @@ describe('readTomlFacts', () => {
     expect(facts.mcpServers).toEqual(['foo.bar', 'baz.qux']);
   });
 });
+
+describe('readTomlFacts pathological input (hostile corpus)', () => {
+  it('ignores an unterminated string', () => {
+    expect(readTomlFacts('model = "unterminated\n').values).toEqual({});
+  });
+
+  it('does not throw on malformed sections and control characters', () => {
+    const text = '[\n]\n[[\nmodel = "m"\n\u0000\u0007\nkey = \n';
+    expect(() => readTomlFacts(text)).not.toThrow();
+  });
+
+  it('handles a very long single line without failing', () => {
+    const facts = readTomlFacts(`value = "${'x'.repeat(200_000)}"\n`);
+    expect(facts.values['value']?.length).toBe(200_000);
+  });
+
+  it('handles CRLF line endings', () => {
+    expect(readTomlFacts('model = "m"\r\nother = "o"\r\n').values).toEqual({
+      model: 'm',
+      other: 'o',
+    });
+  });
+
+  it('collects many server sections', () => {
+    const text = Array.from({ length: 500 }, (_, index) => `[mcp_servers.s${index}]`).join('\n');
+    expect(readTomlFacts(text).mcpServers).toHaveLength(500);
+  });
+});

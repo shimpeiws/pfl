@@ -54,11 +54,16 @@ async function latestObserved(m: Materialized) {
 }
 
 describe.each<FixtureRuntime>(['claude', 'codex'])('%s harness invariants', (runtime) => {
-  it('is read-only: a full inspect changes nothing under the project', async () => {
+  it('is read-only: a full inspect changes nothing under the project or the user scope', async () => {
     const m = await materialize(runtime);
     materialized.push(m);
     await grantConsent(m.home, runtime);
-    const before = await fingerprintTree(m.projectRoot);
+    const beforeProject = await fingerprintTree(m.projectRoot);
+    const beforeUser = await fingerprintTree(m.userConfigDir);
+    // Positive control: the fingerprint actually covers files, so an empty
+    // comparison cannot pass vacuously.
+    expect(beforeProject.size).toBeGreaterThan(0);
+    expect(beforeUser.size).toBeGreaterThan(0);
 
     await runInspect(
       m.projectRoot,
@@ -66,7 +71,8 @@ describe.each<FixtureRuntime>(['claude', 'codex'])('%s harness invariants', (run
       silent,
     );
 
-    expect(await fingerprintTree(m.projectRoot)).toEqual(before);
+    expect(await fingerprintTree(m.projectRoot)).toEqual(beforeProject);
+    expect(await fingerprintTree(m.userConfigDir)).toEqual(beforeUser);
   });
 
   it('never follows the symlink and records it once as skipped', async () => {
@@ -120,6 +126,8 @@ describe.each<FixtureRuntime>(['claude', 'codex'])('%s harness invariants', (run
     const m = await inspect(runtime);
     const artifacts = await readStoreArtifacts(m.home);
 
+    // Positive control: a negative assertion over an empty store proves nothing.
+    expect(artifacts.length).toBeGreaterThan(0);
     for (const sentinel of SENTINELS) {
       expect(artifacts).not.toContain(sentinel);
     }
@@ -149,13 +157,18 @@ describe.each<FixtureRuntime>(['claude', 'codex'])('%s harness invariants', (run
 });
 
 describe('no-execution guard', () => {
-  it('never imports or calls a process-spawning API in src', async () => {
+  it('never imports or calls a process-spawning or code-evaluating API in src', async () => {
     const forbidden = [
       /child_process/,
       /\bexecSync\b/,
       /\bspawnSync\b/,
       /\bspawn\(/,
       /\bexecFile\(/,
+      /\beval\s*\(/,
+      /\bnew\s+Function\b/,
+      /node:vm/,
+      /\bimport\s*\(/,
+      /\brequire\s*\(/,
     ];
     const matches: string[] = [];
 
