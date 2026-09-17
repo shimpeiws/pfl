@@ -50,6 +50,7 @@ async function makeFixture(): Promise<Fixture> {
       mcpServers: { github: { command: 'npx' } },
       enabledPlugins: { 'pkg@market': true },
       secretToken: 'sk-ant-should-not-persist',
+      mysteryField: 'SENTINEL_UNKNOWN_FIELD',
     }),
   );
   await writeFile(join(root, '.claude', 'skills', 'foo', 'SKILL.md'), '# Foo skill\n');
@@ -191,6 +192,8 @@ describe('collectClaudeCodeHarness', () => {
       enabledPluginCount: 1,
     });
     expect(JSON.stringify(snapshot.elements)).not.toContain('sk-ant-should-not-persist');
+    // Allowlist: an unknown field is not persisted even when it is not secret.
+    expect(JSON.stringify(snapshot.elements)).not.toContain('SENTINEL_UNKNOWN_FIELD');
   });
 
   it('records the built-in instruction layer as opaque', async () => {

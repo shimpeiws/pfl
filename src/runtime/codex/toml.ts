@@ -22,7 +22,10 @@ export interface TomlFacts {
 const ASSIGNMENT = /^([A-Za-z0-9_-]+)\s*=\s*"((?:[^"\\]|\\.)*)"\s*$/;
 
 export function readTomlFacts(text: string): TomlFacts {
-  const values: Record<string, string> = {};
+  // A null-prototype map: a hostile `__proto__ = "…"` scalar cannot reach
+  // `Object.prototype` through an assignment (design invariants: prototype
+  // pollution defense).
+  const values: Record<string, string> = Object.create(null) as Record<string, string>;
   const mcpServers = new Set<string>();
   const plugins = new Set<string>();
   let inSection = false;

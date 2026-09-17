@@ -1,6 +1,4 @@
-import { createRequire } from 'node:module';
-
-const require = createRequire(import.meta.url);
+import { readFileSync } from 'node:fs';
 
 /**
  * The published pfl package version (`package.json` `version`). This is the
@@ -9,9 +7,13 @@ const require = createRequire(import.meta.url);
  * (`docs/design/pfl-design-v0.1.md`) and from the snapshot schema version
  * (decided in `docs/design/adr/0001-snapshot-serialization-and-ids.md`).
  *
- * `createRequire(import.meta.url)` resolves `../package.json` relative to the
- * compiled module (`dist/version.js`), so it reaches the manifest both from a
- * source checkout and from the packed tarball (`dist/` sits at the package
- * root, exactly one level below `package.json`).
+ * `package.json` is read as data, never executed: `new URL('../package.json',
+ * import.meta.url)` resolves to the package root from both a source checkout
+ * (`src/version.ts`) and the packed tarball (`dist/version.js`, one level below
+ * the manifest).
  */
-export const packageVersion: string = require('../package.json').version;
+export const packageVersion: string = (
+  JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as {
+    version: string;
+  }
+).version;

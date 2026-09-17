@@ -6,6 +6,7 @@ import {
   mkdtemp,
   readFile,
   readdir,
+  readlink,
   rm,
   stat,
   symlink,
@@ -63,6 +64,8 @@ export interface Materialized {
   base: string;
   projectRoot: string;
   home: string;
+  /** The user harness directory that a consented run reads (`<home>/.claude` / `.codex`). */
+  userConfigDir: string;
   outsideDir: string;
   symlinkPath: string;
   /** The display path the snapshot uses for the symlink. */
@@ -121,6 +124,7 @@ export async function materialize(runtime: FixtureRuntime): Promise<Materialized
     base,
     projectRoot,
     home,
+    userConfigDir: runtime === 'claude' ? join(home, '.claude') : join(home, '.codex'),
     outsideDir,
     symlinkPath,
     symlinkRelativePath: runtime === 'claude' ? '.claude/link' : '~/.codex/skills/link',
@@ -144,25 +148,46 @@ export async function grantConsent(home: string, runtime: FixtureRuntime): Promi
 export interface FileFingerprint {
   hash: string;
   mtimeMs: number;
+  /** Permission bits, so a change to file mode is part of the fingerprint. */
+  mode: number;
 }
 
-/** Content hash and mtime for every regular file under `dir` (symlinks skipped). */
-export async function fingerprintTree(dir: string): Promise<Map<string, FileFingerprint>> {
+export interface FingerprintOptions {
+  /** Relative paths (or path prefixes) to skip, e.g. the store `pfl` writes. */
+  exclude?: readonly string[];
+}
+
+/**
+ * Content hash, mtime, and mode for every regular file under `dir`, plus the
+ * target of every symlink (so retargeting a link is detected). `atime` is
+ * intentionally excluded: reading a file changes it. Symlinked directories are
+ * not descended.
+ */
+export async function fingerprintTree(
+  dir: string,
+  options: FingerprintOptions = {},
+): Promise<Map<string, FileFingerprint>> {
+  const exclude = options.exclude ?? [];
   const fingerprints = new Map<string, FileFingerprint>();
   async function walk(current: string): Promise<void> {
     const entries = await readdir(current, { withFileTypes: true });
     for (const entry of entries) {
       const full = join(current, entry.name);
+      const rel = relative(dir, full);
+      if (exclude.some((skip) => rel === skip || rel.startsWith(`${skip}/`))) continue;
       if (entry.isDirectory()) {
         await walk(full);
+      } else if (entry.isSymbolicLink()) {
+        fingerprints.set(rel, { hash: `symlink:${await readlink(full)}`, mtimeMs: 0, mode: 0 });
       } else if (entry.isFile()) {
         const [content, stats] = await Promise.all([
           readFile(full).catch(() => Buffer.from('')),
           stat(full),
         ]);
-        fingerprints.set(relative(dir, full), {
+        fingerprints.set(rel, {
           hash: createHash('sha256').update(content).digest('hex'),
           mtimeMs: stats.mtimeMs,
+          mode: stats.mode & 0o777,
         });
       }
     }
@@ -171,7 +196,11 @@ export async function fingerprintTree(dir: string): Promise<Map<string, FileFing
   return fingerprints;
 }
 
-/** Concatenated text of every artifact the store wrote under `home/.pfl`. */
+/**
+ * Concatenated text of every artifact the store wrote under `home/.pfl`. Read
+ * errors are **not** swallowed: an empty result is a real result, so a caller
+ * asserting a negative must also assert this is non-empty (a positive control).
+ */
 export async function readStoreArtifacts(home: string): Promise<string> {
   const root = join(home, '.pfl');
   const chunks: string[] = [];
@@ -180,7 +209,7 @@ export async function readStoreArtifacts(home: string): Promise<string> {
     for (const entry of entries) {
       const full = join(current, entry.name);
       if (entry.isDirectory()) await walk(full);
-      else if (entry.isFile()) chunks.push(await readFile(full, 'utf8').catch(() => ''));
+      else if (entry.isFile()) chunks.push(await readFile(full, 'utf8'));
     }
   }
   await walk(root);
