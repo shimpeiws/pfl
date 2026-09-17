@@ -1,11 +1,11 @@
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { basename, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { assembleObservedSnapshot } from '../../discovery/assemble.js';
 import { frontmatterMetadata, readFrontmatter } from '../../discovery/frontmatter.js';
 import { filterToAllowlist } from '../../discovery/metadata.js';
 import { buildObservedElement } from '../../discovery/observed-element.js';
-import { walkHarnessPaths } from '../../discovery/walk.js';
+import { walkHarnessPaths, type DiscoveredPath } from '../../discovery/walk.js';
 import type { Diagnostic } from '../../core/diagnostics.js';
 import { runtimeId } from '../../core/ids.js';
 import type {
@@ -16,7 +16,12 @@ import type {
   ObservedSnapshot,
   SafeMetadataValue,
 } from '../../core/observed.js';
-import { MAX_FILE_BYTES, MAX_PARSE_BYTES, limitExceededDiagnostic } from '../../limits.js';
+import {
+  MAX_FILE_BYTES,
+  MAX_PARSE_BYTES,
+  MAX_ANCESTOR_DIRS,
+  limitExceededDiagnostic,
+} from '../../limits.js';
 import { inspectFileTarget, readTextFileGuarded } from '../../util/fs.js';
 import { sha256Digest } from '../../util/hash.js';
 import { packageVersion } from '../../version.js';
@@ -26,7 +31,10 @@ import { CODEX_SAFE_METADATA_ALLOWLIST } from './metadata.js';
 import { redactCodex } from './redact.js';
 import {
   MODELLED_CONFIG_SECTIONS,
+  PROJECT_CONFIG_DIR,
   PROJECT_INSTRUCTION_FILES,
+  PROJECT_SKILLS_DIR,
+  PROJECT_WALK_PRUNE_DIRECTORIES,
   USER_CONFIG_FILE,
   USER_DIR_KIND,
   USER_ELEMENT_DIRS,
@@ -81,6 +89,7 @@ export async function collectCodexHarness(
 
   await collectProject(project, elements, diagnostics);
   if (access.allowOutsideProject) {
+    await collectAncestorInstructions(project, elements, diagnostics);
     await collectUser(project, home, elements, diagnostics);
   }
   elements.push(builtinLayer());
@@ -104,22 +113,104 @@ async function collectProject(
   elements: ObservedElement[],
   diagnostics: Diagnostic[],
 ): Promise<void> {
-  for (const file of PROJECT_INSTRUCTION_FILES) {
-    // AGENTS.override.md is recorded as the fallback layer; whether it replaces
-    // or layers over AGENTS.md is resolution (M2, #15), never guessed here.
-    const kind: CodexElementKind =
-      file === 'AGENTS.override.md' ? 'fallback-instructions' : 'instructions';
-    await addKnownFile(
-      join(project.root, file),
-      file,
-      'project',
-      'project',
-      kind,
-      project.root,
-      elements,
-      diagnostics,
-    );
+  // One subtree walk finds the project-root files and every nested `AGENTS.md`,
+  // so a root file is never recorded twice. `.git` and `node_modules` are pruned,
+  // and files under the project config directory are excluded by path: a file
+  // there is already discovered as a skill, and recording it here too would mint
+  // a second element under the same id.
+  await addWalkedArea(
+    project.root,
+    '.',
+    '',
+    'project',
+    'project',
+    instructionKindForPath,
+    elements,
+    diagnostics,
+    {
+      extractFrontmatter: false,
+      selectFile: isProjectInstructionPath,
+      pruneDirectories: PROJECT_WALK_PRUNE_DIRECTORIES,
+    },
+  );
+
+  // Project-scoped skills live beside the user-scoped ones, not in the project
+  // root, so they are walked as their own area and get frontmatter metadata.
+  await addWalkedArea(
+    project.root,
+    join(PROJECT_CONFIG_DIR, PROJECT_SKILLS_DIR),
+    '',
+    'project',
+    'project',
+    () => 'skills',
+    elements,
+    diagnostics,
+  );
+}
+
+/**
+ * Codex reads `AGENTS.md` from the project's parent directories, so the walk
+ * starts at `dirname(project.root)` and climbs at most `MAX_ANCESTOR_DIRS`
+ * levels. That is an out-of-project read: the caller gates the whole loop on
+ * consent, reaching the filesystem root is the natural end, and hitting the
+ * ceiling is recorded so a deeper project is visibly truncated rather than
+ * silently missing its ancestors. Symlinked or hardlinked files are refused by
+ * `addKnownFile`, like every other fixed read.
+ */
+async function collectAncestorInstructions(
+  project: ProjectContext,
+  elements: ObservedElement[],
+  diagnostics: Diagnostic[],
+): Promise<void> {
+  let directory = dirname(project.root);
+  for (let level = 1; level <= MAX_ANCESTOR_DIRS; level += 1) {
+    const prefix = '../'.repeat(level);
+    for (const file of PROJECT_INSTRUCTION_FILES) {
+      await addKnownFile(
+        join(directory, file),
+        `${prefix}${file}`,
+        'project',
+        'project',
+        file === 'AGENTS.override.md' ? 'fallback-instructions' : 'instructions',
+        directory,
+        elements,
+        diagnostics,
+      );
+    }
+    const parent = dirname(directory);
+    if (parent === directory) return; // the filesystem root; nothing above it
+    directory = parent;
   }
+  diagnostics.push(
+    limitExceededDiagnostic(
+      'MAX_ANCESTOR_DIRS',
+      MAX_ANCESTOR_DIRS,
+      '../'.repeat(MAX_ANCESTOR_DIRS),
+    ),
+  );
+}
+
+/** The instruction kind a project-subtree file carries, or `undefined` to ignore it. */
+function instructionKindForPath(relativePath: string): CodexElementKind | undefined {
+  const name = basename(relativePath);
+  if (name === 'AGENTS.override.md') return 'fallback-instructions';
+  if (name === 'AGENTS.md') return 'instructions';
+  return undefined;
+}
+
+/**
+ * Whether a project-subtree path is a project instruction candidate. The project
+ * config directory is excluded by *path*, not by name: only `<project>/.codex`
+ * is the config directory, and pruning every `.codex` directory would miss a
+ * nested instruction file in a subdirectory that happens to share the name. Its
+ * files are discovered by the skills walk, so an `AGENTS.md` inside it is a skill
+ * file, not a second instruction element.
+ */
+function isProjectInstructionPath(relativePath: string): boolean {
+  return (
+    instructionKindForPath(relativePath) !== undefined &&
+    !relativePath.startsWith(`${PROJECT_CONFIG_DIR}/`)
+  );
 }
 
 async function collectUser(
@@ -383,65 +474,106 @@ async function collectHooks(
   }
 }
 
+interface WalkedAreaOptions {
+  /**
+   * Extract frontmatter metadata from each file's content. Element directories
+   * (skills, rules, memories) want it; a project-wide instruction walk does not,
+   * because it reads unrelated files and must not treat their content as
+   * instructions.
+   */
+  extractFrontmatter?: boolean;
+  /** Regular-file filter: only matching files are read and recorded. */
+  selectFile?: (relativePath: string) => boolean;
+  /** Directory names the walk must not descend into. */
+  pruneDirectories?: readonly string[];
+}
+
 async function addWalkedArea(
   root: string,
   subpath: string,
   displayPrefix: string,
   origin: NativeOrigin,
   scope: string,
-  resolveKind: (relativePath: string) => CodexElementKind,
+  resolveKind: (relativePath: string) => CodexElementKind | undefined,
   elements: ObservedElement[],
   diagnostics: Diagnostic[],
+  options: WalkedAreaOptions = {},
 ): Promise<void> {
   const walked = await walkHarnessPaths(root, [subpath], {
-    describeFile: (relativePath, content) => {
-      const displayPath = displayPrefix ? `${displayPrefix}/${relativePath}` : relativePath;
-      const read = readFrontmatter(content);
-      if (read.malformed) diagnostics.push(malformedFrontmatterDiagnostic(displayPath));
-      return toSafeMetadata(frontmatterMetadata(read.facts));
-    },
+    ...(options.pruneDirectories !== undefined
+      ? { pruneDirectories: options.pruneDirectories }
+      : {}),
+    ...(options.selectFile !== undefined ? { selectFile: options.selectFile } : {}),
+    ...(options.extractFrontmatter === false
+      ? {}
+      : {
+          describeFile: (relativePath: string, content: string) => {
+            const displayPath = displayPrefix ? `${displayPrefix}/${relativePath}` : relativePath;
+            const read = readFrontmatter(content);
+            if (read.malformed) diagnostics.push(malformedFrontmatterDiagnostic(displayPath));
+            return toSafeMetadata(frontmatterMetadata(read.facts));
+          },
+        }),
   });
   diagnostics.push(...walked.diagnostics);
 
   for (const entry of walked.entries) {
     if (entry.kind === 'directory') continue;
     const kind = resolveKind(entry.relativePath);
+    if (kind === undefined) continue;
     const displayPath = displayPrefix
       ? `${displayPrefix}/${entry.relativePath}`
       : entry.relativePath;
-
-    if (entry.kind === 'symlink') {
-      elements.push(symlinkElement(origin, scope, kind, displayPath));
-      continue;
-    }
-    if (entry.skipReason !== undefined) {
-      elements.push(
-        skippedElement(origin, scope, kind, displayPath, reasonForWalkSkip(entry.skipReason)),
-      );
-      continue;
-    }
-    if (entry.kind === 'unknown') {
-      elements.push(skippedNonRegularElement(origin, scope, kind, displayPath));
-      continue;
-    }
-    if (entry.digest === undefined) {
-      diagnostics.push(unreadableDiagnostic(displayPath));
-      elements.push(unreadableElement(origin, scope, kind, displayPath));
-      continue;
-    }
-    elements.push(
-      buildObservedElement({
-        runtimeId: RUNTIME_ID,
-        origin,
-        scope,
-        kind,
-        path: displayPath,
-        digest: entry.digest,
-        ...(entry.sizeBytes !== undefined ? { sizeBytes: entry.sizeBytes } : {}),
-        metadata: { ...metadataForPath(displayPath), ...(entry.metadata ?? {}) },
-      }),
-    );
+    pushWalkedEntry(entry, origin, scope, kind, displayPath, elements, diagnostics);
   }
+}
+
+/**
+ * Records one walked entry as an observed element. A symlink, a refused
+ * hardlink or oversized file, a non-regular entry, and a file that could not be
+ * read are each surfaced with their reason rather than dropped, which is the
+ * best-effort invariant (design doc §10.2, §10.3, §18).
+ */
+function pushWalkedEntry(
+  entry: DiscoveredPath,
+  origin: NativeOrigin,
+  scope: string,
+  kind: CodexElementKind,
+  displayPath: string,
+  elements: ObservedElement[],
+  diagnostics: Diagnostic[],
+): void {
+  if (entry.kind === 'symlink') {
+    elements.push(symlinkElement(origin, scope, kind, displayPath));
+    return;
+  }
+  if (entry.skipReason !== undefined) {
+    elements.push(
+      skippedElement(origin, scope, kind, displayPath, reasonForWalkSkip(entry.skipReason)),
+    );
+    return;
+  }
+  if (entry.kind === 'unknown') {
+    elements.push(skippedNonRegularElement(origin, scope, kind, displayPath));
+    return;
+  }
+  if (entry.digest === undefined) {
+    diagnostics.push(unreadableDiagnostic(displayPath));
+    elements.push(unreadableElement(origin, scope, kind, displayPath));
+    return;
+  }
+  elements.push(
+    buildObservedElement({
+      runtimeId: RUNTIME_ID,
+      origin,
+      scope,
+      kind,
+      path: displayPath,
+      digest: entry.digest,
+      ...(entry.sizeBytes !== undefined ? { sizeBytes: entry.sizeBytes } : {}),
+      metadata: { ...metadataForPath(displayPath), ...(entry.metadata ?? {}) },
+    }),
+  );
 }
 
 async function addKnownFile(

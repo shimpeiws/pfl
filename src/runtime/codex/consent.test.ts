@@ -11,7 +11,10 @@ import { CONSENT_GROUPS } from './consent.js';
  * is what this test can enforce.
  */
 const EXPECTED = [
-  { title: 'Project', locations: ['./AGENTS.md', './AGENTS.override.md'] },
+  {
+    title: 'Project',
+    locations: ['./AGENTS.md', './AGENTS.override.md', './.codex/skills/**'],
+  },
   {
     title: 'User',
     locations: [
@@ -28,7 +31,10 @@ const EXPECTED = [
     title: 'Installation and version metadata',
     locations: ['~/.codex/packages/standalone/releases', '~/.codex/packages/standalone'],
   },
-  { title: 'External references', locations: ['MCP configuration metadata'] },
+  {
+    title: 'External references',
+    locations: ['../ (parent directories, bounded)', 'MCP configuration metadata'],
+  },
 ];
 
 describe('Codex consent groups', () => {

@@ -1,7 +1,9 @@
 import type { ConsentLocationGroup } from '../../discovery/consent.js';
 import { INSTALL_LOCATIONS } from './detect.js';
 import {
+  PROJECT_CONFIG_DIR,
   PROJECT_INSTRUCTION_FILES,
+  PROJECT_SKILLS_DIR,
   USER_CONFIG_FILE,
   USER_ELEMENT_DIRS,
   USER_HOOKS_FILE,
@@ -22,7 +24,10 @@ const USER_PREFIX = '~/.codex';
 export const CONSENT_GROUPS: readonly ConsentLocationGroup[] = [
   {
     title: 'Project',
-    locations: PROJECT_INSTRUCTION_FILES.map((file) => `./${file}`),
+    locations: [
+      ...PROJECT_INSTRUCTION_FILES.map((file) => `./${file}`),
+      `./${PROJECT_CONFIG_DIR}/${PROJECT_SKILLS_DIR}/**`,
+    ],
   },
   {
     title: 'User',
@@ -37,5 +42,8 @@ export const CONSENT_GROUPS: readonly ConsentLocationGroup[] = [
     title: 'Installation and version metadata',
     locations: INSTALL_LOCATIONS.map((location) => `~/${location}`),
   },
-  { title: 'External references', locations: ['MCP configuration metadata'] },
+  {
+    title: 'External references',
+    locations: ['../ (parent directories, bounded)', 'MCP configuration metadata'],
+  },
 ];

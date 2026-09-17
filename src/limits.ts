@@ -49,12 +49,22 @@ export const MAX_TOML_SECTION_DEPTH = 8;
 export const MAX_TOML_ARRAY_ITEMS = 256;
 export const MAX_TOML_SCALAR_LENGTH = 256;
 
+/**
+ * Ancestor-directory ceiling (roadmap §5 M7, issue #75). Codex reads
+ * `AGENTS.md` from the project's parent directories, which is an out-of-project
+ * read, so the upward walk is bounded rather than roaming to the filesystem
+ * root. Hitting the ceiling is recorded as a diagnostic, so a project nested
+ * deeper than this is visibly truncated rather than silently missing ancestors.
+ */
+export const MAX_ANCESTOR_DIRS = 16;
+
 export type LimitName =
   | 'MAX_FILE_BYTES'
   | 'MAX_WALK_ENTRIES'
   | 'MAX_WALK_DEPTH'
   | 'MAX_ARTIFACT_BYTES'
-  | 'MAX_PARSE_BYTES';
+  | 'MAX_PARSE_BYTES'
+  | 'MAX_ANCESTOR_DIRS';
 
 /**
  * A `limit-exceeded` diagnostic. It names the limit that was hit and its value

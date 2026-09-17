@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { EXIT_CODES } from '../../src/cli/exit-codes.js';
+import { elementIdFor, runtimeId } from '../../src/core/ids.js';
 import {
   grantConsent,
   materialize,
@@ -148,6 +149,52 @@ describe('pfl CLI end to end', () => {
     const diff = await runCli(m, ['diff', resolvedId, resolvedId]);
     expect(diff.code, diff.stderr).toBe(EXIT_CODES.SUCCESS);
     expect(diff.stdout).toContain('+ 0 added');
+  });
+
+  it('resolves the Codex project skills and the AGENTS.md tree', async () => {
+    const m = await fixture('codex');
+    const inspect = await runCli(m, ['inspect', '--runtime', 'codex']);
+    expect(inspect.code, inspect.stderr).toBe(EXIT_CODES.SUCCESS);
+
+    const idFor = (path: string): string =>
+      elementIdFor({ runtimeId: runtimeId('codex'), origin: 'project', path });
+    const show = async (path: string) => {
+      const result = await runCli(m, ['show', idFor(path), '--json']);
+      expect(result.code, `${path}: ${result.stderr}`).toBe(EXIT_CODES.SUCCESS);
+      return JSON.parse(result.stdout.trim().split('\n').at(-1) ?? '{}') as {
+        observed: { native: { kind: string; origin: string; scope: string } };
+        resolved: { status: string; applicability: { type: string; target?: string } };
+      };
+    };
+
+    // A project-scoped skill, discovered under `<project>/.codex/skills/**`.
+    const skill = await show('.codex/skills/project-skill/SKILL.md');
+    expect(skill.observed.native).toMatchObject({
+      kind: 'skills',
+      origin: 'project',
+      scope: 'project',
+    });
+    expect(skill.resolved).toMatchObject({
+      status: 'effective',
+      applicability: { type: 'project' },
+    });
+
+    // A nested AGENTS.md governs its own directory subtree.
+    const nested = await show('docs/AGENTS.md');
+    expect(nested.resolved).toMatchObject({
+      status: 'effective',
+      applicability: { type: 'directory-subtree', target: 'docs' },
+    });
+
+    // The parent-directory file is read under consent and is global.
+    const parent = await show('../AGENTS.md');
+    expect(parent.resolved.applicability).toEqual({ type: 'global' });
+
+    // Same-directory override shadows the base; the nested base in a different
+    // directory is not shadowed by any override.
+    expect((await show('AGENTS.md')).resolved.status).toBe('shadowed');
+    expect((await show('AGENTS.override.md')).resolved.status).toBe('effective');
+    expect(nested.resolved.status).toBe('effective');
   });
 
   it('reports the package version from the packed layout', async () => {
