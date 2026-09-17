@@ -242,17 +242,35 @@ stored interpretation is never an error; a stored interpretation this binary
 cannot interpret is not absence and fails the read like any other uninterpretable
 artifact.
 
-### `gc` (implemented under issue #87)
+### `gc`
 
 The envelope applies unchanged. `data` lists what was or would be reclaimed,
 with `--dry-run` and `--keep <n>` deciding what that is:
 
 ```text
-{ dryRun, keep, retained: [...], reclaimed: [...], orphans: [...] }
+{
+  dryRun, keep,
+  retained:  [{ observedId, resolvedId: string|null, interpretationId: string|null }],
+  reclaimed: [{ observedId, resolvedId: string|null, interpretationId: string|null }],
+  orphans:   [{ id, path, reason }],
+  reclaimedOrphans: [{ id, path, reason }],
+  unreferenced: [{ id, path, reason }]
+}
 ```
 
-The exact id fields land with #87; the envelope and the failure shape above are
-fixed here.
+`retained` is the runs kept (newest first; the run named by `latest` is always
+among them). `reclaimed` is the runs deleted — or, under `--dry-run`, the runs
+that would be. A run is reclaimed as a whole: its observed snapshot, resolved
+snapshot, and interpretation together. A run that cannot be deleted as a whole
+(an observation with no resolved snapshot) is reported and left intact.
+
+`orphans` are histories the index references whose every project root is gone.
+They are deleted only with `--prune-orphans` and never under `--dry-run`;
+`reclaimedOrphans` is the subset actually deleted. `unreferenced` are store
+directories the index does not reference — their root is unknown, so they are
+reported and never deleted. An artifact that cannot be attributed to a run is
+reported and never deleted; an artifact that belongs to a reclaimed run is
+deleted with it. `snapshots` and `gc` report `completeness: "unknown"`.
 
 ## Redaction
 

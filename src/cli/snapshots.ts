@@ -2,6 +2,7 @@ import { homedir } from 'node:os';
 import { hasAnyUserConsent } from '../discovery/consent.js';
 import { resolveProjectContext } from '../discovery/project-identity.js';
 import { redactingLogger } from '../redact/output.js';
+import { resolveStoredProjectId } from '../snapshot/project-index.js';
 import { listRuns, type StoredRunSummary } from '../snapshot/store.js';
 import type { Logger } from '../util/logger.js';
 import { type CommandOutcome } from './document.js';
@@ -29,10 +30,12 @@ export async function runSnapshots(
 ): Promise<CommandOutcome<SnapshotsData>> {
   const home = options.home ?? homedir();
   const out = redactingLogger(logger, options.json ? 'export' : 'display', { home });
-  const project = await resolveProjectContext(cwd, {
+  const context = await resolveProjectContext(cwd, {
     allowExternalGit: await hasAnyUserConsent(home),
   });
-  const { runs, diagnostics } = await listRuns(project.id, home);
+  const stored = await resolveStoredProjectId(context, home, { write: false });
+  const { runs, diagnostics } = await listRuns(stored.id, home);
+  diagnostics.unshift(...stored.diagnostics);
 
   for (const diagnostic of diagnostics) {
     out.warn(diagnostic.message, { code: diagnostic.code, path: diagnostic.path });
@@ -40,7 +43,7 @@ export async function runSnapshots(
 
   // No single harness is observed; the envelope reports `unknown` completeness.
   const outcome = {
-    data: { project: project.id, runs },
+    data: { project: stored.id, runs },
     diagnostics,
     completeness: 'unknown' as const,
   };
@@ -48,11 +51,11 @@ export async function runSnapshots(
   if (options.json) return outcome;
 
   if (runs.length === 0) {
-    out.info(`No snapshots stored for ${project.displayName}.`);
+    out.info(`No snapshots stored for ${context.displayName}.`);
     return outcome;
   }
 
-  out.info(`${runs.length} snapshot(s) for ${project.displayName}:`);
+  out.info(`${runs.length} snapshot(s) for ${context.displayName}:`);
   for (const run of runs) {
     out.info(formatRun(run));
   }

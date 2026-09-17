@@ -9,6 +9,7 @@ import {
   type CommandOutcome,
 } from './cli/document.js';
 import { EXIT_CODES, PflError } from './cli/exit-codes.js';
+import { runGc } from './cli/gc.js';
 import { runGraph } from './cli/graph.js';
 import { runInspect } from './cli/inspect.js';
 import { runList } from './cli/list.js';
@@ -23,6 +24,23 @@ const cli = cac('pfl');
 
 interface CommonFlags {
   json?: boolean;
+}
+
+/**
+ * Parses `gc --keep`. A value-less option arrives as `true` (and `--no-keep` as
+ * `false`), and a whitespace-only string coerces to 0; each would silently
+ * reclaim every run but the latest, so they are refused rather than clamped.
+ */
+function parseKeep(value: string | number | boolean | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value === 'boolean' || (typeof value === 'string' && value.trim() === '')) {
+    throw new PflError('--keep requires a non-negative integer', EXIT_CODES.CONFIG_ERROR);
+  }
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new PflError('--keep requires a non-negative integer', EXIT_CODES.CONFIG_ERROR);
+  }
+  return parsed;
 }
 
 /**
@@ -165,6 +183,37 @@ cli
     withErrorHandling('snapshots', async (flags: CommonFlags) => {
       return runSnapshots(process.cwd(), { json: flags.json ?? false }, loggerForFlags(flags));
     }),
+  );
+
+cli
+  .command('gc', 'Reclaim old snapshots and orphaned histories')
+  .option('--dry-run', 'List what would be reclaimed without deleting')
+  .option('--keep <n>', 'Runs to retain for this project (default 20)')
+  .option('--prune-orphans', 'Also reclaim orphaned project directories')
+  .option('--json', 'Output as JSON')
+  .action(
+    withErrorHandling(
+      'gc',
+      async (
+        flags: {
+          dryRun?: boolean;
+          keep?: string | number | boolean;
+          pruneOrphans?: boolean;
+        } & CommonFlags,
+      ) => {
+        const keep = parseKeep(flags.keep);
+        return runGc(
+          process.cwd(),
+          {
+            dryRun: flags.dryRun ?? false,
+            ...(keep !== undefined ? { keep } : {}),
+            pruneOrphans: flags.pruneOrphans ?? false,
+            json: flags.json ?? false,
+          },
+          loggerForFlags(flags),
+        );
+      },
+    ),
   );
 
 cli

@@ -1,5 +1,15 @@
 import { randomBytes } from 'node:crypto';
-import { access, chmod, link, mkdir, readdir, rename, unlink, writeFile } from 'node:fs/promises';
+import {
+  access,
+  chmod,
+  link,
+  lstat,
+  mkdir,
+  readdir,
+  rename,
+  unlink,
+  writeFile,
+} from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { EXIT_CODES, PflError } from '../cli/exit-codes.js';
@@ -133,6 +143,27 @@ export function interpretationsDir(projectId: string, home: string = homedir()):
 
 export function latestPath(projectId: string, home: string = homedir()): string {
   return join(projectDir(projectId, home), LATEST_FILE);
+}
+
+/**
+ * The project ids with a directory under the store. Used by `pfl gc` to find
+ * histories the index no longer references. A name that is not a safe segment
+ * or not a real directory (a symlinked project directory is never followed) is
+ * skipped.
+ */
+export async function listProjectIds(home: string = homedir()): Promise<string[]> {
+  const root = join(pflHome(home), 'projects');
+  const names = await readdir(root).catch((error: unknown) => {
+    if (isNotFound(error)) return [] as string[];
+    throw snapshotStoreError(`could not read the project store: ${errorMessage(error)}`);
+  });
+  const ids: string[] = [];
+  for (const name of names) {
+    if (!SAFE_SEGMENT.test(name)) continue;
+    const entry = await lstat(join(root, name)).catch(() => null);
+    if (entry?.isDirectory() === true) ids.push(name);
+  }
+  return ids;
 }
 
 /** A run's stable facts: one observation event and its resolved snapshot (§23). */
@@ -463,6 +494,16 @@ type ArtifactClass = 'observations' | 'snapshots' | 'interpretations';
 function artifactPath(dir: string, id: string): string {
   assertSafeSegment(id, 'artifact id');
   return join(dir, `${id}${ARTIFACT_SUFFIX}`);
+}
+
+/** A path to one artifact, rejecting an id that could escape the store directory. */
+export function artifactFilePath(dir: string, id: string): string {
+  return artifactPath(dir, id);
+}
+
+/** Whether `value` is safe to use as a single path segment. */
+export function isSafeSegment(value: string): boolean {
+  return SAFE_SEGMENT.test(value);
 }
 
 /** A store-relative label that names the artifact class, e.g. `snapshots/res_x.json`. */

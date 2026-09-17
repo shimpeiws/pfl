@@ -1,5 +1,5 @@
 import { execFile, spawn } from 'node:child_process';
-import { rm, readFile, writeFile } from 'node:fs/promises';
+import { mkdir, rm, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
@@ -470,6 +470,45 @@ describe('pfl CLI end to end', () => {
         (diagnostic) => diagnostic.code,
       ),
     ).toContain('unsupported-snapshot-schema');
+  });
+
+  it('reclaims old runs with gc, listing a dry run first', async () => {
+    const m = await fixture();
+    await runCli(m, ['inspect', '--runtime', 'claude-code']);
+    await runCli(m, ['inspect', '--runtime', 'claude-code']);
+
+    // An unindexed directory is reported, never deleted; `--json` stays one
+    // document even with it present.
+    await mkdir(join(m.home, '.pfl', 'projects', 'orphan-e2e'), { recursive: true });
+
+    const dry = await runCli(m, ['gc', '--keep', '1', '--dry-run', '--json']);
+    expect(dry.code, dry.stderr).toBe(EXIT_CODES.SUCCESS);
+    const dryDocument = JSON.parse(dry.stdout) as {
+      command: string;
+      data: {
+        dryRun: boolean;
+        retained: unknown[];
+        reclaimed: unknown[];
+        unreferenced: { id: string }[];
+      };
+    };
+    expect(dryDocument.command).toBe('gc');
+    expect(dryDocument.data.dryRun).toBe(true);
+    expect(dryDocument.data.retained).toHaveLength(1);
+    expect(dryDocument.data.reclaimed).toHaveLength(1);
+    expect(dryDocument.data.unreferenced.map((entry) => entry.id)).toContain('orphan-e2e');
+
+    // A value-less `--keep` (here `--no-keep`) must not silently mean "keep 1".
+    const badKeep = await runCli(m, ['gc', '--no-keep', '--json']);
+    expect(badKeep.code).toBe(EXIT_CODES.CONFIG_ERROR);
+
+    const applied = await runCli(m, ['gc', '--keep', '1']);
+    expect(applied.code, applied.stderr).toBe(EXIT_CODES.SUCCESS);
+
+    const snapshots = JSON.parse((await runCli(m, ['snapshots', '--json'])).stdout) as {
+      data: { runs: unknown[] };
+    };
+    expect(snapshots.data.runs).toHaveLength(1);
   });
 
   it('emits the failure envelope on a non-zero exit', async () => {
