@@ -1028,7 +1028,6 @@ interface Interpretation {
     confidence:
       | "high"
       | "medium"
-      | "low"
       | "unknown";
   }[];
 

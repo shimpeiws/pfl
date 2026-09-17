@@ -2,10 +2,12 @@ import { link, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { deriveFindings } from '../../classify/findings.js';
 import type { ObservedElement } from '../../core/observed.js';
 import { MAX_ANCESTOR_DIRS } from '../../limits.js';
 import { MANAGED_CONFIG_DIR, encodeProjectDir, userConfigDir } from './paths.js';
 import { collectClaudeCodeHarness, managedConfigDirFor } from './discovery.js';
+import { resolveClaudeCode } from './resolve.js';
 
 const originalPath = process.env['PATH'];
 
@@ -215,6 +217,22 @@ describe('collectClaudeCodeHarness', () => {
     expect(paths.get('docs/CLAUDE.md')?.native.kind).toBe('instructions');
     expect(paths.get('../CLAUDE.md')?.native.kind).toBe('instructions');
     expect(paths.get('../CLAUDE.local.md')?.native.kind).toBe('instructions');
+  });
+
+  it('makes subtree-specific-instruction reachable through discovery and resolution', async () => {
+    const fixture = await makeFixture();
+
+    const observed = await collect(fixture);
+    const resolved = await resolveClaudeCode(observed);
+    const nested = byPath(observed.elements).get('docs/CLAUDE.md');
+    const finding = deriveFindings(observed, resolved).find(
+      (entry) => entry.rule === 'subtree-specific-instruction',
+    );
+
+    // The finding is emitted from the adapter's real `directory-subtree`
+    // applicability, not a synthetic resolved element.
+    expect(nested?.native.kind).toBe('instructions');
+    expect(finding?.elementIds).toEqual([nested?.id]);
   });
 
   it('discovers the managed scope when consent is granted', async () => {

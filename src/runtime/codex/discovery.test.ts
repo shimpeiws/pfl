@@ -208,6 +208,22 @@ describe('collectCodexHarness', () => {
     expect(paths.get('../AGENTS.override.md')?.native.kind).toBe('fallback-instructions');
   });
 
+  it('makes subtree-specific-instruction reachable through discovery and resolution', async () => {
+    const { project, home } = await makeFixture();
+
+    const observed = await collectCodexHarness(project, CONSENTED, home);
+    const resolved = await resolveCodex(observed);
+    const nested = byPath(observed.elements).get('docs/AGENTS.md');
+    const finding = deriveFindings(observed, resolved).find(
+      (entry) => entry.rule === 'subtree-specific-instruction',
+    );
+
+    // The finding is emitted from the adapter's real `directory-subtree`
+    // applicability, not a synthetic resolved element.
+    expect(nested?.native.kind).toBe('instructions');
+    expect(finding?.elementIds).toEqual([nested?.id]);
+  });
+
   it('records each discovered file once, with unique element ids', async () => {
     const { project, home } = await makeFixture();
 
