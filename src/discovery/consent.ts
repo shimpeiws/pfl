@@ -21,6 +21,10 @@ import { permissionsPath } from '../snapshot/store.js';
  * throws `CONSENT_REQUIRED` rather than assuming consent.
  */
 
+/** Scope names frozen for v1.0 (roadmap M8 #81). */
+export const CONSENT_SCOPES = ['user', 'install'] as const;
+export type ConsentScope = (typeof CONSENT_SCOPES)[number];
+
 /** A stable key for one runtime + scope grant. */
 export function consentScopeKey(runtimeId: RuntimeId, scope: string): string {
   return `${runtimeId}:${scope}`;
@@ -133,42 +137,67 @@ export interface ConsentOptions {
   /** Whether an interactive prompt is possible. False means fail closed. */
   interactive: boolean;
   io?: ConsentIO;
+  /**
+   * Scope keys granted for this run only (the `--allow-scope` flag). They are
+   * honored without prompting and are never written to the consent store. The
+   * install scope is optional: a caller resolves it only when it wants to offer
+   * the prompt, so a run without it proceeds to the `unknown` detection state
+   * (roadmap #81).
+   */
+  currentRunGrants?: readonly string[];
+}
+
+export function accessPolicy(
+  grantedScopes: readonly string[],
+  runtimeId: RuntimeId,
+  currentRunGrants: readonly string[] = [],
+): AccessPolicy {
+  const scopes = new Set([...grantedScopes, ...currentRunGrants]);
+  return {
+    user: scopes.has(consentScopeKey(runtimeId, 'user')),
+    install: scopes.has(consentScopeKey(runtimeId, 'install')),
+    grantedScopes: [...scopes],
+  };
 }
 
 /**
- * Resolves the AccessPolicy for one runtime + scope. An existing grant returns
- * immediately, before any interactivity check, so a non-interactive run can
- * reuse recorded consent. With no grant, an interactive run prompts once and an
- * answer other than `y`/`yes` (including the empty default) leaves the policy
- * closed; a non-interactive run throws `CONSENT_REQUIRED`.
+ * Resolves the AccessPolicy for one runtime + scope. An existing grant — or a
+ * current-run `--allow-scope` key — returns immediately, before any
+ * interactivity check, so a non-interactive run can proceed on consent it was
+ * given. With no grant, an interactive run prompts once and an answer other
+ * than `y`/`yes` (including the empty default) leaves the policy closed; a
+ * non-interactive run throws `CONSENT_REQUIRED`. The install scope is optional
+ * because a caller simply does not resolve it when it is not needed.
  */
 export async function resolveAccessPolicy(
   request: ConsentRequest,
   options: ConsentOptions,
 ): Promise<AccessPolicy> {
   const home = options.home ?? homedir();
+  const currentRunGrants = options.currentRunGrants ?? [];
+  const key = consentScopeKey(request.runtimeId, request.scope);
   const store = await loadConsentStore(home);
-  if (hasConsent(store, request.runtimeId, request.scope)) {
-    return { allowOutsideProject: true, grantedScopes: store.grantedScopes };
+  if (store.grantedScopes.includes(key) || currentRunGrants.includes(key)) {
+    return accessPolicy(store.grantedScopes, request.runtimeId, currentRunGrants);
   }
 
   if (!options.interactive) {
     throw new PflError(
-      `reading outside the project requires consent for ${consentScopeKey(request.runtimeId, request.scope)}; rerun interactively to grant it`,
+      `reading outside the project requires consent for ${key}; rerun interactively or pass --allow-scope ${key}`,
       EXIT_CODES.CONSENT_REQUIRED,
-      { missingScopes: [consentScopeKey(request.runtimeId, request.scope)] },
+      { missingScopes: [key] },
     );
   }
 
   const io = options.io ?? createNodeConsentIO();
   const answer = (await io.readAnswer(renderConsentPrompt(request))).trim();
   if (!/^y(es)?$/i.test(answer)) {
-    return { allowOutsideProject: false, grantedScopes: store.grantedScopes };
+    return accessPolicy(store.grantedScopes, request.runtimeId, currentRunGrants);
   }
 
-  await grantConsent(consentScopeKey(request.runtimeId, request.scope), home);
+  await grantConsent(key, home);
   const granted = await loadConsentStore(home);
-  return { allowOutsideProject: true, grantedScopes: granted.grantedScopes };
+  return accessPolicy(granted.grantedScopes, request.runtimeId, currentRunGrants);
 }
 
 /** Renders the §24 prompt verbatim; the caller's answer is read on the last line. */
@@ -181,10 +210,17 @@ export function renderConsentPrompt(request: ConsentRequest): string {
     }
     lines.push('');
   }
+  // The will-block follows the scope: the install prompt does not claim to read
+  // the harness, and the user prompt does not claim to check the version.
+  const willLines =
+    request.scope === 'install'
+      ? ['  ✓ Check the installed runtime version']
+      : ['  ✓ Read files needed to resolve the effective harness'];
   lines.push(
+    '  (Project-local discovery is implicit and needs no consent.)',
+    '',
     'Inventory will:',
-    '  ✓ Read files needed to resolve the effective harness',
-    '  ✓ Check the installed runtime version',
+    ...willLines,
     '  ✓ Process content locally',
     '  ✓ Store only digests and allowlisted metadata',
     '  ✗ Store file contents',

@@ -70,13 +70,25 @@ export interface ResolutionSemantics {
 /**
  * Read consent for scopes outside the inspected project (design doc §19, §24).
  * Project-local discovery is implicit; anything else requires explicit consent,
- * stored per runtime + scope.
+ * stored per runtime + scope (roadmap M8 #81).
  */
 export interface AccessPolicy {
-  /** True only when the user has consented to reads outside the project. */
-  allowOutsideProject: boolean;
-  /** Granted scopes, keyed per runtime + scope (design doc §19). */
+  /** `<runtime>:user` — the user harness, external-gated reads, managed scope. */
+  user: boolean;
+  /** `<runtime>:install` — installation and version metadata. */
+  install: boolean;
+  /** Granted scope keys, `runtime:scope`, this run may use. */
   grantedScopes: readonly string[];
+}
+
+/**
+ * Whether out-of-project project-identity reads (a `.git` file's `gitdir:`, an
+ * ancestor `.git`) may run. Gated on the **user** scope, not install: install
+ * covers the runtime's installation metadata alone, and a run that granted only
+ * install must not gain a read it was never asked about.
+ */
+export function allowsOutsideProject(access: AccessPolicy): boolean {
+  return access.user;
 }
 
 /**

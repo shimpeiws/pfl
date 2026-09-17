@@ -9,7 +9,7 @@ import { resolveAccessPolicy, type ConsentIO } from '../discovery/consent.js';
 import { resolveProjectContext } from '../discovery/project-identity.js';
 import { resolveHarness } from '../resolution/resolver.js';
 import { getAdapter, getConsentRequest } from '../runtime/registry.js';
-import type { RuntimeDetection } from '../runtime/types.js';
+import { allowsOutsideProject, type RuntimeDetection } from '../runtime/types.js';
 import { resolveStoredProjectId } from '../snapshot/project-index.js';
 import { SNAPSHOT_SCHEMA_VERSION } from '../snapshot/serialization.js';
 import {
@@ -53,6 +53,11 @@ export interface InspectOptions {
   interactive?: boolean;
   /** Injected for tests so the consent prompt needs no TTY. */
   io?: ConsentIO;
+  /**
+   * Scope keys granted for this run only (`--allow-scope <runtime>:<scope>`).
+   * Honored without prompting and never written to the consent store.
+   */
+  allowScopes?: readonly string[];
 }
 
 /**
@@ -72,20 +77,33 @@ export async function runInspect(
   const home = options.home ?? homedir();
   const out = redactingLogger(logger, options.json ? 'export' : 'display', { home });
 
-  const request = getConsentRequest(adapter.id());
+  const request = getConsentRequest(adapter.id(), 'user');
   const interactive =
     options.interactive ??
     (Boolean(process.stdin.isTTY) && Boolean(process.stdout.isTTY) && options.json !== true);
-  const access = await resolveAccessPolicy(request, {
+  const currentRunGrants = options.allowScopes ?? [];
+  const io = options.io !== undefined ? { io: options.io } : {};
+  // The user scope is required; the install scope is optional, so its absence
+  // yields the `unknown` detection state rather than a failed run (roadmap #81).
+  let access = await resolveAccessPolicy(request, {
     home,
     interactive,
-    ...(options.io !== undefined ? { io: options.io } : {}),
+    currentRunGrants,
+    ...io,
   });
+  if (interactive && access.user && !access.install) {
+    access = await resolveAccessPolicy(getConsentRequest(adapter.id(), 'install'), {
+      home,
+      interactive,
+      currentRunGrants,
+      ...io,
+    });
+  }
 
   // Identity is resolved after consent: a `.git` file's `gitdir:` and an
   // ancestor `.git` are out-of-project reads (roadmap S5).
   const context = await resolveProjectContext(cwd, {
-    allowExternalGit: access.allowOutsideProject,
+    allowExternalGit: allowsOutsideProject(access),
   });
   // The stored id is assigned once and pinned by the index, so a later remote
   // change does not move the project's history (roadmap #86).

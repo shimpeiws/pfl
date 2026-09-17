@@ -1,6 +1,6 @@
 import { EXIT_CODES, PflError } from '../cli/exit-codes.js';
 import { runtimeId } from '../core/ids.js';
-import type { ConsentLocationGroup, ConsentRequest } from '../discovery/consent.js';
+import type { ConsentLocationGroup, ConsentRequest, ConsentScope } from '../discovery/consent.js';
 import { ClaudeCodeAdapter } from './claude-code/index.js';
 import {
   CONSENT_GROUPS as CLAUDE_CODE_CONSENT_GROUPS,
@@ -35,9 +35,15 @@ export function listRuntimeIds(): string[] {
   return Object.keys(ADAPTERS);
 }
 
-/** Consent locations per runtime, owned by the adapter packages (design doc §24). */
-const CONSENT: Record<string, { runtimeName: string; groups: readonly ConsentLocationGroup[] }> = {
-  'claude-code': { runtimeName: CLAUDE_CODE_RUNTIME_NAME, groups: CLAUDE_CODE_CONSENT_GROUPS },
+/** Consent locations per runtime and scope, owned by the adapters (design doc §24). */
+const CONSENT: Record<
+  string,
+  { runtimeName: string; groups: Record<ConsentScope, readonly ConsentLocationGroup[]> }
+> = {
+  'claude-code': {
+    runtimeName: CLAUDE_CODE_RUNTIME_NAME,
+    groups: CLAUDE_CODE_CONSENT_GROUPS,
+  },
   codex: { runtimeName: CODEX_RUNTIME_NAME, groups: CODEX_CONSENT_GROUPS },
 };
 
@@ -51,8 +57,8 @@ export function getRuntimeName(id: string): string {
   return RUNTIME_NAMES[id] ?? id;
 }
 
-/** Builds the consent request for a runtime's user scope. */
-export function getConsentRequest(id: string): ConsentRequest {
+/** Builds the consent request for one runtime + scope (roadmap M8 #81). */
+export function getConsentRequest(id: string, scope: ConsentScope = 'user'): ConsentRequest {
   const entry = CONSENT[id];
   if (!entry) {
     throw new PflError(`unknown runtime: ${id}`, EXIT_CODES.RUNTIME_UNSUPPORTED);
@@ -60,7 +66,7 @@ export function getConsentRequest(id: string): ConsentRequest {
   return {
     runtimeId: runtimeId(id),
     runtimeName: entry.runtimeName,
-    scope: 'user',
-    groups: entry.groups,
+    scope,
+    groups: entry.groups[scope],
   };
 }

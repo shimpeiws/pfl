@@ -126,7 +126,7 @@ describe('resolveAccessPolicy', () => {
 
     const policy = await resolveAccessPolicy(request, { home, interactive: true, io });
 
-    expect(policy.allowOutsideProject).toBe(true);
+    expect(policy.user).toBe(true);
     expect(io.prompts).toHaveLength(0);
   });
 
@@ -136,7 +136,7 @@ describe('resolveAccessPolicy', () => {
 
     const policy = await resolveAccessPolicy(request, { home, interactive: true, io });
 
-    expect(policy.allowOutsideProject).toBe(false);
+    expect(policy.user).toBe(false);
     expect(io.prompts).toHaveLength(1);
     expect(await loadConsentStore(home)).toEqual({ grantedScopes: [] });
   });
@@ -146,11 +146,11 @@ describe('resolveAccessPolicy', () => {
     const first = fakeIO('y');
 
     const policy = await resolveAccessPolicy(request, { home, interactive: true, io: first });
-    expect(policy.allowOutsideProject).toBe(true);
+    expect(policy.user).toBe(true);
 
     const second = fakeIO('n');
     const again = await resolveAccessPolicy(request, { home, interactive: true, io: second });
-    expect(again.allowOutsideProject).toBe(true);
+    expect(again.user).toBe(true);
     expect(second.prompts).toHaveLength(0);
   });
 
@@ -162,7 +162,7 @@ describe('resolveAccessPolicy', () => {
       io: fakeIO('n'),
     });
 
-    expect(policy.allowOutsideProject).toBe(false);
+    expect(policy.user).toBe(false);
     expect(await loadConsentStore(home)).toEqual({ grantedScopes: [] });
   });
 
@@ -188,16 +188,11 @@ describe('renderConsentPrompt', () => {
   it('renders the real locations and the fixed will/will-not block', () => {
     // The real request, not a hand-written stand-in: this is what keeps the
     // prompt from silently underreporting the read scope (roadmap S2).
-    const prompt = renderConsentPrompt(getConsentRequest('claude-code'));
+    const prompt = renderConsentPrompt(getConsentRequest('claude-code', 'user'));
 
     for (const line of [
       'Inventory needs read-only access to the following locations:',
-      '  Project',
-      '    ./CLAUDE.md',
-      '    ./CLAUDE.local.md',
-      '    ./.claude/**',
-      '    ./.mcp.json',
-      '  User',
+      '  User and external references',
       '    ~/.claude/CLAUDE.md',
       '    ~/.claude/settings.json',
       '    ~/.claude/settings.local.json',
@@ -205,13 +200,9 @@ describe('renderConsentPrompt', () => {
       '    ~/.claude/projects/**/memory/**',
       '    ~/.claude/plugins/**',
       '    ~/.claude.json',
-      '  Installation and version metadata',
-      '    ~/.local/share/claude',
-      '    ~/.local/bin/claude',
-      '    ~/.claude/.last-update-result.json',
+      '  (Project-local discovery is implicit and needs no consent.)',
       'Inventory will:',
       '  ✓ Read files needed to resolve the effective harness',
-      '  ✓ Check the installed runtime version',
       '  ✓ Process content locally',
       '  ✓ Store only digests and allowlisted metadata',
       '  ✗ Store file contents',
@@ -222,5 +213,15 @@ describe('renderConsentPrompt', () => {
       expect(prompt).toContain(line);
     }
     expect(prompt.endsWith('Allow this runtime scope? [y/N] ')).toBe(true);
+  });
+
+  it('renders the install scope with only its own will-line and locations', () => {
+    const prompt = renderConsentPrompt(getConsentRequest('claude-code', 'install'));
+
+    expect(prompt).toContain('  Installation and version metadata');
+    expect(prompt).toContain('  ✓ Check the installed runtime version');
+    // The install scope does not read the harness, so the prompt must not claim it.
+    expect(prompt).not.toContain('Read files needed to resolve the effective harness');
+    expect(prompt).not.toContain('~/.claude/CLAUDE.md');
   });
 });

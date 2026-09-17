@@ -33,8 +33,8 @@ afterEach(async () => {
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
-const CONSENTED = { allowOutsideProject: true, grantedScopes: ['codex:user'] };
-const DENIED = { allowOutsideProject: false, grantedScopes: [] };
+const CONSENTED = { user: true, install: true, grantedScopes: ['codex:user'] };
+const DENIED = { user: false, install: false, grantedScopes: [] };
 
 /** Enough `allow` decisions to cross `BROAD_TOOL_ACCESS_MIN_ALLOW`. */
 const RULE_ALLOW_COUNT = 12;
@@ -475,7 +475,10 @@ describe('collectCodexHarness', () => {
     expect(snapshot.elements.some((element) => element.native.origin === 'user')).toBe(false);
     expect(snapshot.runtime.version).toBeNull();
     expect(snapshot.adapter.runtimeCompatibility).toBe('unverified');
-    expect(snapshot.diagnostics.map((entry) => entry.code)).toContain('consent-not-granted');
+    expect(snapshot.diagnostics.map((entry) => entry.code)).toContain(
+      'consent-not-granted:install',
+    );
+    expect(snapshot.diagnostics.map((entry) => entry.code)).toContain('consent-not-granted:user');
   });
 
   it('reports the detected runtime version when consented', async () => {

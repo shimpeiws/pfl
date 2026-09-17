@@ -64,7 +64,7 @@ describe.each(['claude-code', 'codex'] as const)('%s detection without consent',
 
     const detection = await getAdapter(runtime).detect(
       PROJECT,
-      { allowOutsideProject: false, grantedScopes: [] },
+      { user: false, install: false, grantedScopes: [] },
       m.home,
       '',
     );
@@ -72,6 +72,6 @@ describe.each(['claude-code', 'codex'] as const)('%s detection without consent',
     expect(detection.installed).toBe('unknown');
     expect(detection.version).toBeNull();
     expect(detection.runtimeCompatibility).toBe('unverified');
-    expect(detection.diagnostics.map((d) => d.code)).toContain('consent-not-granted');
+    expect(detection.diagnostics.map((d) => d.code)).toContain('consent-not-granted:install');
   });
 });

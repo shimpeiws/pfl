@@ -12,6 +12,7 @@ import { EXIT_CODES, PflError } from './cli/exit-codes.js';
 import { runGc } from './cli/gc.js';
 import { runGraph } from './cli/graph.js';
 import { runInspect } from './cli/inspect.js';
+import { CONSENT_SCOPES } from './discovery/consent.js';
 import { runList } from './cli/list.js';
 import { loggerForFlags } from './cli/output.js';
 import { runReport } from './cli/report.js';
@@ -24,6 +25,31 @@ const cli = cac('pfl');
 
 interface CommonFlags {
   json?: boolean;
+}
+
+/**
+ * Validates the repeatable `--allow-scope <runtime>:<scope>` flag. Only the
+ * inspected runtime and the frozen scope names are accepted, so a typo or a
+ * cross-runtime grant fails loudly instead of silently granting nothing.
+ */
+function parseAllowScopes(value: string | string[] | undefined, runtime: string): string[] {
+  if (value === undefined) return [];
+  const keys = Array.isArray(value) ? value : [value];
+  const scopes = CONSENT_SCOPES.join(', ');
+  for (const key of keys) {
+    const [keyRuntime, keyScope, extra] = key.split(':');
+    if (
+      extra !== undefined ||
+      keyRuntime !== runtime ||
+      !CONSENT_SCOPES.includes(keyScope as never)
+    ) {
+      throw new PflError(
+        `invalid --allow-scope "${key}": expected ${runtime}:<scope> with scope one of ${scopes}`,
+        EXIT_CODES.CONFIG_ERROR,
+      );
+    }
+  }
+  return keys;
 }
 
 /**
@@ -74,18 +100,29 @@ function withErrorHandling<Args extends [...unknown[], CommonFlags | undefined]>
 cli
   .command('inspect', 'Inspect one runtime harness without executing it')
   .option('--runtime <runtime>', 'Runtime to inspect: claude-code or codex')
+  .option(
+    '--allow-scope <scope>',
+    'Grant <runtime>:<scope> for this run only (repeatable; scope: user or install)',
+  )
   .option('--json', 'Output as JSON')
   .action(
-    withErrorHandling('inspect', async (flags: { runtime?: string } & CommonFlags) => {
-      if (!flags.runtime) {
-        throw new PflError('--runtime is required (claude-code or codex)', EXIT_CODES.CONFIG_ERROR);
-      }
-      return runInspect(
-        process.cwd(),
-        { runtime: flags.runtime, json: flags.json ?? false },
-        loggerForFlags(flags),
-      );
-    }),
+    withErrorHandling(
+      'inspect',
+      async (flags: { runtime?: string; allowScope?: string | string[] } & CommonFlags) => {
+        if (!flags.runtime) {
+          throw new PflError(
+            '--runtime is required (claude-code or codex)',
+            EXIT_CODES.CONFIG_ERROR,
+          );
+        }
+        const allowScopes = parseAllowScopes(flags.allowScope, flags.runtime);
+        return runInspect(
+          process.cwd(),
+          { runtime: flags.runtime, allowScopes, json: flags.json ?? false },
+          loggerForFlags(flags),
+        );
+      },
+    ),
   );
 
 cli

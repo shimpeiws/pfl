@@ -3,6 +3,7 @@ import { runtimeId, type RuntimeId } from '../../core/ids.js';
 import type { ObservedSnapshot } from '../../core/observed.js';
 import type { ResolvedSnapshot } from '../../core/resolved.js';
 import type { AccessPolicy, ProjectContext, RuntimeAdapter, RuntimeDetection } from '../types.js';
+import { grants } from '../../discovery/gate.js';
 import { detectCodex } from './detect.js';
 import { discoverCodex } from './discovery.js';
 import { resolveCodex } from './resolve.js';
@@ -19,7 +20,7 @@ export class CodexAdapter implements RuntimeAdapter {
     home?: string,
     pathValue: string = process.env['PATH'] ?? '',
   ): Promise<RuntimeDetection> {
-    if (!access.allowOutsideProject) {
+    if (!grants(access, 'install')) {
       return {
         runtimeId: this.id(),
         // `unknown`, not `no`: detection could not look, so "not consented" stays
@@ -30,7 +31,7 @@ export class CodexAdapter implements RuntimeAdapter {
         diagnostics: [
           {
             severity: 'info',
-            code: 'consent-not-granted',
+            code: 'consent-not-granted:install',
             message:
               'runtime detection reads installation metadata outside the project and needs consent',
           },

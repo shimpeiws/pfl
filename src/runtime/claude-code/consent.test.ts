@@ -10,54 +10,49 @@ import { CONSENT_GROUPS } from './consent.js';
  * discovery without a constant would not be caught here; keeping reads declared
  * is what this test can enforce.
  */
-const EXPECTED = [
-  {
-    title: 'Project',
-    locations: ['./CLAUDE.md', './CLAUDE.local.md', './.claude/**', './.mcp.json'],
-  },
-  {
-    title: 'User',
-    locations: [
-      '~/.claude/CLAUDE.md',
-      '~/.claude/settings.json',
-      '~/.claude/settings.local.json',
-      '~/.claude/skills/**',
-      '~/.claude/agents/**',
-      '~/.claude/commands/**',
-      '~/.claude/rules/**',
-      '~/.claude/output-styles/**',
-      '~/.claude/hooks/**',
-      '~/.claude/projects/**/memory/**',
-      '~/.claude/plugins/**',
-      '~/.claude.json',
-      '/Library/Application Support/ClaudeCode/CLAUDE.md',
-      '/Library/Application Support/ClaudeCode/settings.json',
-    ],
-  },
-  {
-    title: 'Installation and version metadata',
-    locations: [
-      '~/.local/share/claude',
-      '~/.local/bin/claude',
-      '~/.local/share/claude/versions',
-      '~/.claude/.last-update-result.json',
-      '~/.local/bin',
-      '~/.local/lib/node_modules/**',
-      '~/.npm-global/bin',
-      '~/.npm-global/lib/node_modules/**',
-      'PATH directories (non-installer install)',
-      'Homebrew Cellar version directories',
-    ],
-  },
-  {
-    title: 'External references',
-    locations: [
-      '../ (parent directories, bounded)',
-      'Plugin directories referenced by Claude Code config',
-      'MCP configuration metadata',
-    ],
-  },
-];
+const EXPECTED = {
+  user: [
+    {
+      title: 'User and external references',
+      locations: [
+        '~/.claude/CLAUDE.md',
+        '~/.claude/settings.json',
+        '~/.claude/settings.local.json',
+        '~/.claude/skills/**',
+        '~/.claude/agents/**',
+        '~/.claude/commands/**',
+        '~/.claude/rules/**',
+        '~/.claude/output-styles/**',
+        '~/.claude/hooks/**',
+        '~/.claude/projects/**/memory/**',
+        '~/.claude/plugins/**',
+        '~/.claude.json',
+        '/Library/Application Support/ClaudeCode/CLAUDE.md',
+        '/Library/Application Support/ClaudeCode/settings.json',
+        '../ (parent directories, bounded)',
+        'Plugin directories referenced by Claude Code config',
+        'MCP configuration metadata',
+      ],
+    },
+  ],
+  install: [
+    {
+      title: 'Installation and version metadata',
+      locations: [
+        '~/.local/share/claude',
+        '~/.local/bin/claude',
+        '~/.local/share/claude/versions',
+        '~/.claude/.last-update-result.json',
+        '~/.local/bin',
+        '~/.local/lib/node_modules/**',
+        '~/.npm-global/bin',
+        '~/.npm-global/lib/node_modules/**',
+        'PATH directories (non-installer install)',
+        'Homebrew Cellar version directories',
+      ],
+    },
+  ],
+};
 
 describe('Claude Code consent groups', () => {
   it('lists exactly the locations the adapter declares', () => {

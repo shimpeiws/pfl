@@ -33,8 +33,8 @@ afterEach(async () => {
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
 
-const CONSENTED = { allowOutsideProject: true, grantedScopes: ['claude-code:user'] };
-const DENIED = { allowOutsideProject: false, grantedScopes: [] };
+const CONSENTED = { user: true, install: true, grantedScopes: ['claude-code:user'] };
+const DENIED = { user: false, install: false, grantedScopes: [] };
 
 interface Fixture {
   project: { id: string; displayName: string; root: string; remote: string };
@@ -353,7 +353,10 @@ describe('collectClaudeCodeHarness', () => {
     ).toBe(false);
     expect(snapshot.runtime.version).toBeNull();
     expect(snapshot.adapter.runtimeCompatibility).toBe('unverified');
-    expect(snapshot.diagnostics.map((entry) => entry.code)).toContain('consent-not-granted');
+    expect(snapshot.diagnostics.map((entry) => entry.code)).toContain(
+      'consent-not-granted:install',
+    );
+    expect(snapshot.diagnostics.map((entry) => entry.code)).toContain('consent-not-granted:user');
   });
 
   it('bounds the upward walk at MAX_ANCESTOR_DIRS and records the truncation', async () => {
