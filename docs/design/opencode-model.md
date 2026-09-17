@@ -6,8 +6,9 @@
   (`/opt/homebrew/bin/opencode` → `…/Cellar/opencode/1.18.30/bin/opencode`,
   Homebrew formula `anomalyco/tap/opencode`, build dated 2026-09-09).
 - **Verified range:** **1.18.0 and 1.18.30 only** — discrete versions, not a
-  floor. yuurei verified 1.18.0; this document measured 1.18.30. Nothing at or
-  above 1.18.31 has been verified.
+  floor. yuurei verified 1.18.0; this document measured 1.18.30. On 1.18.31 the
+  §0 probe has been re-run over the surfaces it reaches; nothing else about
+  1.18.31 has been verified.
 - **Version pinned:** 2026-09-17.
 - **The host has since moved to 1.18.31.** Homebrew upgraded the installed binary
   the same day (`/opt/homebrew/bin/opencode` →
@@ -17,12 +18,15 @@
   - The **[installed: measured]** observations below were taken on 1.18.30 and
     **can no longer be re-derived on this host**. They stand as observations of
     that binary, and are not evidence about 1.18.31.
-  - One claim has been re-probed on 1.18.31 and **it no longer holds**: the
-    skill-name collision of §6 resolved the other way. Nothing else has been
-    re-probed.
+  - The §0 probe has been re-run on 1.18.31, so the surfaces it reaches are
+    **partially re-verified** on that binary: §2's four precedence behaviours
+    reproduced and §6's collision did not (§11.6). Everything the probe does not
+    exercise — every **[upstream]** row, and every row §0 lists as not exercised —
+    has **not** been re-probed.
   - The reconciliation §10 describes is therefore **already due**, not a future
-    trigger. Until it runs, read this document as "measured on 1.18.30, not
-    re-verified on 1.18.31" and do not extend it to 1.18.31.
+    trigger. Until it runs, read this document as "measured on 1.18.30, with the
+    §0 surfaces re-checked on 1.18.31 and nothing further", and do not extend any
+    claim past that.
 - **What this means for M9.** Every **[installed: measured]** layout row must be
   **re-verified against the installed binary before M9 implements against it** —
   those rows describe a build that is no longer on this host. The schema
@@ -96,10 +100,12 @@ all.
 No `OPENCODE_*` or `XDG_*` variable is set in the environment this document was
 recorded in (`env | grep -E '^(OPENCODE|XDG)'` returns nothing), so the
 observations below were taken from the default layout rather than from an
-inherited override. The probe below is the script that produced every
-**[installed: measured]** row in this document. It is reproduced in full so those observations can be re-derived
-rather than taken on trust; it writes only under a `mktemp` directory, and the
-decoy files it creates are never the user's own.
+inherited override. The probe below is the script that produced the measured
+observations in this document: the §1 roots, §2's precedence and walk stop, §4's
+element and MCP surfaces, §6's collision, and the compiled-in layers of §8. It is
+reproduced in full so those observations can be re-derived rather than taken on
+trust; it writes only under a `mktemp` directory, and the decoy files it creates
+are never the user's own. Rows it does not reach carry one of the weaker tags.
 
 ```sh
 #!/bin/sh
@@ -115,12 +121,13 @@ mkdir -p "$G/agent" "$G/command" "$G/skill/marker" \
 git init -q "$P" >/dev/null 2>&1   # §2's walk stop needs a real repository
 printf 'PROJECT AGENTS.md\n' > "$P/AGENTS.md"
 
-# One decoy per config source, each carrying its own `model` marker.
-printf '{"model":"global-marker"}\n'         > "$G/opencode.json"
-printf '{"model":"project-marker"}\n'        > "$P/opencode.json"
-printf '{"model":"dot-opencode-marker"}\n'   > "$P/.opencode/opencode.json"
-printf '{"model":"above-git-root-marker"}\n' > "$ROOT/opencode.json"
-printf '{"model":"env-file-marker","small_model":"env-file-small-marker"}\n' > "$ROOT/custom.json"
+# One decoy per config source. Each carries its own `model`; `small_model` and
+# `username` sit on different sources so the merge can be read key by key.
+printf '{"model":"global-marker","small_model":"global-small-marker"}\n'             > "$G/opencode.json"
+printf '{"model":"project-marker","small_model":"project-small-marker"}\n'           > "$P/opencode.json"
+printf '{"model":"dot-opencode-marker","small_model":"dot-opencode-small-marker"}\n' > "$P/.opencode/opencode.json"
+printf '{"model":"above-git-root-marker"}\n'                                         > "$ROOT/opencode.json"
+printf '{"model":"env-file-marker","username":"env-file-user-marker"}\n'             > "$ROOT/custom.json"
 
 # One name (`marker`) in all three surfaces, in both scopes, for §6.
 mk_agent()   { printf -- '---\ndescription: %s agent marker\nmode: subagent\n---\n%s agent body\n' "$1" "$1" > "$2"; }
@@ -140,8 +147,8 @@ export HOME="$H" \
 unset OPENCODE_CONFIG OPENCODE_CONFIG_DIR OPENCODE_CONFIG_CONTENT
 cd "$P" || exit 1
 
-cfg()   { opencode debug config 2>&1 | grep -E '"(model|small_model)":' ; }
-# `debug config` pretty-prints, so strip the indent or every comparison fails.
+cfg()   { opencode debug config 2>&1 | grep -E '"(model|small_model|username)":' | sed 's/^ *//'; }
+keys()  { opencode debug config 2>&1 | grep -oE '^  "[A-Za-z_]+":' | tr -d ' ":' | sort -u | tr '\n' ' '; }
 model() { opencode debug config 2>&1 | grep -o '"model": "[^"]*"' | head -1 | sed 's/^ *//'; }
 skill() { opencode debug skill  2>&1 | grep -o '\(GLOBAL\|PROJECT\) skill marker'; }
 agent() { opencode debug config 2>&1 | grep -o '\(GLOBAL\|PROJECT\) agent marker'; }
@@ -150,11 +157,11 @@ echo "version $(opencode --version 2>&1 | tail -1); roots:"
 opencode debug paths 2>&1 | sed 's/^/  /'
 
 echo "1. both project configs present";           cfg
-mv "$P/.opencode/opencode.json" "$ROOT/h1"; echo "2. .opencode config removed"; cfg; mv "$ROOT/h1" "$P/.opencode/opencode.json"
-mv "$P/opencode.json" "$ROOT/h2";           echo "3. both removed (global + parent remain)"
-model
+mv "$P/.opencode/opencode.json" "$ROOT/h1"; echo "2. .opencode config removed (the project's own opencode.json remains)"; cfg
+mv "$P/opencode.json" "$ROOT/h2";           echo "3. both project configs removed (global and the parent remain)"
+cfg
 printf '   parent-dir config read? '; [ "$(model)" = '"model": "above-git-root-marker"' ] && echo yes || echo no
-mv "$ROOT/h2" "$P/opencode.json"
+mv "$ROOT/h2" "$P/opencode.json"; mv "$ROOT/h1" "$P/.opencode/opencode.json"
 # A prefix assignment to a shell *function* persists in bash, so steps 4-5 run in
 # a subshell; without it every later step is measured with these variables set.
 echo "4. OPENCODE_CONFIG set";  (OPENCODE_CONFIG="$ROOT/custom.json" cfg)
@@ -165,22 +172,34 @@ i=1; while [ "$i" -le 3 ]; do printf '   run %s: agent=%s command=%s skill=%s\n'
 echo "7. what the walk stop depends on (fresh fixture; the project holds no config)"
 S="$ROOT/stop"; mkdir -p "$S/proj/sub"
 printf '{"model":"above-git-root-marker"}\n' > "$S/opencode.json"
-walkstop() { printf '   %-10s parent-dir config wins? %s\n' "$1" \
-  "$(cd "$S/proj" && opencode debug config 2>&1 \
+walkstop() { printf '   %-13s from %-14s parent-dir config wins? %s\n' "$1" "$2" \
+  "$(cd "$2" && opencode debug config 2>&1 \
      | grep -q 'above-git-root-marker' && echo yes || echo 'no, global wins')"; }
-git init -q "$S/proj" >/dev/null 2>&1;   walkstop "git-init"
-rm -rf "$S/proj/.git"; mkdir -p "$S/proj/.git"; walkstop "empty-.git"
-rm -rf "$S/proj/.git";                    walkstop "no-.git"
-printf 'gitdir: /nonexistent\n' > "$S/proj/.git"; walkstop "dangling-.git"
+git init -q "$S/proj" >/dev/null 2>&1;   walkstop "git-init" "$S/proj"          ; walkstop "git-init" "$S/proj/sub"
+rm -rf "$S/proj/.git"; mkdir -p "$S/proj/.git"; walkstop "empty-.git" "$S/proj"   ; walkstop "empty-.git" "$S/proj/sub"
+rm -rf "$S/proj/.git";                    walkstop "no-.git" "$S/proj"           ; walkstop "no-.git" "$S/proj/sub"
+printf 'gitdir: /nonexistent\n' > "$S/proj/.git"; walkstop "dangling-.git" "$S/proj"; walkstop "dangling-.git" "$S/proj/sub"
 rm -f "$S/proj/.git"
 
-echo "8. .mcp.json beside the project config"
-printf '{"mcpServers":{"probe":{"command":"true"}}}\n' > "$P/.mcp.json"
-printf '   mcp mentions in debug config: %s\n' "$(opencode debug config 2>&1 | grep -ci mcp)"
-rm "$P/.mcp.json"
+echo "8. MCP configuration surfaces (own fixture; nothing above is mutated)"
+( M="$ROOT/mcp"; mkdir -p "$M/proj/.opencode"
+  printf '{"model":"mcp-fixture-marker","mcp":{"probe":{"type":"local","command":["true"]}}}\n' > "$M/proj/.opencode/opencode.json"
+  cd "$M/proj" || exit 1
+  printf '   mcp key in the project config   -> mcp entries: %s; top-level keys: %s\n' \
+    "$(opencode debug config 2>&1 | grep -c '"mcp"')" "$(keys)"
+  rm "$M/proj/.opencode/opencode.json"
+  printf '{"mcpServers":{"probe":{"command":"true"}}}\n' > "$M/proj/.mcp.json"
+  printf '   no config, .mcp.json in the root -> mcp mentions: %s; top-level keys: %s\n' \
+    "$(opencode debug config 2>&1 | grep -ci mcp)" "$(keys)" )
+
+echo "9. compiled-in layers (no on-disk path)"
+printf '   agents listed by `agent list`: %s\n' "$(opencode agent list 2>&1 | grep -oE '^[a-z]+ \(' | tr -d ' (' | tr '\n' ' ')"
+printf '   skills by name and location: %s\n' "$(opencode debug skill 2>&1 \
+  | grep -oE '"(name|location)": "[^"]*"' \
+  | awk -F'"' '/"name"/{n=$4} /"location"/{printf "%s=%s ", n, $4}' | sed "s|$ROOT|\$ROOT|g")"
 ```
 
-Three details in it are load-bearing, each the fix for a first attempt that
+Five details in it are load-bearing, each the fix for a first attempt that
 measured something else:
 
 - **`git init`, not `mkdir .git`.** §2's walk stop only appears against a real
@@ -188,20 +207,28 @@ measured something else:
   dangling `gitdir:` line, the walk continues past the project and reads the
   parent directory's config — the opposite of the recorded behaviour, from the
   same binary.
-- **`env -u OPENCODE_CONFIG -u OPENCODE_CONFIG_DIR -u OPENCODE_CONFIG_CONTENT`.**
-  Without it a probe measures whatever the invoking shell happened to carry. §2's
-  rows 3 and 6 are measured by setting those variables deliberately, with the
-  custom path under `$ROOT`.
+- **`unset OPENCODE_CONFIG OPENCODE_CONFIG_DIR OPENCODE_CONFIG_CONTENT`.** Without
+  it a probe measures whatever the invoking shell happened to carry — and because
+  `$OPENCODE_CONFIG_CONTENT` outranks every file on disk, a probe that inherits it
+  reports the same config for every fixture. §2's rows 3 and 6 are measured by
+  setting those variables deliberately, to a path under `$ROOT`.
 - **`debug config` for agents and commands, `debug skill` for skills.**
-  `opencode agent list` reports nothing for a `mode: subagent` fixture, so a probe
-  that reads it concludes no agent was loaded at all; the winning agent is visible
-  in `debug config`'s `agent` map.
+  `agent list` prints a name and a mode but never which scope's copy won: for the
+  fixture it reported `marker (subagent)` while the winning copy's description
+  (`PROJECT agent marker`) appears only in `debug config`'s `agent` map. It is not a
+  reliable way to detect that an agent loaded at all either — the same fixture
+  produced no entry on 1.18.30 and an entry on 1.18.31.
 - **`$OPENCODE_CONFIG` and `$OPENCODE_CONFIG_CONTENT` set only inside a
   subshell.** A prefix assignment to a shell *function* persists in bash, so
-  setting them on the `cfg` call leaks them into every later step — and since #6
-  outranks every on-disk source, the remaining steps are then measured against a
-  config that cannot be overridden. Every step after 5 silently reported the same
-  value until this was caught.
+  setting them on a `cfg` call leaks them into every later step — and since #6
+  outranks every on-disk source, those steps are then measured against a config
+  that cannot be overridden. Every step after the leak reported the same value
+  until it was caught, which is why the runs recorded before the fix are excluded
+  from §6's count (Appendix A).
+- **One marker per key, not one per file.** `model` is set in every source, so
+  precedence is read from it; `small_model` is set only on disk and `username` only
+  in the `$OPENCODE_CONFIG` file, so steps 4-5 can show one source being loaded and
+  still losing a conflicting key, while a non-conflicting key survives the merge.
 - **`grep` for a marker, or strip `debug config`'s indent before comparing.**
   Its output is pretty-printed, so a literal comparison against `"model": …`
   never matches and the check reports the negative case for every input.
@@ -211,21 +238,26 @@ measured something else:
 **Exercised**, on 1.18.31 unless noted: the XDG-derived roots (§1); precedence
 between the global, project, `.opencode/`, `$OPENCODE_CONFIG` and
 `$OPENCODE_CONFIG_CONTENT` sources, and the survival of non-conflicting keys
-through the merge (§2); the walk stop at a real git root, and its absence without
-one (§2, §3); the loading of `.opencode/{agent,command,skill}/<name>` and their
-`$XDG_CONFIG_HOME` counterparts (§4); that a same-name agent and command resolve
-to the project's copy while a same-name skill is lost unstably (§6); that a
-`.mcp.json` beside the project config contributes nothing (§4.2); and that the
-built-in skill layer surfaces as `customize-opencode` (§5, §7).
+through the merge, read key by key (§2); the walk stop at a real git root — from
+the project root and from a nested cwd — and its absence without one (§2, §3); the
+loading of `.opencode/{agent,command,skill}/<name>` and their
+`$XDG_CONFIG_HOME` counterparts (§4); that an `mcp` key in a config file surfaces
+in the resolved config while a `.mcp.json` beside it contributes nothing, with
+`debug config`'s top-level key set recorded in both cases (§4.2, §8); that a
+same-name agent and command resolve to the project's copy while a same-name skill
+is lost unstably (§6); and the compiled-in layers: the agents `agent list` reports
+and the built-in skill `customize-opencode`, reported with
+`"location": "<built-in>"` (§5, §7, §8).
 
 **Not exercised**, so those rows stand on the source their tag names: the plural
 element directory names (`agents`, `commands`, `skills`); `mode/`, `tool/`,
 `tool(s)/`, `theme/`, `formatter`, `lsp`, and the `instructions` array; plugins
-(local and npm); `permission` patterns and MCP servers configured through
-`opencode.json`; `.claude/skills`, `.agents/skills` and the `CLAUDE.md` fallback;
-global and nested `AGENTS.md` walking; `OPENCODE_CONFIG_DIR`; and the data and
-state paths of §4 and §9. A row in those areas claims only what its cited source
-claims, which is what the per-row tags below record.
+(local and npm); `permission` patterns and permission enforcement; whether a
+configured MCP server actually starts; the plural element directories and
+`references` bodies; `.claude/skills`, `.agents/skills` and the `CLAUDE.md`
+fallback; global and nested `AGENTS.md` walking; `OPENCODE_CONFIG_DIR`; and the
+data and state paths of §4 and §9. A row in those areas claims only what its cited
+source claims, which is what the per-row tags below record.
 
 ## 1. Roots
 
@@ -286,8 +318,8 @@ where they reproduced):
   `.opencode/opencode.json` over the project's `opencode.json`
   (`dot-opencode-marker` beat `project-marker`), and both over the global config
   → #5 over #4 over #2, the documented order.
-- `$OPENCODE_CONFIG` was loaded and still lost to the project: its `small_model`
-  appeared while the `.opencode/` `model` won → #4 above #3.
+- `$OPENCODE_CONFIG` was loaded and still lost to the project: its `username`
+  appeared while the `.opencode/` `model` and `small_model` won → #4 above #3.
 - `$OPENCODE_CONFIG_CONTENT`'s `model` won over every on-disk local source while
   the on-disk `small_model` survived → #6 is the highest local scope, and merging
   is **by key, not by file**.
@@ -358,13 +390,17 @@ Claude/agent-compatible surfaces that OpenCode loads directly from the project:
 
 **Claude-compat is narrower than Claude Code's own surface.** OpenCode reads
 Claude skills and the `CLAUDE.md` rules fallback, but does **not** read Claude
-Code's `.mcp.json`: a probe placed a `.mcp.json` with an MCP server in the
-project root and `opencode debug config` contributed no `mcp` entry at all to the resolved config — the top-level keys
-of `opencode debug config` were `$schema, agent, command, mode, model, plugin,
-username`, with no `mcp` among them [installed: measured]. (`mcp` appears in that
-output only when a server is configured some other way; it is omitted, not
-`null`.)
-MCP is configured only through `opencode.json` `mcp` or a provided plugin.
+Code's `.mcp.json` (§0 step 8). Two matched runs on one fixture, differing only
+in where the server is declared [installed: measured]:
+
+| Server declared in                     | `mcp` entries in `debug config` | Top-level keys of `debug config`                          |
+| -------------------------------------- | ------------------------------- | --------------------------------------------------------- |
+| the project's `.opencode/opencode.json` | 1                               | `agent command mcp mode model plugin small_model username` |
+| `.mcp.json`, with no config file        | 0                               | `agent command mode model plugin small_model username`     |
+
+The key is present only when a server is configured through a config file; it is
+omitted rather than `null`. MCP is configured only through `opencode.json` `mcp`
+or a provided plugin.
 
 ## 5. The scope model against `NativeOrigin`
 
@@ -515,14 +551,14 @@ Managed configuration overrides everything and is not user-overridable
 | Value             | OpenCode evidence                                                                 | Verified? |
 | ----------------- | --------------------------------------------------------------------------------- | --------- |
 | `override`        | config deep-merge, later source wins; same-name agent/command: project overrides global [installed: measured]. Same-name skills are not overridden but lost, unstably — see below. |
-| `accumulate`      | agents, commands, and skills from every scope appear in the merged catalog, deduplicated by name, so a collision yields a single surviving entry; `instructions` files combine | [installed: measured] |
-| `available`       | skills are loaded on demand through the `skill` tool; `references` are consultable on demand [installed: measured]. `pfl` records the declaration and does not follow it (§5.2) |
-| `policy`          | `permission` (allow/ask/deny, pattern objects; `external_directory` for paths outside the project) | [installed: measured] |
+| `accumulate`      | agents, commands, and skills from every scope appear in the merged catalog, deduplicated by name, so a collision yields a single surviving entry; `instructions` files combine | [installed: self-described] |
+| `available`       | skills are loaded on demand through the `skill` tool; `references` are consultable on demand [installed: self-described]. `pfl` records the declaration and does not follow it (§5.2) |
+| `policy`          | `permission` (allow/ask/deny, pattern objects; `external_directory` for paths outside the project) | [installed: self-described] |
 | `event-pipeline`  | plugin hooks (`chat.*`, `tool.execute.*`, `permission.ask`, …)                    | [installed: self-described] |
-| `runtime-defined` | built-in tool/agent defaults                                                     | [installed: measured] |
+| `runtime-defined` | built-in tool/agent defaults; the built-in agent set is listed by `agent list` (§0 step 9) | [installed: measured] for that list; the defaults themselves are [installed: self-described] |
 
-**Name collisions across scopes are undefined behaviour, and are not stable
-across versions or even across invocations of one binary.**
+**No tie-break is documented for a name collision, and none was observed to be
+stable — not across versions, and not across invocations of one binary.**
 
 Fixture: one name (`marker`) defined in all three surfaces in both scopes —
 `$ROOT/home/.config/opencode/{agent,command,skill}/marker…` and
@@ -540,22 +576,43 @@ winner is read from `debug skill`, which lists one surviving entry per name.
 | 1.18.31, §0 fixture, run 2        | project | project | project, project, project            |
 | 1.18.31, §0 fixture, run 3        | project | project | project, project, project            |
 | 1.18.31, §0 fixture, run 4        | project | project | global, project, project             |
+| 1.18.31, §0 fixture, run 5        | project | project | project, global, project             |
+| 1.18.31, §0 fixture, run 6        | project | project | global, project, global              |
 
 The documentation requires these names to be unique across locations, so a
-collision is undefined behaviour rather than a documented tie-break. On 1.18.31 the
-skill winner changed **between consecutive invocations with nothing changed on
-disk** in three of the four §0 runs above, and the 15 invocations on 1.18.31
-split 11 `project` / 4 `global` overall. Agent and command were `project` in
-every one of them, so the instability is specific to the skill catalog rather
-than to element loading in general. Four earlier runs are excluded from the
-table: they were taken before the §0 script scoped `$OPENCODE_CONFIG*` to a
-subshell, so they ran under a config source that outranks every file on disk.
-That is what an unordered directory scan deciding the skill catalog looks like, and
-it means the earlier 1.18.30 record of "global" was never a stable property of that
-version either — the re-probe did not refute it so much as fail to reproduce it.
+collision is outside the documented behaviour rather than resolved by a documented
+rule — and the observed outcome is not a rule either. Across the six §0 runs
+(18 invocations on 1.18.31) the skill split 12 `project` / 6 `global`, while agent
+and command were `project` in every one of them, so the instability is specific to
+the skill catalog rather than to element loading in general. The winner was not
+constant within a run in four of those six runs, and it changed between
+consecutive invocations — same fixture, nothing changed on disk — seven times in
+the 18.
+
+What decides it is **not established here**. These observations show that the
+surviving copy is not stable across invocations; they do not show which scan or
+ordering produces it, and no such mechanism is claimed. The earlier 1.18.30 record
+of `global` is a single observation the re-probe did not reproduce: failure to
+reproduce is not proof that it was wrong, and one observation could not have
+established it as a property of that version.
+
 M9 must therefore record a duplicate-name diagnostic and must not depend on any
 winner: a fixture cannot be trusted to reproduce the loss. This row is also the
 concrete instance of the drift the header describes.
+
+### Appendix A — runs excluded from the count
+
+Recorded before the §0 script scoped `$OPENCODE_CONFIG*` to a subshell, and
+excluded from the table above: the leaked variable outranks every file on disk, so
+every step after it reported the same value regardless of the fixture. They are
+kept because the earlier draft of the table was built from them. Their values are
+reproduced as recorded in `655939e` and not re-run — re-running them would only
+reproduce the leak.
+
+| Run, as recorded then                    | Agent   | Command | Skill, three consecutive invocations |
+| ---------------------------------------- | ------- | ------- | ------------------------------------ |
+| 1.18.31, collision fixture alone         | project | project | global, project, project             |
+| 1.18.31, §0 fixture (with config decoys) | project | project | global, global, project              |
 
 ### Activation
 
@@ -634,10 +691,11 @@ found requires a facet the current six do not cover.
 Recorded, never guessed (design doc §12):
 
 - **Built-in agents** compiled into the binary: `build`, `plan`, `general`,
-  `explore`, plus hidden `compaction`, `title`, `summary` — listed by
-  `opencode agent list` with no on-disk path [installed: measured].
+  `explore`, plus `compaction`, `title`, `summary`, which the built-in skill text
+  calls hidden — all listed by `opencode agent list` with no on-disk path (§0
+  step 9) [installed: measured; "hidden" is installed: self-described].
 - **Built-in skill** `customize-opencode`, reported by `opencode debug skill`
-  with `"location": "<built-in>"` [installed: measured].
+  with `"location": "<built-in>"` (§0 step 9) [installed: measured].
 - **Built-in tools, default providers, and the fetched model catalog** — the
   catalog cache is materialised at `$XDG_CACHE_HOME/opencode/models.json`
   [yuurei; measured]. Runtime-provided, not user harness.
@@ -674,7 +732,9 @@ because they are not the same kind of thing:
   persisting environment values (§19, §32.5), and neither existing adapter reads
   `CLAUDE_CONFIG_DIR` or `CODEX_HOME` either. The cost is stated rather than
   hidden: under such an override a snapshot describes the default layout, not that
-  run's layout.
+  run's layout. **M9 inherits that cost as a diagnostic requirement** — a snapshot
+  describes on-disk configuration, and when a run's actual load paths differ, the
+  difference must surface rather than pass silently (§11.2).
 - **Remote `.well-known/opencode` organizational defaults** — genuinely `unknown`.
   This is the one layer whose *provenance* `pfl` cannot establish statically: it
   cannot confirm the layer exists, is authenticated, or is org-scoped. `unknown`
@@ -725,9 +785,9 @@ catches it.
 **The trigger has already fired** (2026-09-17, per the header), so this is an
 outstanding obligation rather than a future one — tracked as §11.6. Meanwhile the
 **schema** conclusion (§9) is unaffected. The **layout** claims were re-checked on
-1.18.31 as far as the §0 probe reaches — §2's four precedence behaviours, which
-reproduced, and the §6 collision rows, which did not — and §0 now states that
-coverage explicitly. Any **[installed: measured]** row on a surface the probe does
+1.18.31 as far as the §0 probe reaches — §2's four precedence behaviours, the §4.2
+MCP surfaces and the §8 compiled-in layers, which reproduced, and the §6
+collision, which did not — and §0 now states that coverage explicitly. Any **[installed: measured]** row on a surface the probe does
 not exercise must not be extended to 1.18.31 by assumption.
 
 ## 11. Open questions
@@ -746,11 +806,12 @@ not exercise must not be extended to 1.18.31 by assumption.
    If the model should cover these variables after all, that is a deliberate
    change to the design's harness boundary and consent policy — not an adapter
    decision.
-3. **Skill-name collision tie-break** (§6) — **settled by re-probe, as undefined
-   behaviour.** On 1.18.31 one fixture produced both winners across consecutive
-   invocations with unchanged on-disk state, so there is no tie-break to record:
-   M9 records a duplicate-name diagnostic and relies on no winner. Nothing remains
-   open here beyond the general reconciliation below.
+3. **Skill-name collision tie-break** (§6) — **settled by re-probe: there is no
+   stable tie-break to record.** On 1.18.31 one fixture produced both winners
+   across consecutive invocations with unchanged on-disk state — 12 `project` /
+   6 `global` over 18 invocations — so M9 records a duplicate-name diagnostic and
+   relies on no winner. Nothing remains open here beyond the general
+   reconciliation below.
 4. **Nested `.opencode` directories.** Skills are documented to load along the
    walk to the git root; whether a nested `<subdir>/.opencode/agents/` is also
    loaded is unverified. A probe with agents in a nested directory would settle
@@ -766,8 +827,9 @@ not exercise must not be extended to 1.18.31 by assumption.
    without re-litigating the classification.
 6. **Reconciling this document with 1.18.31.** The header records the drift. The
    §0 probe has since been re-run on 1.18.31 and the surfaces it reaches
-   re-checked: §2's precedence behaviours reproduced, §6 changed, and the per-row
-   tags of §4 and §6 are now scoped to that measured set. What remains undone is
+   re-checked: §2's precedence behaviours, §4.2's MCP surfaces and §8's compiled-in
+   layers reproduced, §6 changed and now carries its excluded runs as an appendix,
+   and the per-row tags of §4 and §6 are scoped to that measured set. What remains undone is
    the rest of the reconciliation — every **[upstream]** and not-exercised row
    still stands on the source it names — and §10 makes that the prerequisite M9
    inherits.
