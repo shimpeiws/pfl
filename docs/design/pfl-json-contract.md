@@ -59,7 +59,20 @@ the document and a stored snapshot:
 - `severity` is `"info"`, `"warning"`, or `"error"`.
 - `code` is a **stable identifier** — match on it.
 - `message` is free text and is **not** stable — do not match on it.
-- `path` is optional, and is redacted the same way persisted paths are.
+- `path` is optional, and is redacted the same way persisted paths are. A store
+  diagnostic's `path` is store-relative and names the artifact class
+  (`snapshots/…`, `observations/…`, `interpretations/…`).
+
+The stable codes a consumer of the frozen contract may match on:
+
+| Code | Meaning |
+| --- | --- |
+| `unsupported-snapshot-schema` | An artifact's `schemaVersion` is not supported; its message names the version found and the versions supported. |
+| `invalid-snapshot` | An artifact is malformed: invalid JSON, or contents of the wrong shape. |
+| `unreadable-snapshot` / `unreadable-observation` / `unreadable-interpretation` | A scan skipped an artifact the store guard refused (symlink, hardlink, non-regular, or over the size limit). |
+
+Harness diagnostics (for example `runtime-version-unverified`) keep their own
+codes and are command-specific.
 
 ## Partial results and exit codes
 
@@ -219,10 +232,11 @@ The read commands report `interpretation: { classifierVersion, origin }` —
 `show` calls it `interpretationProvenance`, and `diff` reports each side's.
 `classifierVersion` is the classifier that produced the interpretation; `origin`
 is `stored` or `recomputed`. Since v1.0 `inspect` persists the interpretation, so
-a report on a fixed snapshot reproduces; a snapshot captured before v1.0 carries
-none and is recomputed, and the document says so. Absence of a stored
-interpretation is never an error; a stored interpretation this binary cannot
-interpret is not absence and fails the read like any other uninterpretable
+a report on a fixed snapshot reproduces; a run with no stored interpretation (a
+pre-v1.0 snapshot, or an interrupted `inspect`) is recomputed, and the document
+says so. `origin` describes the run's stored state, not its age. Absence of a
+stored interpretation is never an error; a stored interpretation this binary
+cannot interpret is not absence and fails the read like any other uninterpretable
 artifact.
 
 ### `gc` (implemented under issue #87)

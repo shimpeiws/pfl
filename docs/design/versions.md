@@ -60,7 +60,9 @@ snapshot id, never `interpretations/<interpretationId>.json` (#87).
 Because the classifier version is stored with the interpretation, a report
 reproduces on a fixed snapshot: the read commands use the stored interpretation
 and report `interpretation: { classifierVersion, origin }` with `origin` of
-`stored`. A snapshot captured before v1.0 carries no interpretation; it is
+`stored`. When a run has **no stored interpretation** — it was captured before
+v1.0, or an interrupted `inspect` never wrote one — the interpretation is
 recomputed with the current classifier and the document reports `origin` of
 `recomputed`, so a consumer can tell a reproduced report from a recomputed one.
-Absence of a stored interpretation is never an error.
+`origin` describes the run's stored state, not its age. Absence of a stored
+interpretation is never an error.

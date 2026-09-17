@@ -408,7 +408,12 @@ describe('latest pointer', () => {
     await mkdir(projectDir('proj', home), { recursive: true });
     await writeFile(latestPath('proj', home), '{ not json');
 
-    await expect(readLatestPointer('proj', home)).rejects.toThrowError(PflError);
+    // The pointer is mutable store metadata, not an immutable artifact, so an
+    // unreadable pointer is a store failure (exit 6), unlike an uninterpretable
+    // snapshot (exit 2).
+    const error = await readLatestPointer('proj', home).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(PflError);
+    expect((error as PflError).exitCode).toBe(EXIT_CODES.SNAPSHOT_STORE_FAILED);
   });
 });
 

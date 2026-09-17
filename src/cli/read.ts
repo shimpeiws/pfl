@@ -129,7 +129,14 @@ async function resolveResolvedId(
   // "unknown"; the scan's diagnostics carry it either way (#82).
   const context = diagnostics.length > 0 ? { diagnostics } : {};
   if (run === undefined) {
-    const unreadable = diagnostics.find((entry) => entry.path === `${requestedId}.json`);
+    // Diagnostic paths are store-relative and prefixed by artifact class, so
+    // the cause is attributable to the requested snapshot and not confused with
+    // an interpretation artifact that happens to share its id.
+    const unreadable = diagnostics.find(
+      (entry) =>
+        entry.path === `snapshots/${requestedId}.json` ||
+        entry.path === `observations/${requestedId}.json`,
+    );
     if (unreadable !== undefined) {
       throw new PflError(
         `could not read snapshot ${requestedId}: ${unreadable.message}`,
@@ -140,7 +147,7 @@ async function resolveResolvedId(
     throw new PflError(`unknown snapshot: ${requestedId}`, EXIT_CODES.CONFIG_ERROR, context);
   }
   if (run.resolvedId === null) {
-    const reason = diagnostics.find((entry) => entry.path?.startsWith('res_'));
+    const reason = diagnostics.find((entry) => entry.path?.startsWith('snapshots/'));
     throw new PflError(
       `could not read the resolved snapshot for ${requestedId}${reason !== undefined ? `: ${reason.message}` : ''}`,
       EXIT_CODES.CONFIG_ERROR,

@@ -449,13 +449,16 @@ describe('pfl CLI end to end', () => {
     // run rather than mistaken for absence.
     const artifact = join(interpretationsDir(projectId, m.home), `${pointer.resolved}.json`);
 
+    // The failure document's `diagnostics` is the scan's set, so match by code
+    // rather than position.
     await writeFile(artifact, '{ not json');
     for (const id of [pointer.observed, pointer.resolved]) {
       const corrupt = await runCli(m, ['report', '--snapshot', id, '--json']);
       expect(corrupt.code, id).toBe(EXIT_CODES.CONFIG_ERROR);
-      expect(
-        (JSON.parse(corrupt.stdout) as { diagnostics: { code: string }[] }).diagnostics[0]?.code,
-      ).toBe('invalid-snapshot');
+      const codes = (
+        JSON.parse(corrupt.stdout) as { diagnostics: { code: string }[] }
+      ).diagnostics.map((diagnostic) => diagnostic.code);
+      expect(codes, id).toContain('invalid-snapshot');
     }
 
     // A snapshot the schema does not support is the same fail-closed path.
@@ -463,8 +466,10 @@ describe('pfl CLI end to end', () => {
     const future = await runCli(m, ['report', '--snapshot', pointer.observed, '--json']);
     expect(future.code).toBe(EXIT_CODES.CONFIG_ERROR);
     expect(
-      (JSON.parse(future.stdout) as { diagnostics: { code: string }[] }).diagnostics[0]?.code,
-    ).toBe('unsupported-snapshot-schema');
+      (JSON.parse(future.stdout) as { diagnostics: { code: string }[] }).diagnostics.map(
+        (diagnostic) => diagnostic.code,
+      ),
+    ).toContain('unsupported-snapshot-schema');
   });
 
   it('emits the failure envelope on a non-zero exit', async () => {
@@ -568,7 +573,10 @@ describe('pfl CLI end to end', () => {
         diagnostics: { code: string }[];
       };
       expect(namedDocument.data.error.message, id).toMatch(/could not read/);
-      expect(namedDocument.diagnostics[0]?.code, id).toBe('unsupported-snapshot-schema');
+      expect(
+        namedDocument.diagnostics.map((diagnostic) => diagnostic.code),
+        id,
+      ).toContain('unsupported-snapshot-schema');
     }
   });
 

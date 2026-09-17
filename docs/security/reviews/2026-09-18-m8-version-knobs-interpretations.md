@@ -1,9 +1,10 @@
 # Security review — M8 schema-version handling and interpretation persistence (#82, #84)
 
 - Date: 2026-09-18
-- Reviewer: independent adversarial review (`codex exec -s read-only`, four
-  rounds against the diff) plus a maintainer self-review against the design
-  invariants (design doc §19; roadmap §3.1, §3.2)
+- Reviewer: independent adversarial review (`codex exec -s read-only` and the
+  Claude Code CLI, several rounds against the diff) plus a maintainer
+  self-review against the design invariants (design doc §19; roadmap §3.1,
+  §3.2)
 - Trigger: `src/snapshot/store.ts` changed (artifact read handling, the
   interpretation artifact, the run summary, and the `latest` pointer). No other
   trigger path is in the diff.
@@ -53,8 +54,8 @@ field passes the redaction layer at the export boundary.
 
 ## Findings and disposition
 
-Four review rounds found and closed four consistency gaps; all were remediated
-in this pull request:
+Several review rounds found and closed five consistency gaps; all were
+remediated in this pull request:
 
 1. A well-formed envelope whose contents failed validation still exited 6.
    Fixed: the validation failure is the same `invalid-snapshot` diagnostic as
@@ -73,6 +74,17 @@ in this pull request:
    `invalid-snapshot` diagnostic. Fixed: the predicate validates each element,
    the stats, and each finding, while still tolerating an unknown future facet
    or rule.
+5. Store diagnostics carried a bare file name, so `res_x.json` could name either
+   the snapshot or the interpretation for the same resolved id, and a named
+   read's "could not read" message could attribute the wrong cause. Fixed:
+   diagnostic paths are store-relative and class-qualified
+   (`snapshots/…`, `observations/…`, `interpretations/…`), and the named-read
+   selection matches the qualified path. A scan's diagnostics describe the scan,
+   so consumers match by `code`, not position.
+
+A guard refusal (symlink, hardlink, non-regular, over the size limit) remains a
+store failure, exit 6, unlike an uninterpretable artifact; the README and ADR
+now state that split explicitly.
 
 No finding was accepted as a risk.
 

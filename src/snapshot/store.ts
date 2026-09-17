@@ -346,7 +346,7 @@ export async function listRuns(
       );
       resolvedByObserved.set(resolved.observedSnapshotId, resolved.snapshotId);
     } catch (error) {
-      diagnostics.push(readErrorDiagnostic(error, 'unreadable-snapshot', name));
+      diagnostics.push(readErrorDiagnostic(error, 'unreadable-snapshot', `snapshots/${name}`));
     }
   }
 
@@ -378,7 +378,7 @@ export async function listRuns(
           severity: 'warning',
           code: 'invalid-snapshot',
           message: `interpretation ${interpretation.interpretationId} is stored under ${keyedAs} but claims ${interpretation.resolvedSnapshotId}`,
-          path: name,
+          path: `interpretations/${name}`,
         });
         continue;
       }
@@ -387,7 +387,9 @@ export async function listRuns(
         interpretation.interpretationId,
       );
     } catch (error) {
-      diagnostics.push(readErrorDiagnostic(error, 'unreadable-interpretation', name));
+      diagnostics.push(
+        readErrorDiagnostic(error, 'unreadable-interpretation', `interpretations/${name}`),
+      );
     }
   }
 
@@ -410,7 +412,9 @@ export async function listRuns(
         completeness: observed.completeness,
       });
     } catch (error) {
-      diagnostics.push(readErrorDiagnostic(error, 'unreadable-observation', name));
+      diagnostics.push(
+        readErrorDiagnostic(error, 'unreadable-observation', `observations/${name}`),
+      );
     }
   }
 

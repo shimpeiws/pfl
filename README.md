@@ -107,11 +107,13 @@ and names the classifier that produced it. See
 | 6    | `SNAPSHOT_STORE_FAILED` | Snapshot store failure — reading or writing `~/.pfl/` failed at the I/O level  |
 
 A `--json` failure document carries the stable name in `data.error.code`, not
-the number. A stored snapshot this binary cannot interpret — an unsupported
-schema, or a malformed artifact — is not a store failure: a scan skips it with a
-diagnostic, and a direct read exits 2 (`CONFIG_ERROR`) with a diagnostic naming
-the version found and the versions supported. Exit 6 is reserved for a store
-that could not be read at all.
+the number. A stored snapshot this binary cannot interpret is not a store
+failure: a scan skips it with a diagnostic (`unsupported-snapshot-schema` or
+`invalid-snapshot`), and a direct read exits 2 (`CONFIG_ERROR`) carrying that
+diagnostic. An unsupported schema names the version found and the versions
+supported. Exit 6 is reserved for a store that could not be read at all — an
+I/O failure, a guard refusal (a symlinked, oversized, or non-regular artifact),
+or a corrupt `latest` pointer.
 
 ## Examples
 
