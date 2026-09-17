@@ -4,11 +4,17 @@ import { resolveProjectContext } from '../discovery/project-identity.js';
 import { redactingLogger } from '../redact/output.js';
 import { listRuns, type StoredRunSummary } from '../snapshot/store.js';
 import type { Logger } from '../util/logger.js';
+import { type CommandOutcome } from './document.js';
 
 export interface SnapshotsOptions {
   json?: boolean;
   /** Injected for tests; defaults to the current user's home. */
   home?: string;
+}
+
+export interface SnapshotsData {
+  project: string;
+  runs: StoredRunSummary[];
 }
 
 /**
@@ -20,7 +26,7 @@ export async function runSnapshots(
   cwd: string,
   options: SnapshotsOptions,
   logger: Logger,
-): Promise<void> {
+): Promise<CommandOutcome<SnapshotsData>> {
   const home = options.home ?? homedir();
   const out = redactingLogger(logger, options.json ? 'export' : 'display', { home });
   const project = await resolveProjectContext(cwd, {
@@ -32,20 +38,25 @@ export async function runSnapshots(
     out.warn(diagnostic.message, { code: diagnostic.code, path: diagnostic.path });
   }
 
-  if (options.json) {
-    out.info('snapshots', { project: project.id, runs });
-    return;
-  }
+  // No single harness is observed; the envelope reports `unknown` completeness.
+  const outcome = {
+    data: { project: project.id, runs },
+    diagnostics,
+    completeness: 'unknown' as const,
+  };
+
+  if (options.json) return outcome;
 
   if (runs.length === 0) {
     out.info(`No snapshots stored for ${project.displayName}.`);
-    return;
+    return outcome;
   }
 
   out.info(`${runs.length} snapshot(s) for ${project.displayName}:`);
   for (const run of runs) {
     out.info(formatRun(run));
   }
+  return outcome;
 }
 
 function formatRun(run: StoredRunSummary): string {

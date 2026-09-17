@@ -4,6 +4,7 @@ import type { NativeOrigin } from '../core/observed.js';
 import type { ResolvedStatus } from '../core/resolved.js';
 import { redactingLogger } from '../redact/output.js';
 import type { Logger } from '../util/logger.js';
+import { type CommandOutcome } from './document.js';
 import { EXIT_CODES, PflError } from './exit-codes.js';
 import { loadInterpretation } from './read.js';
 
@@ -42,13 +43,22 @@ interface ListRow {
   facets: HarnessFacet[];
 }
 
+export interface ListData {
+  count: number;
+  elements: ListRow[];
+}
+
 /**
  * `pfl list [--facet <f>] [--origin <o>] [--status <s>]` (design doc §23): list
  * the elements of the default `latest` snapshot. Filters combine with AND; an
  * invalid filter value fails and lists the valid ones instead of silently
  * returning nothing.
  */
-export async function runList(cwd: string, options: ListOptions, logger: Logger): Promise<void> {
+export async function runList(
+  cwd: string,
+  options: ListOptions,
+  logger: Logger,
+): Promise<CommandOutcome<ListData>> {
   const facet = validateFacet(options.facet);
   const origin = validateOrigin(options.origin);
   const status = validateStatus(options.status);
@@ -83,17 +93,21 @@ export async function runList(cwd: string, options: ListOptions, logger: Logger)
         (status === undefined || row.status === status),
     );
 
-  if (options.json) {
-    out.info('list', { count: rows.length, elements: rows });
-    return;
-  }
+  // Elements are ordered by id, as the document contract states; the human
+  // listing keeps discovery order.
+  const elements = [...rows].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const data: ListData = { count: elements.length, elements };
+  const outcome = { data, diagnostics, completeness: observed.completeness };
+
+  if (options.json) return outcome;
   if (rows.length === 0) {
     out.info('No elements match.');
-    return;
+    return outcome;
   }
   for (const row of rows) {
     out.info(`${row.id}  ${row.kind}  ${row.origin}  ${row.status}  ${row.facets.join(',')}`);
   }
+  return outcome;
 }
 
 function validateFacet(value: string | undefined): HarnessFacet | undefined {

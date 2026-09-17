@@ -150,21 +150,22 @@ describe('runReport', () => {
       pair('instructions', 'CLAUDE.md'),
       pair('permissions', '.claude/settings.json#permissions', 'shadowed'),
     ]);
-    const { lines, logger } = fakeLogger();
+    const { logger } = fakeLogger();
 
-    await runReport(projectRoot, { home, json: true }, logger);
+    const outcome = await runReport(projectRoot, { home, json: true }, logger);
 
-    const payload = JSON.parse(lines[0] ?? '{}');
-    expect(payload).toMatchObject({
+    expect(outcome.data).toMatchObject({
       runtime: 'claude-code',
       runtimeName: 'Claude Code',
       project: { displayName: 'owner/repo' },
       stats: { effective: 1, shadowed: 1 },
     });
-    expect(payload.findings.map((finding: { rule: string }) => finding.rule)).toContain(
+    expect(outcome.data.findings.map((finding: { rule: string }) => finding.rule)).toContain(
       'shadowed-element',
     );
-    expect(payload.resolvedSnapshotId).toBe('res_test');
+    expect(outcome.data.resolvedSnapshotId).toBe('res_test');
+    // The harness completeness travels in the envelope, not in `data`.
+    expect(outcome.completeness).toBe('partial');
   });
 
   it('fails clearly on an unknown snapshot id', async () => {

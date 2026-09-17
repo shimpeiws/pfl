@@ -1,8 +1,10 @@
 import { homedir } from 'node:os';
 import { HARNESS_FACETS } from '../core/facets.js';
+import type { Finding, HarnessStats } from '../core/interpretation.js';
 import { getRuntimeName } from '../runtime/registry.js';
 import { redactingLogger } from '../redact/output.js';
 import type { Logger } from '../util/logger.js';
+import { type CommandOutcome } from './document.js';
 import { loadInterpretation } from './read.js';
 
 export interface ReportOptions {
@@ -10,6 +12,17 @@ export interface ReportOptions {
   json?: boolean;
   /** Injected for tests; defaults to the current user's home. */
   home?: string;
+}
+
+export interface ReportData {
+  runtime: string;
+  runtimeName: string;
+  project: { id: string; displayName: string };
+  observedSnapshotId: string;
+  resolvedSnapshotId: string;
+  confidence: string;
+  stats: HarnessStats;
+  findings: Finding[];
 }
 
 /**
@@ -21,7 +34,7 @@ export async function runReport(
   cwd: string,
   options: ReportOptions,
   logger: Logger,
-): Promise<void> {
+): Promise<CommandOutcome<ReportData>> {
   const home = options.home ?? homedir();
   const out = redactingLogger(logger, options.json ? 'export' : 'display', { home });
   const { observed, resolved, interpretation, diagnostics } = await loadInterpretation(
@@ -35,19 +48,19 @@ export async function runReport(
   const stats = interpretation.stats;
   const runtimeName = getRuntimeName(observed.runtime.id);
 
+  const data: ReportData = {
+    runtime: observed.runtime.id,
+    runtimeName,
+    project: { id: observed.project.id, displayName: observed.project.displayName },
+    observedSnapshotId: observed.snapshotId,
+    resolvedSnapshotId: resolved.snapshotId,
+    confidence: resolved.resolution.confidence,
+    stats,
+    findings: interpretation.findings,
+  };
+
   if (options.json) {
-    out.info('report', {
-      runtime: observed.runtime.id,
-      runtimeName,
-      project: { id: observed.project.id, displayName: observed.project.displayName },
-      observedSnapshotId: observed.snapshotId,
-      resolvedSnapshotId: resolved.snapshotId,
-      completeness: observed.completeness,
-      confidence: resolved.resolution.confidence,
-      stats,
-      findings: interpretation.findings,
-    });
-    return;
+    return { data, diagnostics, completeness: observed.completeness };
   }
 
   out.info('Harness Report');
@@ -82,6 +95,8 @@ export async function runReport(
     out.info('');
     out.warn(`⚠ scan completeness: ${observed.completeness}`);
   }
+
+  return { data, diagnostics, completeness: observed.completeness };
 }
 
 function capitalize(value: string): string {

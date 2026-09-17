@@ -104,15 +104,15 @@ describe('runInspect', () => {
 
   it('renders the same facts as JSON', async () => {
     const { project, home } = await makeFixture(true);
-    const { lines, logger } = fakeLogger();
+    const { logger } = fakeLogger();
 
-    await runInspect(
+    const outcome = await runInspect(
       project,
       { runtime: 'claude-code', home, pathValue: '', interactive: false, json: true },
       logger,
     );
 
-    const payload = JSON.parse(lines[0] ?? '{}');
+    const payload = outcome.data;
     expect(payload).toMatchObject({
       runtime: 'claude-code',
       observed: { completeness: 'complete' },
@@ -125,8 +125,10 @@ describe('runInspect', () => {
     // inspected (2 project files + 1 user skill + 1 opaque layer), all effective.
     expect(payload.observed.elements).toBe(4);
     expect(payload.resolved).toMatchObject({ effective: 4, conditional: 0, shadowed: 0 });
-    // The §17 warning is not dropped from JSON output.
-    expect(payload.diagnostics.resolved).toEqual(
+    expect(outcome.completeness).toBe('complete');
+    // The §17 warning is not dropped from the document; it travels in the
+    // envelope's flat diagnostics list.
+    expect(outcome.diagnostics).toEqual(
       expect.arrayContaining([expect.objectContaining({ code: 'runtime-version-unverified' })]),
     );
   });

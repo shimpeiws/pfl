@@ -2,6 +2,12 @@
 import { homedir } from 'node:os';
 import cac from 'cac';
 import { runDiff } from './cli/diff.js';
+import {
+  buildDocument,
+  buildErrorDocument,
+  writeDocument,
+  type CommandOutcome,
+} from './cli/document.js';
 import { EXIT_CODES, PflError } from './cli/exit-codes.js';
 import { runGraph } from './cli/graph.js';
 import { runInspect } from './cli/inspect.js';
@@ -19,24 +25,30 @@ interface CommonFlags {
   json?: boolean;
 }
 
+/**
+ * Wraps a command so a `--json` run emits exactly one document — the success
+ * envelope on completion, or the failure envelope on any exit. The exit code is
+ * set on every failure, exactly when `ok` is false. Human runs are unchanged.
+ */
 function withErrorHandling<Args extends [...unknown[], CommonFlags]>(
-  action: (...args: Args) => Promise<void>,
+  command: string,
+  action: (...args: Args) => Promise<CommandOutcome>,
 ): (...args: Args) => Promise<void> {
   return async (...args: Args) => {
+    const flags = (args[args.length - 1] ?? {}) as CommonFlags;
+    const json = flags.json === true;
+    const ctx = { home: homedir() };
     try {
-      await action(...args);
+      const outcome = await action(...args);
+      if (json) writeDocument(buildDocument(command, outcome, ctx));
     } catch (error) {
-      const flags = (args[args.length - 1] ?? {}) as CommonFlags;
-      const logger = redactingLogger(loggerForFlags(flags), flags.json ? 'export' : 'display', {
-        home: homedir(),
-      });
-      if (error instanceof PflError) {
-        logger.error(error.message);
-        process.exitCode = error.exitCode;
-        return;
+      if (json) {
+        writeDocument(buildErrorDocument(command, error, ctx));
+      } else {
+        const logger = redactingLogger(loggerForFlags(flags), 'display', ctx);
+        logger.error(error instanceof Error ? error.message : String(error));
       }
-      logger.error(error instanceof Error ? error.message : String(error));
-      process.exitCode = EXIT_CODES.INSPECTION_FAILED;
+      process.exitCode = error instanceof PflError ? error.exitCode : EXIT_CODES.INSPECTION_FAILED;
     }
   };
 }
@@ -46,11 +58,11 @@ cli
   .option('--runtime <runtime>', 'Runtime to inspect: claude-code or codex')
   .option('--json', 'Output as JSON')
   .action(
-    withErrorHandling(async (flags: { runtime?: string } & CommonFlags) => {
+    withErrorHandling('inspect', async (flags: { runtime?: string } & CommonFlags) => {
       if (!flags.runtime) {
         throw new PflError('--runtime is required (claude-code or codex)', EXIT_CODES.CONFIG_ERROR);
       }
-      await runInspect(
+      return runInspect(
         process.cwd(),
         { runtime: flags.runtime, json: flags.json ?? false },
         loggerForFlags(flags),
@@ -63,8 +75,8 @@ cli
   .option('--snapshot <id>', 'Snapshot id (default: latest)')
   .option('--json', 'Output as JSON')
   .action(
-    withErrorHandling(async (flags: { snapshot?: string } & CommonFlags) => {
-      await runReport(
+    withErrorHandling('report', async (flags: { snapshot?: string } & CommonFlags) => {
+      return runReport(
         process.cwd(),
         {
           ...(flags.snapshot !== undefined ? { snapshot: flags.snapshot } : {}),
@@ -84,6 +96,7 @@ cli
   .option('--json', 'Output as JSON')
   .action(
     withErrorHandling(
+      'list',
       async (
         flags: {
           snapshot?: string;
@@ -92,7 +105,7 @@ cli
           status?: string;
         } & CommonFlags,
       ) => {
-        await runList(
+        return runList(
           process.cwd(),
           {
             ...(flags.snapshot !== undefined ? { snapshot: flags.snapshot } : {}),
@@ -112,17 +125,20 @@ cli
   .option('--snapshot <id>', 'Snapshot id (default: latest)')
   .option('--json', 'Output as JSON')
   .action(
-    withErrorHandling(async (elementId: string, flags: { snapshot?: string } & CommonFlags) => {
-      await runShow(
-        process.cwd(),
-        elementId,
-        {
-          ...(flags.snapshot !== undefined ? { snapshot: flags.snapshot } : {}),
-          json: flags.json ?? false,
-        },
-        loggerForFlags(flags),
-      );
-    }),
+    withErrorHandling(
+      'show',
+      async (elementId: string, flags: { snapshot?: string } & CommonFlags) => {
+        return runShow(
+          process.cwd(),
+          elementId,
+          {
+            ...(flags.snapshot !== undefined ? { snapshot: flags.snapshot } : {}),
+            json: flags.json ?? false,
+          },
+          loggerForFlags(flags),
+        );
+      },
+    ),
   );
 
 cli
@@ -130,8 +146,8 @@ cli
   .option('--snapshot <id>', 'Snapshot id (default: latest)')
   .option('--json', 'Output as JSON')
   .action(
-    withErrorHandling(async (flags: { snapshot?: string } & CommonFlags) => {
-      await runGraph(
+    withErrorHandling('graph', async (flags: { snapshot?: string } & CommonFlags) => {
+      return runGraph(
         process.cwd(),
         {
           ...(flags.snapshot !== undefined ? { snapshot: flags.snapshot } : {}),
@@ -146,8 +162,8 @@ cli
   .command('snapshots', 'List stored snapshots for the current project')
   .option('--json', 'Output as JSON')
   .action(
-    withErrorHandling(async (flags: CommonFlags) => {
-      await runSnapshots(process.cwd(), { json: flags.json ?? false }, loggerForFlags(flags));
+    withErrorHandling('snapshots', async (flags: CommonFlags) => {
+      return runSnapshots(process.cwd(), { json: flags.json ?? false }, loggerForFlags(flags));
     }),
   );
 
@@ -155,8 +171,8 @@ cli
   .command('diff <snapshot-a> <snapshot-b>', 'Compare two snapshots')
   .option('--json', 'Output as JSON')
   .action(
-    withErrorHandling(async (snapshotA: string, snapshotB: string, flags: CommonFlags) => {
-      await runDiff(
+    withErrorHandling('diff', async (snapshotA: string, snapshotB: string, flags: CommonFlags) => {
+      return runDiff(
         process.cwd(),
         snapshotA,
         snapshotB,
@@ -168,4 +184,49 @@ cli
 
 cli.help();
 cli.version(packageVersion);
-cli.parse();
+
+/**
+ * `cac` validates arguments — unknown options, missing required positionals,
+ * unused extras — before it ever calls an action, so `withErrorHandling` never
+ * sees those failures. Under `--json` they must still produce the failure
+ * envelope; otherwise stdout would carry no document at all. Args are read from
+ * `process.argv` because the parsed options are not available when parsing
+ * itself fails. A parse failure is a configuration error (exit 2).
+ */
+function reportFailure(command: string, message: string): void {
+  if (process.argv.includes('--json')) {
+    writeDocument(
+      buildErrorDocument(command, new PflError(message, EXIT_CODES.CONFIG_ERROR), {
+        home: homedir(),
+      }),
+    );
+  } else {
+    process.stderr.write(`${message}\n`);
+  }
+  process.exitCode = EXIT_CODES.CONFIG_ERROR;
+}
+
+const HELP_OR_VERSION = new Set(['--help', '-h', '--version', '-v']);
+
+try {
+  cli.parse();
+  // `cac` neither throws nor runs anything for an unknown command or for no
+  // command at all: it just exits 0. That would break the contract's "a failure
+  // always emits the envelope", so both are turned into a configuration error.
+  // `--help`/`--version` also leave `matchedCommand` unset and are left alone.
+  if (cli.matchedCommand === undefined && !process.argv.some((arg) => HELP_OR_VERSION.has(arg))) {
+    const unknown = cli.args[0];
+    if (unknown !== undefined) {
+      reportFailure('pfl', `unknown command: ${unknown}`);
+    } else if (process.argv.includes('--json')) {
+      reportFailure('pfl', 'no command given');
+    } else {
+      cli.outputHelp();
+    }
+  }
+} catch (error) {
+  reportFailure(
+    cli.matchedCommandName ?? 'pfl',
+    error instanceof Error ? error.message : String(error),
+  );
+}

@@ -156,6 +156,7 @@ export async function resolveAccessPolicy(
     throw new PflError(
       `reading outside the project requires consent for ${consentScopeKey(request.runtimeId, request.scope)}; rerun interactively to grant it`,
       EXIT_CODES.CONSENT_REQUIRED,
+      { missingScopes: [consentScopeKey(request.runtimeId, request.scope)] },
     );
   }
 

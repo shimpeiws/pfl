@@ -13,6 +13,27 @@ import {
 } from '../snapshot/store.js';
 import { redactingLogger } from '../redact/output.js';
 import type { Logger } from '../util/logger.js';
+import { type CommandOutcome } from './document.js';
+
+export interface InspectData {
+  runtime: string;
+  runtimeVersion: string | null;
+  runtimeCompatibility: 'verified' | 'unverified';
+  project: string;
+  observed: {
+    snapshotId: string;
+    elements: number;
+    opaqueLayers: number;
+    completeness: string;
+  };
+  resolved: {
+    snapshotId: string;
+    effective: number;
+    conditional: number;
+    shadowed: number;
+    confidence: string;
+  };
+}
 
 export interface InspectOptions {
   runtime: string;
@@ -39,7 +60,7 @@ export async function runInspect(
   cwd: string,
   options: InspectOptions,
   logger: Logger,
-): Promise<void> {
+): Promise<CommandOutcome<InspectData>> {
   const adapter = getAdapter(options.runtime);
   const home = options.home ?? homedir();
   const out = redactingLogger(logger, options.json ? 'export' : 'display', { home });
@@ -72,7 +93,40 @@ export async function runInspect(
     home,
   );
 
-  renderInspect(out, request.runtimeName, observed, resolved, detection, options.json === true);
+  const data = inspectData(observed, resolved);
+  // Observed and resolved diagnostics belong to the run, not to the payload, so
+  // they travel in the envelope and are not nested under `data`.
+  const diagnostics = [...observed.diagnostics, ...resolved.diagnostics];
+
+  if (options.json !== true) {
+    renderInspect(out, request.runtimeName, observed, resolved, detection);
+  }
+  return { data, diagnostics, completeness: observed.completeness };
+}
+
+function inspectData(observed: ObservedSnapshot, resolved: ResolvedSnapshot): InspectData {
+  const opaqueLayers = observed.elements.filter(
+    (element) => element.inspectability === 'opaque',
+  ).length;
+  return {
+    runtime: observed.runtime.id,
+    runtimeVersion: observed.runtime.version,
+    runtimeCompatibility: observed.adapter.runtimeCompatibility,
+    project: observed.project.id,
+    observed: {
+      snapshotId: observed.snapshotId,
+      elements: observed.elements.length,
+      opaqueLayers,
+      completeness: observed.completeness,
+    },
+    resolved: {
+      snapshotId: resolved.snapshotId,
+      effective: countStatus(resolved, 'effective'),
+      conditional: countStatus(resolved, 'conditional'),
+      shadowed: countStatus(resolved, 'shadowed'),
+      confidence: resolved.resolution.confidence,
+    },
+  };
 }
 
 function countStatus(resolved: ResolvedSnapshot, status: ResolvedStatus): number {
@@ -85,7 +139,6 @@ function renderInspect(
   observed: ObservedSnapshot,
   resolved: ResolvedSnapshot,
   detection: RuntimeDetection,
-  json: boolean,
 ): void {
   const opaqueLayers = observed.elements.filter(
     (element) => element.inspectability === 'opaque',
@@ -95,28 +148,6 @@ function renderInspect(
     conditional: countStatus(resolved, 'conditional'),
     shadowed: countStatus(resolved, 'shadowed'),
   };
-
-  if (json) {
-    out.info('inspect', {
-      runtime: observed.runtime.id,
-      runtimeVersion: observed.runtime.version,
-      runtimeCompatibility: observed.adapter.runtimeCompatibility,
-      project: observed.project.id,
-      observed: {
-        snapshotId: observed.snapshotId,
-        elements: observed.elements.length,
-        opaqueLayers,
-        completeness: observed.completeness,
-      },
-      resolved: {
-        snapshotId: resolved.snapshotId,
-        ...counts,
-        confidence: resolved.resolution.confidence,
-      },
-      diagnostics: { observed: observed.diagnostics, resolved: resolved.diagnostics },
-    });
-    return;
-  }
 
   out.info(`Inspecting ${runtimeName} harness...`);
   out.info('');

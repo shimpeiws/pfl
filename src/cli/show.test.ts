@@ -179,12 +179,16 @@ describe('runShow', () => {
     const home = await tempDir('pfl-show-home-');
     const instructions = pair('instructions', 'CLAUDE.md');
     await seed(projectRoot, home, [instructions]);
-    const { lines, logger } = fakeLogger();
+    const { logger } = fakeLogger();
 
-    await runShow(projectRoot, instructions.observed.id, { home, json: true }, logger);
+    const outcome = await runShow(
+      projectRoot,
+      instructions.observed.id,
+      { home, json: true },
+      logger,
+    );
 
-    const payload = JSON.parse(lines[0] ?? '{}');
-    expect(payload.observed.native.kind).toBe('instructions');
-    expect(payload.resolved.status).toBe('effective');
+    expect(outcome.data.observed.native.kind).toBe('instructions');
+    expect(outcome.data.resolved?.status).toBe('effective');
   });
 });

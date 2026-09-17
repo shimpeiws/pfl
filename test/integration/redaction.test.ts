@@ -3,12 +3,21 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { runDiff } from '../../src/cli/diff.js';
+import { buildDocument, type CommandOutcome } from '../../src/cli/document.js';
 import { runGraph } from '../../src/cli/graph.js';
 import { runInspect } from '../../src/cli/inspect.js';
 import { runList } from '../../src/cli/list.js';
 import { runReport } from '../../src/cli/report.js';
 import { runShow } from '../../src/cli/show.js';
 import { runSnapshots } from '../../src/cli/snapshots.js';
+import {
+  elementIdFor,
+  generateObservedSnapshotId,
+  generateResolvedSnapshotId,
+  runtimeId,
+} from '../../src/core/ids.js';
+import type { ObservedSnapshot } from '../../src/core/observed.js';
+import type { ResolvedSnapshot } from '../../src/core/resolved.js';
 import { resolveProjectContext } from '../../src/discovery/project-identity.js';
 import { encodeProjectDir } from '../../src/runtime/claude-code/paths.js';
 import { realpathAsFarAsExists } from '../../src/util/fs.js';
@@ -17,6 +26,9 @@ import {
   readLatestPointer,
   readObservedSnapshot,
   readResolvedSnapshot,
+  writeLatestPointer,
+  writeObservedSnapshot,
+  writeResolvedSnapshot,
 } from '../../src/snapshot/store.js';
 import type { Logger } from '../../src/util/logger.js';
 import { grantConsent } from '../fixtures/materialize.js';
@@ -151,25 +163,51 @@ describe('redaction across every channel (S6, S8)', () => {
 
     for (const json of [false, true]) {
       const out = captureLogger();
-      await runInspect(
-        fixture.projectRoot,
-        { runtime: 'claude-code', home: fixture.home, pathValue: '', interactive: false, json },
-        out.logger,
+      // Under `--json` the payload leaves through the document envelope, not the
+      // logger, so the envelope is built here exactly as the CLI wrapper does.
+      const documents: unknown[] = [];
+      const collect = <T>(command: string, outcome: CommandOutcome<T>): void => {
+        if (json) documents.push(buildDocument(command, outcome, { home: fixture.home }));
+      };
+      collect(
+        'inspect',
+        await runInspect(
+          fixture.projectRoot,
+          { runtime: 'claude-code', home: fixture.home, pathValue: '', interactive: false, json },
+          out.logger,
+        ),
       );
-      await runReport(fixture.projectRoot, { home: fixture.home, json }, out.logger);
-      await runList(fixture.projectRoot, { home: fixture.home, json }, out.logger);
-      await runGraph(fixture.projectRoot, { home: fixture.home, json }, out.logger);
-      await runSnapshots(fixture.projectRoot, { home: fixture.home, json }, out.logger);
-      await runShow(fixture.projectRoot, elementId, { home: fixture.home, json }, out.logger);
-      await runDiff(
-        fixture.projectRoot,
-        resolved.snapshotId,
-        resolved.snapshotId,
-        { home: fixture.home, json },
-        out.logger,
+      collect(
+        'report',
+        await runReport(fixture.projectRoot, { home: fixture.home, json }, out.logger),
+      );
+      collect('list', await runList(fixture.projectRoot, { home: fixture.home, json }, out.logger));
+      collect(
+        'graph',
+        await runGraph(fixture.projectRoot, { home: fixture.home, json }, out.logger),
+      );
+      collect(
+        'snapshots',
+        await runSnapshots(fixture.projectRoot, { home: fixture.home, json }, out.logger),
+      );
+      collect(
+        'show',
+        await runShow(fixture.projectRoot, elementId, { home: fixture.home, json }, out.logger),
+      );
+      collect(
+        'diff',
+        await runDiff(
+          fixture.projectRoot,
+          resolved.snapshotId,
+          resolved.snapshotId,
+          { home: fixture.home, json },
+          out.logger,
+        ),
       );
 
-      const text = out.text();
+      const text = [out.text(), ...documents.map((document) => JSON.stringify(document))].join(
+        '\n',
+      );
       expect(text).not.toContain(fixture.home);
       expect(text).not.toContain('sk-ant-secret-value');
       // The digest still reaches the output, so redaction is not blanket.
@@ -193,5 +231,89 @@ describe('redaction across every channel (S6, S8)', () => {
 
     expect(out.text()).not.toContain(fixture.home);
     expect(out.text()).toContain('~');
+  });
+
+  it('re-redacts an artifact path at the document boundary, even if stored raw', async () => {
+    const fixture = await makeFixture();
+    const projectId = (await resolveProjectContext(fixture.projectRoot)).id;
+    const rid = runtimeId('claude-code');
+    // A snapshot stored before redaction existed, or tampered with, holds a raw
+    // absolute path. The document layer must not trust it.
+    const rawPath = join(fixture.home, 'leaked', 'CLAUDE.md');
+    const id = elementIdFor({
+      runtimeId: rid,
+      origin: 'project',
+      kind: 'instructions',
+      path: rawPath,
+    });
+    const observed: ObservedSnapshot = {
+      schemaVersion: '1',
+      snapshotId: generateObservedSnapshotId(),
+      capturedAt: '2026-09-16T00:00:00.000Z',
+      project: { id: projectId, displayName: 'proj', root: fixture.projectRoot },
+      runtime: { id: rid, version: '2.1.272' },
+      adapter: { id: 'claude-code', version: '0.1.0', runtimeCompatibility: 'verified' },
+      elements: [
+        {
+          id,
+          native: { kind: 'instructions', origin: 'project', scope: 'project' },
+          source: { path: rawPath },
+          inspectability: 'observable',
+          metadata: {},
+          status: 'observed',
+        },
+      ],
+      diagnostics: [],
+      completeness: 'complete',
+      digests: { observed: 'sha256:x' },
+    };
+    const resolved: ResolvedSnapshot = {
+      schemaVersion: '1',
+      snapshotId: generateResolvedSnapshotId(),
+      observedSnapshotId: observed.snapshotId,
+      runtime: { id: rid, version: '2.1.272' },
+      resolution: { semanticsVersion: '1', confidence: 'verified' },
+      elements: [
+        {
+          id,
+          status: 'effective',
+          applicability: { type: 'project' },
+          activation: 'always',
+          resolution: { strategy: 'accumulate' },
+        },
+      ],
+      relations: [],
+      effectiveElementIds: [id],
+      diagnostics: [],
+      digests: { harnessContent: 'sha256:h', resolvedSnapshot: 'sha256:r' },
+    };
+    await writeObservedSnapshot(projectId, observed, fixture.home);
+    await writeResolvedSnapshot(projectId, resolved, fixture.home);
+    await writeLatestPointer(
+      projectId,
+      { observed: observed.snapshotId, resolved: resolved.snapshotId },
+      fixture.home,
+    );
+
+    const showOutcome = await runShow(
+      fixture.projectRoot,
+      id,
+      { home: fixture.home, json: true },
+      captureLogger().logger,
+    );
+    const graphOutcome = await runGraph(
+      fixture.projectRoot,
+      { home: fixture.home, json: true },
+      captureLogger().logger,
+    );
+
+    const showDocument = JSON.stringify(buildDocument('show', showOutcome, { home: fixture.home }));
+    const graphDocument = JSON.stringify(
+      buildDocument('graph', graphOutcome, { home: fixture.home }),
+    );
+    expect(showDocument).not.toContain(fixture.home);
+    expect(showDocument).toContain('~');
+    expect(graphDocument).not.toContain(fixture.home);
+    expect(graphDocument).toContain('~');
   });
 });

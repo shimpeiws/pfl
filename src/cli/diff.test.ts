@@ -10,7 +10,7 @@ import {
   runtimeId,
 } from '../core/ids.js';
 import type { HarnessFacet } from '../core/facets.js';
-import type { Interpretation } from '../core/interpretation.js';
+import type { Finding, Interpretation } from '../core/interpretation.js';
 import type { NativeOrigin, ObservedElement, ObservedSnapshot } from '../core/observed.js';
 import type { ResolvedElement, ResolvedSnapshot, ResolvedStatus } from '../core/resolved.js';
 import { resolveProjectContext } from '../discovery/project-identity.js';
@@ -101,6 +101,9 @@ function makeRun(options: {
   contentDigest: string;
   pairs: Pair[];
   facets?: Map<string, HarnessFacet[]>;
+  relations?: ResolvedSnapshot['relations'];
+  findings?: Interpretation['findings'];
+  classifierVersion?: string;
 }): InterpretedRun {
   const rid = runtimeId(options.runtimeId);
   const observedSnapshotId = generateObservedSnapshotId();
@@ -124,7 +127,7 @@ function makeRun(options: {
     runtime: { id: rid, version: options.runtimeVersion },
     resolution: { semanticsVersion: options.semanticsVersion ?? '1', confidence: 'verified' },
     elements: options.pairs.map((p) => p.resolved),
-    relations: [],
+    relations: options.relations ?? [],
     effectiveElementIds: [],
     diagnostics: [],
     digests: {
@@ -135,7 +138,7 @@ function makeRun(options: {
   const interpretation: Interpretation = {
     interpretationId: generateInterpretationId(),
     resolvedSnapshotId,
-    classifier: { id: 'pfl-native', version: '1' },
+    classifier: { id: 'pfl-native', version: options.classifierVersion ?? '1' },
     elements: options.pairs.map((p) => ({
       elementId: p.observed.id,
       facets: options.facets?.get(p.observed.id) ?? [],
@@ -150,7 +153,7 @@ function makeRun(options: {
       opaque: 0,
       byFacet: {},
     },
-    findings: [],
+    findings: options.findings ?? [],
   };
   return { observed, resolved, interpretation, diagnostics: [] };
 }
@@ -357,6 +360,81 @@ describe('computeDiff', () => {
     expect(first.structural.addedIds).toEqual(second.structural.addedIds);
   });
 
+  it('reports a classifier version difference', () => {
+    const a = makeRun({
+      projectId: 'p1',
+      runtimeId: 'claude-code',
+      runtimeVersion: '1',
+      classifierVersion: '1',
+      contentDigest: 'sha256:a',
+      pairs: [],
+    });
+    const b = makeRun({
+      projectId: 'p1',
+      runtimeId: 'claude-code',
+      runtimeVersion: '1',
+      classifierVersion: '2',
+      contentDigest: 'sha256:b',
+      pairs: [],
+    });
+
+    const result = computeDiff(a, b);
+
+    expect(result.versionNotes.join('\n')).toContain('classifier version differs: 1 → 2');
+  });
+
+  it('diffs relations as added and removed arrays', () => {
+    const one = pair(rid, 'instructions', 'CLAUDE.md');
+    const two = pair(rid, 'skills', '.claude/skills/a/SKILL.md');
+    const base = {
+      projectId: 'p1',
+      runtimeId: 'claude-code',
+      runtimeVersion: '1',
+      pairs: [one, two],
+    };
+    const a = makeRun({
+      ...base,
+      contentDigest: 'sha256:a',
+      relations: [{ type: 'shadows', from: two.observed.id, to: one.observed.id }],
+    });
+    const b = makeRun({
+      ...base,
+      contentDigest: 'sha256:b',
+      relations: [{ type: 'shadows', from: one.observed.id, to: two.observed.id }],
+    });
+
+    const result = computeDiff(a, b);
+
+    expect(result.relations.removed).toEqual([
+      { type: 'shadows', from: two.observed.id, to: one.observed.id },
+    ]);
+    expect(result.relations.added).toEqual([
+      { type: 'shadows', from: one.observed.id, to: two.observed.id },
+    ]);
+  });
+
+  it('diffs findings as added and removed arrays', () => {
+    const one = pair(rid, 'memory', '~/.claude/memory/MEMORY.md');
+    const finding: Finding = {
+      rule: 'memory-enabled',
+      message: '1 memory element(s) are present',
+      elementIds: [one.observed.id],
+    };
+    const base = {
+      projectId: 'p1',
+      runtimeId: 'claude-code',
+      runtimeVersion: '1',
+      pairs: [one],
+    };
+    const a = makeRun({ ...base, contentDigest: 'sha256:a', findings: [finding] });
+    const b = makeRun({ ...base, contentDigest: 'sha256:b', findings: [] });
+
+    const result = computeDiff(a, b);
+
+    expect(result.findings.removed).toEqual([finding]);
+    expect(result.findings.added).toEqual([]);
+  });
+
   it('computes per-facet deltas including zero', () => {
     const skill = pair(rid, 'skills', '.claude/skills/a/SKILL.md');
     const instructions = pair(rid, 'instructions', 'CLAUDE.md');
@@ -482,5 +560,30 @@ describe('runDiff', () => {
     expect(output).toContain('+ 1 newly effective');
     expect(output).toContain('+ 0 added');
     expect(output).not.toMatch(/\b(improved|regressed|better|worse)\b/i);
+  });
+
+  it('includes the observed snapshot ids and the diff arrays in JSON data', async () => {
+    const projectRoot = await tempDir('pfl-diff-project-');
+    const home = await tempDir('pfl-diff-home-');
+    const rid = runtimeId('claude-code');
+    const instructions = pair(rid, 'instructions', 'CLAUDE.md');
+    const a = await seedRun(projectRoot, home, [instructions]);
+    const b = await seedRun(projectRoot, home, [instructions]);
+    const { logger } = fakeLogger();
+
+    const outcome = await runDiff(
+      projectRoot,
+      a.resolvedId,
+      b.resolvedId,
+      { home, json: true },
+      logger,
+    );
+
+    expect(outcome.data.observedSnapshotIdA).toBe(a.observedId);
+    expect(outcome.data.observedSnapshotIdB).toBe(b.observedId);
+    expect(outcome.data.resolvedSnapshotIdA).toBe(a.resolvedId);
+    expect(outcome.data.relations).toEqual({ added: [], removed: [] });
+    expect(outcome.data.findings).toEqual({ added: [], removed: [] });
+    expect(outcome.completeness).toBe('complete');
   });
 });

@@ -1,10 +1,12 @@
 import { homedir } from 'node:os';
 import { HARNESS_FACETS, type HarnessFacet } from '../core/facets.js';
+import type { Finding } from '../core/interpretation.js';
 import type { ObservedElement } from '../core/observed.js';
-import type { ResolvedElement, ResolvedStatus } from '../core/resolved.js';
+import type { RelationType, ResolvedElement, ResolvedStatus } from '../core/resolved.js';
 import { canonicalJsonStringify } from '../util/json.js';
 import { redactingLogger } from '../redact/output.js';
 import type { Logger } from '../util/logger.js';
+import { type CommandOutcome } from './document.js';
 import { EXIT_CODES, PflError } from './exit-codes.js';
 import { loadInterpretation, type InterpretedRun } from './read.js';
 
@@ -18,6 +20,26 @@ interface StatusChange {
   id: string;
   from: ResolvedStatus | null;
   to: ResolvedStatus | null;
+}
+
+export interface RelationRef {
+  type: RelationType;
+  from: string;
+  to: string;
+}
+
+export interface DiffData {
+  runtime: string;
+  observedSnapshotIdA: string;
+  observedSnapshotIdB: string;
+  resolvedSnapshotIdA: string;
+  resolvedSnapshotIdB: string;
+  structural: DiffResult['structural'];
+  effective: DiffResult['effective'];
+  facetDeltas: Record<HarnessFacet, number>;
+  relations: { added: RelationRef[]; removed: RelationRef[] };
+  findings: { added: Finding[]; removed: Finding[] };
+  versionNotes: string[];
 }
 
 export interface DiffResult {
@@ -41,6 +63,8 @@ export interface DiffResult {
     statusChanges: StatusChange[];
   };
   facetDeltas: Record<HarnessFacet, number>;
+  relations: { added: RelationRef[]; removed: RelationRef[] };
+  findings: { added: Finding[]; removed: Finding[] };
   versionNotes: string[];
 }
 
@@ -60,28 +84,37 @@ export async function runDiff(
   snapshotB: string,
   options: DiffOptions,
   logger: Logger,
-): Promise<void> {
+): Promise<CommandOutcome<DiffData>> {
   const home = options.home ?? homedir();
   const out = redactingLogger(logger, options.json ? 'export' : 'display', { home });
   const runA = await loadInterpretation(cwd, snapshotA, home);
   const runB = await loadInterpretation(cwd, snapshotB, home);
-  for (const diagnostic of [...runA.diagnostics, ...runB.diagnostics]) {
+  const diagnostics = [...runA.diagnostics, ...runB.diagnostics];
+  for (const diagnostic of diagnostics) {
     out.warn(diagnostic.message, { code: diagnostic.code, path: diagnostic.path ?? undefined });
   }
 
   const result = computeDiff(runA, runB);
-  if (options.json) {
-    out.info('diff', {
-      runtime: result.runtimeId,
-      resolvedSnapshotIdA: result.resolvedSnapshotIdA,
-      resolvedSnapshotIdB: result.resolvedSnapshotIdB,
-      structural: result.structural,
-      effective: result.effective,
-      facetDeltas: result.facetDeltas,
-      versionNotes: result.versionNotes,
-    });
-    return;
-  }
+  const data: DiffData = {
+    runtime: result.runtimeId,
+    observedSnapshotIdA: result.observedSnapshotIdA,
+    observedSnapshotIdB: result.observedSnapshotIdB,
+    resolvedSnapshotIdA: result.resolvedSnapshotIdA,
+    resolvedSnapshotIdB: result.resolvedSnapshotIdB,
+    structural: result.structural,
+    effective: result.effective,
+    facetDeltas: result.facetDeltas,
+    relations: result.relations,
+    findings: result.findings,
+    versionNotes: result.versionNotes,
+  };
+  const outcome = {
+    data,
+    diagnostics,
+    completeness: combineCompleteness(runA.observed.completeness, runB.observed.completeness),
+  };
+
+  if (options.json) return outcome;
 
   out.info('Harness Diff');
   out.info(`Snapshot ${result.resolvedSnapshotIdA} → ${result.resolvedSnapshotIdB}`);
@@ -107,6 +140,21 @@ export async function runDiff(
       out.warn(`⚠ ${note}`);
     }
   }
+  return outcome;
+}
+
+/**
+ * The envelope's completeness describes the harnesses the command observed.
+ * A diff observes two; a partial on either side makes the pair partial, and
+ * only two complete sides are complete.
+ */
+function combineCompleteness(
+  a: 'complete' | 'partial' | 'unknown',
+  b: 'complete' | 'partial' | 'unknown',
+): 'complete' | 'partial' | 'unknown' {
+  if (a === 'partial' || b === 'partial') return 'partial';
+  if (a === 'complete' && b === 'complete') return 'complete';
+  return 'unknown';
 }
 
 export function computeDiff(a: InterpretedRun, b: InterpretedRun): DiffResult {
@@ -132,6 +180,8 @@ export function computeDiff(a: InterpretedRun, b: InterpretedRun): DiffResult {
     structural: structuralDiff(a, b),
     effective: effectiveDiff(a, b),
     facetDeltas: facetDeltas(a, b),
+    relations: relationsDiff(a, b),
+    findings: findingsDiff(a, b),
     versionNotes: versionNotes(a, b),
   };
 }
@@ -243,8 +293,70 @@ function facetDeltas(a: InterpretedRun, b: InterpretedRun): Record<HarnessFacet,
   return deltas;
 }
 
+/**
+ * Relations added and removed between the two resolved snapshots. Identity is
+ * `(type, from, to)`; both arrays are ordered by the element ids they join,
+ * as element arrays are.
+ */
+function relationsDiff(a: InterpretedRun, b: InterpretedRun): DiffResult['relations'] {
+  const key = (relation: { type: string; from: string; to: string }): string =>
+    `${relation.type}\u0000${relation.from}\u0000${relation.to}`;
+  const inA = new Set(a.resolved.relations.map(key));
+  const inB = new Set(b.resolved.relations.map(key));
+  const toRef = (relation: { type: RelationType; from: string; to: string }): RelationRef => ({
+    type: relation.type,
+    from: relation.from,
+    to: relation.to,
+  });
+  const added = b.resolved.relations
+    .filter((relation) => !inA.has(key(relation)))
+    .map(toRef)
+    .sort(byRelation);
+  const removed = a.resolved.relations
+    .filter((relation) => !inB.has(key(relation)))
+    .map(toRef)
+    .sort(byRelation);
+  return { added, removed };
+}
+
+function byRelation(x: RelationRef, y: RelationRef): number {
+  return byId(x.from, y.from) || byId(x.to, y.to) || byId(x.type, y.type);
+}
+
+/**
+ * Findings added and removed between the two interpretations. Identity is the
+ * whole finding (rule, message, and cited elements), so a reworded finding is
+ * an add plus a remove. A classifier-version difference is reported separately
+ * in `versionNotes`; both sides are still diffed, as `facetDeltas` is.
+ */
+function findingsDiff(a: InterpretedRun, b: InterpretedRun): DiffResult['findings'] {
+  const key = (finding: Finding): string => canonicalJsonStringify(finding);
+  const inA = new Set(a.interpretation.findings.map(key));
+  const inB = new Set(b.interpretation.findings.map(key));
+  const added = b.interpretation.findings
+    .filter((finding) => !inA.has(key(finding)))
+    .sort(byFinding);
+  const removed = a.interpretation.findings
+    .filter((finding) => !inB.has(key(finding)))
+    .sort(byFinding);
+  return { added, removed };
+}
+
+function byFinding(x: Finding, y: Finding): number {
+  return (
+    byId(x.rule, y.rule) ||
+    byId(x.elementIds.join('\u0000'), y.elementIds.join('\u0000')) ||
+    byId(x.message, y.message)
+  );
+}
+
 function versionNotes(a: InterpretedRun, b: InterpretedRun): string[] {
   const notes: string[] = [];
+  if (a.interpretation.classifier.version !== b.interpretation.classifier.version) {
+    notes.push(
+      `classifier version differs: ${a.interpretation.classifier.version} → ${b.interpretation.classifier.version}`,
+    );
+  }
   if (a.resolved.runtime.version !== b.resolved.runtime.version) {
     notes.push(
       `runtime version differs: ${a.resolved.runtime.version ?? 'unknown'} → ${
