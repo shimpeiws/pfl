@@ -9,7 +9,7 @@ import type {
   SafeMetadataValue,
 } from '../../core/observed.js';
 import type { ResolvedElement } from '../../core/resolved.js';
-import { resolveClaudeCode } from './resolve.js';
+import { resolveClaudeCode, semanticsFor } from './resolve.js';
 
 const rid = runtimeId('claude-code');
 
@@ -35,13 +35,16 @@ function element(
   };
 }
 
-function snapshot(elements: ObservedElement[]): ObservedSnapshot {
+function snapshot(
+  elements: ObservedElement[],
+  version: string | null = '2.1.100',
+): ObservedSnapshot {
   return {
     schemaVersion: '1',
     snapshotId: generateObservedSnapshotId(),
     capturedAt: '2026-09-16T00:00:00.000Z',
     project: { id: 'proj', displayName: 'owner/repo', root: '/repo' },
-    runtime: { id: rid, version: '2.1.100' },
+    runtime: { id: rid, version },
     adapter: { id: 'claude-code', version: '0.1.0', runtimeCompatibility: 'verified' },
     elements,
     diagnostics: [],
@@ -272,5 +275,35 @@ describe('resolveClaudeCode', () => {
     const resolved = await resolveClaudeCode(snapshot([link]));
 
     expect(find(resolved.elements, link).status).toBe('unresolved');
+  });
+
+  it('selects the same axes at every version position until a breakpoint exists', () => {
+    const instruction = element('CLAUDE.md', 'instructions', 'project');
+
+    expect(semanticsFor('2.0.9').position).toBe('below');
+    expect(semanticsFor('2.1.100').position).toBe('within');
+    expect(semanticsFor('2.2.0').position).toBe('above');
+    expect(semanticsFor(null).position).toBe('unknown');
+    expect(semanticsFor('2.0.9').axesFor(instruction)).toEqual(
+      semanticsFor('2.2.0').axesFor(instruction),
+    );
+  });
+
+  it('reflects the detected version position in resolution confidence', async () => {
+    const instruction = element('CLAUDE.md', 'instructions', 'project');
+
+    const within = await resolveClaudeCode(snapshot([instruction], '2.1.100'));
+    const above = await resolveClaudeCode(snapshot([instruction], '2.2.0'));
+    const below = await resolveClaudeCode(snapshot([instruction], '2.0.9'));
+    const unknown = await resolveClaudeCode(snapshot([instruction], null));
+
+    expect(within.resolution.confidence).toBe('verified');
+    expect(above.resolution.confidence).toBe('unverified-runtime-version');
+    expect(below.resolution.confidence).toBe('unverified-runtime-version');
+    expect(unknown.resolution.confidence).toBe('unverified-runtime-version');
+    // Confidence is downgraded for above, but the resolved facts are still
+    // produced best-effort: acceptance criterion 12 says a newer runtime does
+    // not block.
+    expect(above.effectiveElementIds).toHaveLength(1);
   });
 });

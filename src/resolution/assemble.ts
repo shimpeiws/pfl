@@ -35,6 +35,13 @@ export interface ResolvedSnapshotInput {
   diagnostics?: readonly Diagnostic[];
   /** Home directory for persistence redaction of diagnostics; empty means none. */
   home?: string;
+  /**
+   * The compatibility verdict to derive confidence from. An adapter passes the
+   * position its resolution semantics selected for the detected version
+   * (design doc §17), so confidence reflects the version itself rather than a
+   * cached label. Defaults to the observed adapter identity.
+   */
+  runtimeCompatibility?: 'verified' | 'unverified';
   /** Overridable for deterministic tests; defaults to a fresh id. */
   snapshotId?: ResolvedSnapshotId;
 }
@@ -51,10 +58,9 @@ export function assembleResolvedSnapshot(input: ResolvedSnapshotInput): Resolved
     redactDiagnostic(diagnostic, 'persistence', ctx),
   );
 
+  const compatibility = input.runtimeCompatibility ?? observed.adapter.runtimeCompatibility;
   const confidence: ResolvedSnapshot['resolution']['confidence'] =
-    observed.adapter.runtimeCompatibility === 'verified'
-      ? 'verified'
-      : 'unverified-runtime-version';
+    compatibility === 'verified' ? 'verified' : 'unverified-runtime-version';
   if (confidence === 'unverified-runtime-version') {
     diagnostics.push({
       severity: 'warning',

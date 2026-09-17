@@ -41,6 +41,12 @@ const EXPECTED = [
       '~/.local/bin/claude',
       '~/.local/share/claude/versions',
       '~/.claude/.last-update-result.json',
+      '~/.local/bin',
+      '~/.local/lib/node_modules/**',
+      '~/.npm-global/bin',
+      '~/.npm-global/lib/node_modules/**',
+      'PATH directories (non-installer install)',
+      'Homebrew Cellar version directories',
     ],
   },
   {

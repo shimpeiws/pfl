@@ -47,14 +47,29 @@ export function highestVersion(candidates: readonly string[]): string | null {
 }
 
 /**
- * Whether `version` falls inside the verified range. An unparseable version or
- * range is unverified (`false`), never assumed compatible.
+ * Where a version sits relative to the verified range. `unknown` when either
+ * side cannot be parsed, so an unparseable version is never assumed compatible.
+ * `below` and `above` are separate answers because they are separate facts: a
+ * version older than the range may predate a semantic the adapter uses, which
+ * is not the same claim as a version newer than it (design doc §17).
  */
-export function isWithinRange(version: string | null, range: VersionRange): boolean {
-  if (version === null) return false;
+export type VersionPosition = 'below' | 'within' | 'above' | 'unknown';
+
+export function versionPosition(version: string | null, range: VersionRange): VersionPosition {
+  if (version === null) return 'unknown';
   const parsed = parseVersion(version);
   const min = parseVersion(range.min);
   const max = parseVersion(range.max);
-  if (parsed === null || min === null || max === null) return false;
-  return compareVersions(parsed, min) >= 0 && compareVersions(parsed, max) < 0;
+  if (parsed === null || min === null || max === null) return 'unknown';
+  if (compareVersions(parsed, min) < 0) return 'below';
+  if (compareVersions(parsed, max) >= 0) return 'above';
+  return 'within';
+}
+
+/**
+ * Whether `version` falls inside the verified range. Any position other than
+ * `within` — including `unknown` — is not verified.
+ */
+export function isWithinRange(version: string | null, range: VersionRange): boolean {
+  return versionPosition(version, range) === 'within';
 }

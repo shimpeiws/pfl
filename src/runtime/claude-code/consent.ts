@@ -1,5 +1,10 @@
 import type { ConsentLocationGroup } from '../../discovery/consent.js';
-import { INSTALL_LOCATIONS, UPDATE_RESULT_FILE, VERSIONS_DIR } from './detect.js';
+import {
+  EXTERNAL_PREFIXES,
+  INSTALL_LOCATIONS,
+  UPDATE_RESULT_FILE,
+  VERSIONS_DIR,
+} from './detect.js';
 import {
   MANAGED_CONFIG_DIR,
   PROJECT_CONFIG_DIR,
@@ -53,6 +58,15 @@ export const CONSENT_GROUPS: readonly ConsentLocationGroup[] = [
       ...INSTALL_LOCATIONS.map((location) => `~/${location}`),
       `~/${VERSIONS_DIR}`,
       `~/${UPDATE_RESULT_FILE}`,
+      // A non-installer install (npm global, Homebrew, PATH-only) is found by
+      // reading a bin directory's entries and, when present, a package manifest
+      // or Cellar version directory. Listed so the prompt states the real scope.
+      ...EXTERNAL_PREFIXES.flatMap((prefix) => [
+        `~/${prefix}/bin`,
+        `~/${prefix}/lib/node_modules/**`,
+      ]),
+      'PATH directories (non-installer install)',
+      'Homebrew Cellar version directories',
     ],
   },
   {

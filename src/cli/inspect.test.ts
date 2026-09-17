@@ -72,7 +72,11 @@ describe('runInspect', () => {
     const { project, home } = await makeFixture(true);
     const { lines, logger } = fakeLogger();
 
-    await runInspect(project, { runtime: 'claude-code', home, interactive: false }, logger);
+    await runInspect(
+      project,
+      { runtime: 'claude-code', home, pathValue: '', interactive: false },
+      logger,
+    );
 
     const output = lines.join('\n');
     expect(output).toContain('Inspecting Claude Code harness...');
@@ -104,7 +108,7 @@ describe('runInspect', () => {
 
     await runInspect(
       project,
-      { runtime: 'claude-code', home, interactive: false, json: true },
+      { runtime: 'claude-code', home, pathValue: '', interactive: false, json: true },
       logger,
     );
 
@@ -132,7 +136,7 @@ describe('runInspect', () => {
     const { logger } = fakeLogger();
 
     await expect(
-      runInspect(project, { runtime: 'bogus', home, interactive: false }, logger),
+      runInspect(project, { runtime: 'bogus', home, pathValue: '', interactive: false }, logger),
     ).rejects.toMatchObject({ exitCode: EXIT_CODES.RUNTIME_UNSUPPORTED });
   });
 
@@ -141,7 +145,11 @@ describe('runInspect', () => {
     const { logger } = fakeLogger();
 
     await expect(
-      runInspect(project, { runtime: 'claude-code', home, interactive: false }, logger),
+      runInspect(
+        project,
+        { runtime: 'claude-code', home, pathValue: '', interactive: false },
+        logger,
+      ),
     ).rejects.toMatchObject({ exitCode: EXIT_CODES.CONSENT_REQUIRED });
   });
 
@@ -150,7 +158,11 @@ describe('runInspect', () => {
     const { lines, logger } = fakeLogger();
     const io = { readAnswer: async () => 'n' };
 
-    await runInspect(project, { runtime: 'claude-code', home, interactive: true, io }, logger);
+    await runInspect(
+      project,
+      { runtime: 'claude-code', home, pathValue: '', interactive: true, io },
+      logger,
+    );
 
     expect(lines.join('\n')).toContain('Observed');
     const projectId = (await resolveProjectContext(project)).id;

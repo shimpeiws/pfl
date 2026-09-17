@@ -39,7 +39,9 @@ function runCli(m: Materialized, args: string[]): Promise<CliResult> {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [cliEntry, ...args], {
       cwd: m.projectRoot,
-      env: { ...process.env, HOME: m.home },
+      // An empty PATH keeps detection hermetic: the fixture has no installer
+      // metadata, and the test must not read the machine's own installs.
+      env: { ...process.env, HOME: m.home, PATH: '' },
     });
     let stdout = '';
     let stderr = '';

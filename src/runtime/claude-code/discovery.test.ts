@@ -1,11 +1,23 @@
 import { link, mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import type { ObservedElement } from '../../core/observed.js';
 import { MAX_ANCESTOR_DIRS } from '../../limits.js';
 import { MANAGED_CONFIG_DIR, encodeProjectDir, userConfigDir } from './paths.js';
 import { collectClaudeCodeHarness, managedConfigDirFor } from './discovery.js';
+
+const originalPath = process.env['PATH'];
+
+// Detection scans `PATH` for an install the installer does not manage. These
+// tests inject a home, so `PATH` is emptied too: the machine's own installs are
+// never read and a version assertion cannot depend on the host.
+beforeAll(() => {
+  process.env['PATH'] = '';
+});
+afterAll(() => {
+  process.env['PATH'] = originalPath;
+});
 
 const tempDirs: string[] = [];
 

@@ -45,6 +45,7 @@ describe.each<FixtureRuntime>(['claude', 'codex'])('%s consent boundary', (runti
       {
         runtime: RUNTIME_IDS[runtime],
         home: m.home,
+        pathValue: '',
         interactive: true,
         io: { readAnswer: async () => 'n' },
       },
@@ -77,7 +78,7 @@ describe.each<FixtureRuntime>(['claude', 'codex'])('%s consent boundary', (runti
     await expect(
       runInspect(
         m.projectRoot,
-        { runtime: RUNTIME_IDS[runtime], home: m.home, interactive: false },
+        { runtime: RUNTIME_IDS[runtime], home: m.home, pathValue: '', interactive: false },
         silent,
       ),
     ).rejects.toMatchObject({ exitCode: EXIT_CODES.CONSENT_REQUIRED });
@@ -92,7 +93,7 @@ describe.each<FixtureRuntime>(['claude', 'codex'])('%s consent boundary', (runti
 
     await runInspect(
       m.projectRoot,
-      { runtime: RUNTIME_IDS[runtime], home: m.home, interactive: false },
+      { runtime: RUNTIME_IDS[runtime], home: m.home, pathValue: '', interactive: false },
       silent,
     );
 
@@ -130,6 +131,7 @@ describe.each<FixtureRuntime>(['claude', 'codex'])('%s consent boundary', (runti
       {
         runtime: RUNTIME_IDS[runtime],
         home: m.home,
+        pathValue: '',
         interactive: true,
         io: { readAnswer: async () => 'n' },
       },
@@ -151,7 +153,11 @@ describe('consent is per runtime + scope', () => {
     await grantConsent(m.home, 'claude');
 
     await expect(
-      runInspect(m.projectRoot, { runtime: 'codex', home: m.home, interactive: false }, silent),
+      runInspect(
+        m.projectRoot,
+        { runtime: 'codex', home: m.home, pathValue: '', interactive: false },
+        silent,
+      ),
     ).rejects.toMatchObject({ exitCode: EXIT_CODES.CONSENT_REQUIRED });
   });
 });

@@ -160,4 +160,23 @@ describe('assembleResolvedSnapshot', () => {
     expect(resolved.resolution.confidence).toBe('verified');
     expect(resolved.diagnostics).toEqual([]);
   });
+
+  it('lets an adapter override confidence from the version semantics it selected', () => {
+    // The adapter branches on the detected version position and passes that
+    // verdict, so confidence reflects the version itself rather than a cached
+    // observed label.
+    const downgraded = assembleResolvedSnapshot({
+      observed: observedSnapshot('verified'),
+      elements: [resolvedElement('a', 'effective')],
+      runtimeCompatibility: 'unverified',
+    });
+    const promoted = assembleResolvedSnapshot({
+      observed: observedSnapshot('unverified'),
+      elements: [resolvedElement('a', 'effective')],
+      runtimeCompatibility: 'verified',
+    });
+
+    expect(downgraded.resolution.confidence).toBe('unverified-runtime-version');
+    expect(promoted.resolution.confidence).toBe('verified');
+  });
 });

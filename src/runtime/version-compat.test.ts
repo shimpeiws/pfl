@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { compareVersions, highestVersion, isWithinRange, parseVersion } from './version-compat.js';
+import {
+  compareVersions,
+  highestVersion,
+  isWithinRange,
+  parseVersion,
+  versionPosition,
+} from './version-compat.js';
 
 describe('parseVersion', () => {
   it('parses a leading semver and tolerates suffixes', () => {
@@ -57,5 +63,32 @@ describe('isWithinRange', () => {
   it('treats an undeterminable version as unverified', () => {
     expect(isWithinRange(null, range)).toBe(false);
     expect(isWithinRange('unknown', range)).toBe(false);
+  });
+});
+
+describe('versionPosition', () => {
+  const range = { min: '2.1.0', max: '2.2.0' };
+
+  it('separates below, within, and above', () => {
+    expect(versionPosition('2.0.9', range)).toBe('below');
+    expect(versionPosition('2.1.0', range)).toBe('within');
+    expect(versionPosition('2.1.272', range)).toBe('within');
+    expect(versionPosition('2.2.0', range)).toBe('above');
+  });
+
+  it('tolerates a suffixed version the same way parsing does', () => {
+    expect(versionPosition('2.1.272-aarch64-apple-darwin', range)).toBe('within');
+  });
+
+  it('is unknown when the version or the range cannot be parsed', () => {
+    expect(versionPosition(null, range)).toBe('unknown');
+    expect(versionPosition('unknown', range)).toBe('unknown');
+    expect(versionPosition('2.1.100', { min: 'nope', max: '2.2.0' })).toBe('unknown');
+  });
+
+  it('agrees with isWithinRange on the within case only', () => {
+    for (const version of ['2.0.9', '2.1.0', '2.1.272', '2.2.0', 'unknown']) {
+      expect(isWithinRange(version, range)).toBe(versionPosition(version, range) === 'within');
+    }
   });
 });

@@ -29,7 +29,16 @@ const EXPECTED = [
   },
   {
     title: 'Installation and version metadata',
-    locations: ['~/.codex/packages/standalone/releases', '~/.codex/packages/standalone'],
+    locations: [
+      '~/.codex/packages/standalone/releases',
+      '~/.codex/packages/standalone',
+      '~/.local/bin',
+      '~/.local/lib/node_modules/**',
+      '~/.npm-global/bin',
+      '~/.npm-global/lib/node_modules/**',
+      'PATH directories (non-installer install)',
+      'Homebrew Cellar version directories',
+    ],
   },
   {
     title: 'External references',

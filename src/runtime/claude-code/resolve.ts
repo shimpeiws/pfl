@@ -1,15 +1,12 @@
 import { basename, dirname } from 'node:path';
 import type { ElementId } from '../../core/ids.js';
 import type { ObservedElement, ObservedSnapshot } from '../../core/observed.js';
-import type {
-  Activation,
-  Applicability,
-  Relation,
-  ResolvedSnapshot,
-  ResolutionStrategy,
-} from '../../core/resolved.js';
+import type { Applicability, Relation, ResolvedSnapshot } from '../../core/resolved.js';
 import { assembleResolvedSnapshot } from '../../resolution/assemble.js';
 import { resolveElements, type ElementResolutionInput } from '../../resolution/resolver.js';
+import type { ResolutionAxes, ResolutionSemantics } from '../types.js';
+import { versionPosition } from '../version-compat.js';
+import { VERIFIED_CLAUDE_CODE_RANGE } from './detect.js';
 import { PROJECT_CONFIG_DIR } from './paths.js';
 
 /**
@@ -55,17 +52,34 @@ const PROJECT_SETTINGS_RANK = 2;
 const PROJECT_LOCAL_SETTINGS_RANK = 3;
 const MANAGED_SETTINGS_RANK = 4;
 
+/**
+ * The resolution semantics for a detected Claude Code version (design doc §17,
+ * roadmap §5 M7, issue #76). The verified range carries no intra-range
+ * breakpoint — the layout reconciliation in `paths.ts` found none — so the one
+ * axis mapping `axesFor` encodes applies at every position: `within` and `above`
+ * as the verified semantics, `below` as the same mapping applied best-effort.
+ * The branch is deliberately empty of breakpoints rather than populated with
+ * guesses; a future breakpoint is added here, keyed on `position`, so detection
+ * never grows version conditionals. `resolve()` derives snapshot confidence from
+ * the position, not from this mapping, so an `above` version still never blocks
+ * (acceptance criterion 12).
+ */
+export function semanticsFor(version: string | null): ResolutionSemantics {
+  return { position: versionPosition(version, VERIFIED_CLAUDE_CODE_RANGE), axesFor };
+}
+
 export async function resolveClaudeCode(
   observed: ObservedSnapshot,
   home = '',
 ): Promise<ResolvedSnapshot> {
+  const semantics = semanticsFor(observed.runtime.version);
   const shadowedBy = new Map<ElementId, ElementId>([
     ...settingsShadowing(observed.elements),
     ...localInstructionShadowing(observed.elements),
   ]);
 
   const inputs: ElementResolutionInput[] = observed.elements.map((element) => {
-    const axes = axesFor(element);
+    const axes = semantics.axesFor(element);
     const by = shadowedBy.get(element.id);
     return {
       id: element.id,
@@ -85,14 +99,11 @@ export async function resolveClaudeCode(
     elements: resolveElements(inputs),
     relations,
     home,
+    runtimeCompatibility: semantics.position === 'within' ? 'verified' : 'unverified',
   });
 }
 
-function axesFor(element: ObservedElement): {
-  applicability: Applicability;
-  strategy: ResolutionStrategy;
-  activation: Activation;
-} {
+function axesFor(element: ObservedElement): ResolutionAxes {
   if (element.status !== 'observed') {
     // A skipped, unreadable, or unsupported element cannot be resolved.
     return { applicability: { type: 'unknown' }, strategy: 'unknown', activation: 'unknown' };
