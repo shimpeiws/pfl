@@ -1,6 +1,6 @@
 import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
-import { basename, join } from 'node:path';
+import { basename, dirname, join } from 'node:path';
 import { assembleObservedSnapshot } from '../../discovery/assemble.js';
 import { frontmatterMetadata, readFrontmatter } from '../../discovery/frontmatter.js';
 import { filterToAllowlist } from '../../discovery/metadata.js';
@@ -16,7 +16,12 @@ import type {
   ObservedSnapshot,
   SafeMetadataValue,
 } from '../../core/observed.js';
-import { MAX_FILE_BYTES, MAX_PARSE_BYTES, limitExceededDiagnostic } from '../../limits.js';
+import {
+  MAX_ANCESTOR_DIRS,
+  MAX_FILE_BYTES,
+  MAX_PARSE_BYTES,
+  limitExceededDiagnostic,
+} from '../../limits.js';
 import { inspectFileTarget, readTextFileGuarded } from '../../util/fs.js';
 import { sha256Digest } from '../../util/hash.js';
 import { packageVersion } from '../../version.js';
@@ -24,9 +29,11 @@ import type { AccessPolicy, ProjectContext } from '../types.js';
 import { detectClaudeCode } from './detect.js';
 import { CLAUDE_CODE_SAFE_METADATA_ALLOWLIST } from './metadata.js';
 import {
+  MANAGED_CONFIG_DIR,
   PROJECT_CONFIG_DIR,
   PROJECT_INSTRUCTION_FILES,
   PROJECT_MCP_FILE,
+  PROJECT_WALK_PRUNE_DIRECTORIES,
   SETTINGS_FILES,
   USER_ELEMENT_DIRS,
   USER_INSTRUCTION_FILE,
@@ -79,11 +86,17 @@ export async function discoverClaudeCode(
   return collectClaudeCodeHarness(project, access, home);
 }
 
-/** The discovery core with an injected home, so tests need no global state. */
+/**
+ * The discovery core with an injected home, so tests need no global state. The
+ * managed base is a parameter so a test injects a temp directory and never touches
+ * `/Library`; when it is omitted the macOS-only default applies and a non-macOS
+ * host reads no managed scope.
+ */
 export async function collectClaudeCodeHarness(
   project: ProjectContext,
   access: AccessPolicy,
   home: string,
+  managedDir?: string,
 ): Promise<ObservedSnapshot> {
   const elements: ObservedElement[] = [];
   const diagnostics: Diagnostic[] = [];
@@ -105,7 +118,12 @@ export async function collectClaudeCodeHarness(
 
   await collectProject(project, elements, diagnostics);
   if (access.allowOutsideProject) {
+    await collectAncestorInstructions(project, elements, diagnostics);
     await collectUser(project, home, elements, diagnostics);
+    const managed = managedConfigDirFor(process.platform, managedDir);
+    if (managed !== null) {
+      await collectManaged(managed, elements, diagnostics);
+    }
   }
   elements.push(builtinLayer());
 
@@ -129,18 +147,30 @@ async function collectProject(
   diagnostics: Diagnostic[],
 ): Promise<void> {
   const root = project.root;
-  for (const file of PROJECT_INSTRUCTION_FILES) {
-    await addKnownFile(
-      join(root, file),
-      file,
-      'project',
-      'project',
-      'instructions',
-      root,
-      elements,
-      diagnostics,
-    );
-  }
+
+  // One subtree walk finds the project-root instruction files and every nested
+  // `CLAUDE.md` / `CLAUDE.local.md`, so a root file is never recorded twice.
+  // `.git` and `node_modules` are pruned, frontmatter is not extracted (an
+  // instruction file is not a metadata carrier), and files under the project
+  // config directory are excluded by path: a file there is already discovered as
+  // a skill, and recording it here too would mint a second element under the
+  // same id.
+  await addWalkedArea(
+    root,
+    '.',
+    '',
+    'project',
+    'project',
+    instructionKindForPath,
+    elements,
+    diagnostics,
+    {
+      extractFrontmatter: false,
+      selectFile: isProjectInstructionPath,
+      pruneDirectories: PROJECT_WALK_PRUNE_DIRECTORIES,
+    },
+  );
+
   await addWalkedArea(
     root,
     PROJECT_CONFIG_DIR,
@@ -162,16 +192,127 @@ async function collectProject(
       diagnostics,
     );
   }
-  await addKnownFile(
+  await collectMcpFile(
     join(root, PROJECT_MCP_FILE),
     PROJECT_MCP_FILE,
     'project',
     'project',
-    'mcp-configuration',
     root,
     elements,
     diagnostics,
   );
+}
+
+/**
+ * Claude Code reads `CLAUDE.md` from the project's parent directories, so the
+ * walk starts at `dirname(project.root)` and climbs at most `MAX_ANCESTOR_DIRS`
+ * levels. That is an out-of-project read: the caller gates the whole loop on
+ * consent, reaching the filesystem root is the natural end, and hitting the
+ * ceiling is recorded so a deeper project is visibly truncated rather than
+ * silently missing its ancestors. Symlinked or hardlinked files are refused by
+ * `addKnownFile`, like every other fixed read.
+ */
+async function collectAncestorInstructions(
+  project: ProjectContext,
+  elements: ObservedElement[],
+  diagnostics: Diagnostic[],
+): Promise<void> {
+  let directory = dirname(project.root);
+  for (let level = 1; level <= MAX_ANCESTOR_DIRS; level += 1) {
+    const prefix = '../'.repeat(level);
+    for (const file of PROJECT_INSTRUCTION_FILES) {
+      await addKnownFile(
+        join(directory, file),
+        `${prefix}${file}`,
+        'project',
+        'project',
+        'instructions',
+        directory,
+        elements,
+        diagnostics,
+      );
+    }
+    const parent = dirname(directory);
+    if (parent === directory) return; // the filesystem root; nothing above it
+    directory = parent;
+  }
+  diagnostics.push(
+    limitExceededDiagnostic(
+      'MAX_ANCESTOR_DIRS',
+      MAX_ANCESTOR_DIRS,
+      '../'.repeat(MAX_ANCESTOR_DIRS),
+    ),
+  );
+}
+
+/** The instruction kind a project-subtree file carries, or `null` to ignore it. */
+function instructionKindForPath(relativePath: string): ClaudeCodeElementKind | null {
+  const name = basename(relativePath);
+  return name === 'CLAUDE.md' || name === 'CLAUDE.local.md' ? 'instructions' : null;
+}
+
+/**
+ * Whether a project-subtree path is a project instruction candidate. The project
+ * config directory is excluded by *path*, not by name: only `<project>/.claude`
+ * is the config directory, and pruning every `.claude` directory would miss a
+ * nested instruction file in a subdirectory that happens to share the name. Its
+ * files are discovered by the `.claude/**` walk, so a `CLAUDE.md` inside it is a
+ * skill file, not a second instruction element.
+ */
+function isProjectInstructionPath(relativePath: string): boolean {
+  return (
+    instructionKindForPath(relativePath) !== null &&
+    !relativePath.startsWith(`${PROJECT_CONFIG_DIR}/`)
+  );
+}
+
+/**
+ * The managed scope is a system-wide, out-of-project read (`MANAGED_CONFIG_DIR`),
+ * so the caller gates it on the same consent as the user scope. Only
+ * `CLAUDE.md` and `settings.json` exist there: a managed `CLAUDE.local.md` or
+ * `settings.local.json` has no meaning, so it is not read.
+ */
+async function collectManaged(
+  managedDir: string,
+  elements: ObservedElement[],
+  diagnostics: Diagnostic[],
+): Promise<void> {
+  const instruction = join(managedDir, USER_INSTRUCTION_FILE);
+  await addKnownFile(
+    instruction,
+    instruction,
+    'managed',
+    'managed',
+    'instructions',
+    managedDir,
+    elements,
+    diagnostics,
+  );
+  const settings = join(managedDir, SETTINGS_FILES[0]);
+  await collectSettings(
+    settings,
+    settings,
+    'managed',
+    'managed',
+    managedDir,
+    elements,
+    diagnostics,
+  );
+}
+
+/**
+ * The managed config directory is a macOS convention (design doc §31.1), so the
+ * default read is macOS-only. An explicit override (the injectable base) is read
+ * on any platform, which is what lets the fixture test exercise the collection
+ * hermetically without touching `/Library`. Pure and exported so the platform
+ * gate is falsifiable in a unit test rather than only by a live `/Library` read.
+ */
+export function managedConfigDirFor(
+  platform: NodeJS.Platform,
+  override: string | undefined,
+): string | null {
+  if (override !== undefined) return override;
+  return platform === 'darwin' ? MANAGED_CONFIG_DIR : null;
 }
 
 async function collectUser(
@@ -234,7 +375,29 @@ async function collectUser(
     elements,
     diagnostics,
   );
-  await collectUserMcp(join(home, '.claude.json'), home, elements, diagnostics);
+  await collectMcpFile(
+    join(home, '.claude.json'),
+    '~/.claude.json',
+    'user',
+    'user',
+    home,
+    elements,
+    diagnostics,
+  );
+}
+
+interface WalkedAreaOptions {
+  /**
+   * Extract frontmatter metadata from each file's content. Element directories
+   * (skills, agents, commands) want it; a project-wide instruction walk does
+   * not, because it reads unrelated files and must not treat their content as
+   * instructions.
+   */
+  extractFrontmatter?: boolean;
+  /** Regular-file filter: only matching files are read and recorded. */
+  selectFile?: (relativePath: string) => boolean;
+  /** Directory names the walk must not descend into. */
+  pruneDirectories?: readonly string[];
 }
 
 async function addWalkedArea(
@@ -246,16 +409,25 @@ async function addWalkedArea(
   resolveKind: (relativePath: string) => ClaudeCodeElementKind | 'unknown' | null,
   elements: ObservedElement[],
   diagnostics: Diagnostic[],
+  options: WalkedAreaOptions = {},
 ): Promise<void> {
   const walked = await walkHarnessPaths(root, [subpath], {
-    describeFile: (relativePath, content) => {
-      const kind = resolveKind(relativePath);
-      if (kind === null || kind === 'unknown') return {};
-      const displayPath = displayPrefix ? `${displayPrefix}/${relativePath}` : relativePath;
-      const read = readFrontmatter(content);
-      if (read.malformed) diagnostics.push(malformedFrontmatterDiagnostic(displayPath));
-      return toSafeMetadata(frontmatterMetadata(read.facts));
-    },
+    ...(options.pruneDirectories !== undefined
+      ? { pruneDirectories: options.pruneDirectories }
+      : {}),
+    ...(options.selectFile !== undefined ? { selectFile: options.selectFile } : {}),
+    ...(options.extractFrontmatter === false
+      ? {}
+      : {
+          describeFile: (relativePath: string, content: string) => {
+            const kind = resolveKind(relativePath);
+            if (kind === null || kind === 'unknown') return {};
+            const displayPath = displayPrefix ? `${displayPrefix}/${relativePath}` : relativePath;
+            const read = readFrontmatter(content);
+            if (read.malformed) diagnostics.push(malformedFrontmatterDiagnostic(displayPath));
+            return toSafeMetadata(frontmatterMetadata(read.facts));
+          },
+        }),
   });
   diagnostics.push(...walked.diagnostics);
 
@@ -419,24 +591,26 @@ async function collectSettings(
         allowCount: arrayLength(permissions['allow']),
         denyCount: arrayLength(permissions['deny']),
         askCount: arrayLength(permissions['ask']),
-        ...(typeof permissions['defaultMode'] === 'string'
-          ? { permissionMode: permissions['defaultMode'] }
-          : {}),
       }),
     );
-  }
-  if (typeof parsed['defaultMode'] === 'string') {
-    elements.push(
-      configElement(origin, scope, 'approval-policy', `${displayPath}#defaultMode`, {
-        approvalPolicy: parsed['defaultMode'],
-      }),
-    );
+    // The runtime writes the approval mode under `permissions.defaultMode`;
+    // there is no top-level `defaultMode`.
+    if (typeof permissions['defaultMode'] === 'string') {
+      elements.push(
+        configElement(origin, scope, 'approval-policy', `${displayPath}#defaultMode`, {
+          approvalPolicy: permissions['defaultMode'],
+        }),
+      );
+    }
   }
   const hooks = parsed['hooks'];
   if (isRecord(hooks)) {
+    const hookMatchers = matcherStrings(hooks);
     elements.push(
       configElement(origin, scope, 'hooks', `${displayPath}#hooks`, {
         eventNames: Object.keys(hooks),
+        hookMatchers,
+        hookMatcherCount: hookMatchers.length,
       }),
     );
   }
@@ -459,14 +633,45 @@ async function collectSettings(
   if (isRecord(enabledPlugins)) {
     elements.push(
       configElement(origin, scope, 'plugin', `${displayPath}#enabledPlugins`, {
+        pluginNames: Object.keys(enabledPlugins),
         enabledPluginCount: Object.keys(enabledPlugins).length,
       }),
     );
   }
 }
 
-async function collectUserMcp(
+/**
+ * The flat list of hook matcher strings in a `hooks` object, across every event.
+ * Only the matcher is structural enough to persist: a matcher is a tool name or
+ * an event pattern (`startup|resume|compact`, `Bash`), whereas a hook command,
+ * its type, and its timeout are never recorded. A matcher-less entry (the
+ * runtime allows `{ hooks: [...] }`) contributes nothing.
+ */
+function matcherStrings(hooks: Record<string, unknown>): string[] {
+  const matchers: string[] = [];
+  for (const value of Object.values(hooks)) {
+    if (!Array.isArray(value)) continue;
+    for (const entry of value) {
+      if (!isRecord(entry)) continue;
+      const matcher = entry['matcher'];
+      if (typeof matcher === 'string') matchers.push(matcher);
+    }
+  }
+  return matchers;
+}
+
+/**
+ * Reads an MCP configuration file and records its server *names* only. The
+ * canonical project file (`.mcp.json`) and the user file (`~/.claude.json`) share
+ * this guarded read, so a symlink, hardlink, non-regular file, oversized file,
+ * or an unreadable one is surfaced with its reason exactly as a settings file is.
+ * A server command, argument, or environment value is never persisted.
+ */
+async function collectMcpFile(
   absPath: string,
+  displayPath: string,
+  origin: NativeOrigin,
+  scope: string,
   baseDir: string,
   elements: ObservedElement[],
   diagnostics: Diagnostic[],
@@ -474,37 +679,31 @@ async function collectUserMcp(
   const read = await readTextFileGuarded(absPath, MAX_PARSE_BYTES, baseDir);
   if (read.status === 'missing') return;
   if (read.status === 'symlink') {
-    elements.push(symlinkElement('user', 'user', 'mcp-configuration', '~/.claude.json'));
+    elements.push(symlinkElement(origin, scope, 'mcp-configuration', displayPath));
     return;
   }
   if (read.status === 'hardlink') {
-    diagnostics.push(hardlinkDiagnostic('~/.claude.json'));
+    diagnostics.push(hardlinkDiagnostic(displayPath));
     elements.push(
-      skippedElement(
-        'user',
-        'user',
-        'mcp-configuration',
-        '~/.claude.json',
-        'hardlink-not-followed',
-      ),
+      skippedElement(origin, scope, 'mcp-configuration', displayPath, 'hardlink-not-followed'),
     );
     return;
   }
   if (read.status === 'not-regular') {
-    diagnostics.push(nonRegularDiagnostic('~/.claude.json'));
-    elements.push(skippedNonRegularElement('user', 'user', 'mcp-configuration', '~/.claude.json'));
+    diagnostics.push(nonRegularDiagnostic(displayPath));
+    elements.push(skippedNonRegularElement(origin, scope, 'mcp-configuration', displayPath));
     return;
   }
   if (read.status === 'too-large') {
-    diagnostics.push(limitExceededDiagnostic('MAX_PARSE_BYTES', read.maxBytes, '~/.claude.json'));
+    diagnostics.push(limitExceededDiagnostic('MAX_PARSE_BYTES', read.maxBytes, displayPath));
     elements.push(
-      skippedElement('user', 'user', 'mcp-configuration', '~/.claude.json', 'limit-exceeded'),
+      skippedElement(origin, scope, 'mcp-configuration', displayPath, 'limit-exceeded'),
     );
     return;
   }
   if (read.status === 'unreadable') {
-    diagnostics.push(unreadableDiagnostic('~/.claude.json'));
-    elements.push(unreadableElement('user', 'user', 'mcp-configuration', '~/.claude.json'));
+    diagnostics.push(unreadableDiagnostic(displayPath));
+    elements.push(unreadableElement(origin, scope, 'mcp-configuration', displayPath));
     return;
   }
 
@@ -512,13 +711,19 @@ async function collectUserMcp(
   try {
     parsed = JSON.parse(read.text);
   } catch {
+    diagnostics.push({
+      severity: 'warning',
+      code: 'invalid-mcp-config',
+      message: `could not parse ${displayPath}`,
+      path: displayPath,
+    });
     return;
   }
   if (!isRecord(parsed)) return;
   const mcpServers = parsed['mcpServers'];
-  if (isRecord(mcpServers) && Object.keys(mcpServers).length > 0) {
+  if (isRecord(mcpServers)) {
     elements.push(
-      configElement('user', 'user', 'mcp-configuration', '~/.claude.json#mcpServers', {
+      configElement(origin, scope, 'mcp-configuration', `${displayPath}#mcpServers`, {
         serverNames: Object.keys(mcpServers),
       }),
     );

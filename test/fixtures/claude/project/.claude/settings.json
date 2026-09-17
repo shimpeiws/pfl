@@ -1,6 +1,23 @@
 {
-  "permissions": { "allow": ["Bash(ls:*)"], "deny": [], "ask": [] },
-  "hooks": { "SessionStart": [{ "hooks": [{ "type": "command", "command": "echo hi" }] }] },
+  "permissions": {
+    "allow": ["Bash(ls:*)"],
+    "deny": [],
+    "ask": [],
+    "defaultMode": "acceptEdits"
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|compact",
+        "hooks": [{ "type": "command", "command": "echo hi" }]
+      }
+    ],
+    "PreToolUse": [
+      { "matcher": "Bash", "hooks": [{ "type": "command", "command": "echo bash" }] },
+      { "hooks": [{ "type": "command", "command": "echo matcherless" }] }
+    ]
+  },
   "outputStyle": "default",
+  "enabledPlugins": { "fixture/plug": true },
   "secretToken": "sk-ant-should-not-persist"
 }

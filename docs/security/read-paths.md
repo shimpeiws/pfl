@@ -98,15 +98,40 @@ reports the size for the caller to bound. `readTextFileGuarded` builds on it.
 
 ### `runtime/claude-code`
 
-| Location       | Read                                                      | Guard                              | Classification                |
-| -------------- | --------------------------------------------------------- | ---------------------------------- | ----------------------------- |
-| `detect.ts`    | `lstat` of `~/.local/share/claude`, `~/.local/bin/claude` | ancestor guard (base: home)        | install-scope                 |
-| `detect.ts`    | `lstat` + `readdir` of `~/.local/share/claude/versions`   | ancestor guard (base: home)        | install-scope                 |
-| `detect.ts`    | `readFile` `~/.claude/.last-update-result.json`           | `readTextFileGuarded` (leaf guard) | install-scope                 |
-| `discovery.ts` | `readFile` known instruction/MCP files                    | `inspectFileTarget(root, …)`       | project-implicit / user-scope |
-| `discovery.ts` | walk `.claude/**` and `~/.claude/<dirs>/**`               | walk guards                        | project-implicit / user-scope |
-| `discovery.ts` | `readFile` `settings.json`, `settings.local.json`         | `readTextFileGuarded` + scope base | project-implicit / user-scope |
-| `discovery.ts` | `readFile` `~/.claude.json`                               | `readTextFileGuarded` (base: home) | user-scope                    |
+| Location       | Read                                                        | Guard                                                                                                                            | Classification                |
+| -------------- | ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
+| `detect.ts`    | `lstat` of `~/.local/share/claude`, `~/.local/bin/claude`   | ancestor guard (base: home)                                                                                                      | install-scope                 |
+| `detect.ts`    | `lstat` + `readdir` of `~/.local/share/claude/versions`     | ancestor guard (base: home)                                                                                                      | install-scope                 |
+| `detect.ts`    | `readFile` `~/.claude/.last-update-result.json`             | `readTextFileGuarded` (leaf guard)                                                                                               | install-scope                 |
+| `discovery.ts` | walk `<root>/**` for `CLAUDE.md` / `CLAUDE.local.md`        | walk guards; `selectFile` reads only those names, excluding the project config directory by path; `.git` / `node_modules` pruned | project-implicit              |
+| `discovery.ts` | walk `.claude/**` and `~/.claude/<dirs>/**`                 | walk guards                                                                                                                      | project-implicit / user-scope |
+| `discovery.ts` | `readFile` `settings.json`, `settings.local.json`           | `readTextFileGuarded` + scope base                                                                                               | project-implicit / user-scope |
+| `discovery.ts` | `readFile` parent-directory `CLAUDE.md` / `CLAUDE.local.md` | `inspectFileTarget(dir, …)`; consent-gated; `MAX_ANCESTOR_DIRS`                                                                  | **external-gated**            |
+| `discovery.ts` | `readFile` `MANAGED_CONFIG_DIR/{CLAUDE.md,settings.json}`   | `inspectFileTarget` / `readTextFileGuarded` (base: managed dir); consent-gated                                                   | **external-gated**            |
+| `discovery.ts` | `readFile` `.mcp.json`                                      | `readTextFileGuarded` + `inspectFileTarget(root, …)`                                                                             | project-implicit              |
+| `discovery.ts` | `readFile` `~/.claude.json`                                 | `readTextFileGuarded` (base: home)                                                                                               | user-scope                    |
+
+M7 Phase 5 extends the Claude Code adapter (issues #69, #70, #71) with no new
+unguarded read. The project instruction read becomes one subtree walk over
+`<root>/**` that selects only `CLAUDE.md` / `CLAUDE.local.md`, prunes `.git` and
+`node_modules`, and excludes the project config directory by path (so a
+`CLAUDE.md` under `.claude/` stays the `.claude/**` walk's element and no id
+collides). It is project-implicit. `CLAUDE.md` / `CLAUDE.local.md` are also read
+from the project's parent directories, one directory at a time up to
+`MAX_ANCESTOR_DIRS` (16): that is **external-gated**, refused without
+out-of-project consent, displayed as `../CLAUDE.md`, and never follows a symlink
+(`inspectFileTarget` refuses one at the leaf). The **managed** scope
+(`MANAGED_CONFIG_DIR`, `/Library/Application Support/ClaudeCode/CLAUDE.md` and
+`settings.json`) is a system-wide location, so it is the same class of
+out-of-project read and is gated on the same consent. The default read is
+macOS-only (`process.platform === 'darwin'`); discovery takes the managed base as
+a parameter, so a test injects a temp directory and `/Library` is never touched.
+`.mcp.json` moves from a digest-only read to the same guarded
+`readTextFileGuarded` the other MCP sources use, and only the `mcpServers` key
+names leave the read — a server command, argument, or environment value is never
+persisted. The `settings.json` read is unchanged, but it now records
+`permissions.defaultMode` as an `approval-policy` element and hook matcher
+strings; hook commands, types, and timeouts are not persisted.
 
 ### `runtime/codex`
 
@@ -178,10 +203,12 @@ External `.git` references are not a scope: under ADR 0002 §2 they are not read
 before consent at all. Project-local reads (**project-implicit**, **store**,
 **implicit-git**) need no grant.
 
-The **external-gated** parent-directory instruction read is keyed on the same
-out-of-project consent (`allowOutsideProject`), which today the `<runtime>:user`
-grant provides; the M8 scope taxonomy assigns it its final scope. It is listed
-in the consent prompt under **External references**.
+The **external-gated** parent-directory instruction read and the **managed**
+scope read (Claude Code's `/Library/Application Support/ClaudeCode`) are keyed on
+the same out-of-project consent (`allowOutsideProject`), which today the
+`<runtime>:user` grant provides; the M8 scope taxonomy assigns them their final
+scope. Both are listed in the consent prompt — the parent read under **External
+references**, the managed locations under **User**.
 
 The consent prompt's location groups are derived from the same adapter path
 constants discovery uses, and a per-adapter test asserts the groups cover every

@@ -30,6 +30,8 @@ const EXPECTED = [
       '~/.claude/projects/**/memory/**',
       '~/.claude/plugins/**',
       '~/.claude.json',
+      '/Library/Application Support/ClaudeCode/CLAUDE.md',
+      '/Library/Application Support/ClaudeCode/settings.json',
     ],
   },
   {
@@ -44,6 +46,7 @@ const EXPECTED = [
   {
     title: 'External references',
     locations: [
+      '../ (parent directories, bounded)',
       'Plugin directories referenced by Claude Code config',
       'MCP configuration metadata',
     ],

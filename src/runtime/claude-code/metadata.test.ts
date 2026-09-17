@@ -7,12 +7,17 @@ describe('CLAUDE_CODE_SAFE_METADATA_ALLOWLIST', () => {
     const filtered = filterToAllowlist(
       {
         format: 'md',
-        permissionMode: 'auto',
+        hookMatchers: ['startup'],
+        pluginNames: ['market/plug'],
         apiKey: 'sk-ant-secret',
         rawContent: 'raw instruction text',
       },
       CLAUDE_CODE_SAFE_METADATA_ALLOWLIST,
     );
-    expect(filtered).toEqual({ format: 'md', permissionMode: 'auto' });
+    expect(filtered).toEqual({
+      format: 'md',
+      hookMatchers: ['startup'],
+      pluginNames: ['market/plug'],
+    });
   });
 });

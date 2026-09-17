@@ -250,6 +250,69 @@ describe('pfl CLI end to end', () => {
     });
   });
 
+  it('resolves the Claude Code depth: MCP, plugins, hooks, approval, and the CLAUDE.md tree', async () => {
+    const m = await fixture('claude');
+    const inspect = await runCli(m, ['inspect', '--runtime', 'claude-code']);
+    expect(inspect.code, inspect.stderr).toBe(EXIT_CODES.SUCCESS);
+
+    const show = async (origin: 'project' | 'user' | 'plugin', path: string) => {
+      const id = elementIdFor({ runtimeId: runtimeId('claude-code'), origin, path });
+      const result = await runCli(m, ['show', id, '--json']);
+      expect(result.code, `${path}: ${result.stderr}`).toBe(EXIT_CODES.SUCCESS);
+      return JSON.parse(result.stdout.trim().split('\n').at(-1) ?? '{}') as {
+        observed: {
+          native: { kind: string; origin: string; scope: string };
+          metadata: Record<string, unknown>;
+        };
+        resolved: { status: string; applicability: { type: string; target?: string } };
+      };
+    };
+
+    // `.mcp.json` is parsed for server names, not only digested.
+    const mcp = await show('project', '.mcp.json#mcpServers');
+    expect(mcp.observed.native.kind).toBe('mcp-configuration');
+    expect(mcp.observed.metadata).toEqual({ serverNames: ['fixture'] });
+
+    // The approval mode lives under `permissions.defaultMode` and is its own kind.
+    const approval = await show('project', '.claude/settings.json#defaultMode');
+    expect(approval.observed.native.kind).toBe('approval-policy');
+    expect(approval.observed.metadata).toEqual({ approvalPolicy: 'acceptEdits' });
+
+    // Hooks expose matcher patterns; the command strings never leave the adapter.
+    const hooks = await show('project', '.claude/settings.json#hooks');
+    expect(hooks.observed.metadata).toMatchObject({
+      eventNames: ['SessionStart', 'PreToolUse'],
+      hookMatchers: ['startup|resume|compact', 'Bash'],
+      hookMatcherCount: 2,
+    });
+
+    // A plugin is a `plugin` element; the elements it supplies keep their own kind.
+    const plugin = await show('plugin', '~/.claude/plugins/market/plug/plugin.json');
+    expect(plugin.observed.native.kind).toBe('plugin');
+    expect(plugin.resolved).toMatchObject({
+      status: 'effective',
+      applicability: { type: 'global' },
+      resolution: { strategy: 'available' },
+    });
+    const pluginSkill = await show('plugin', '~/.claude/plugins/market/plug/skills/x/SKILL.md');
+    expect(pluginSkill.observed.native.kind).toBe('skills');
+    const pluginAgent = await show('plugin', '~/.claude/plugins/market/plug/agents/reviewer.md');
+    expect(pluginAgent.observed.native.kind).toBe('subagents');
+
+    // The CLAUDE.md tree: the same-directory local file shadows the base, the
+    // nested file governs its subtree, and the parent read is global.
+    const root = await show('project', 'CLAUDE.md');
+    expect(root.resolved).toMatchObject({ status: 'shadowed', applicability: { type: 'project' } });
+    expect((await show('project', 'CLAUDE.local.md')).resolved.status).toBe('effective');
+    expect((await show('project', 'docs/CLAUDE.md')).resolved).toMatchObject({
+      status: 'effective',
+      applicability: { type: 'directory-subtree', target: 'docs' },
+    });
+    expect((await show('project', '../CLAUDE.md')).resolved.applicability).toEqual({
+      type: 'global',
+    });
+  });
+
   it('reports the package version from the packed layout', async () => {
     const m = await fixture();
     const manifest = JSON.parse(await readFile(join(repoRoot, 'package.json'), 'utf8')) as {

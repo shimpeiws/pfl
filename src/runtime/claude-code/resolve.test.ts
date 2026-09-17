@@ -78,6 +78,138 @@ describe('resolveClaudeCode', () => {
     });
   });
 
+  it('resolves plugins and plugin-provided elements as effective', async () => {
+    const plugin = element('~/.claude/settings.json#enabledPlugins', 'plugin', 'user');
+    const manifest = element('~/.claude/plugins/market/plug/plugin.json', 'plugin', 'plugin');
+    const skill = element('~/.claude/plugins/market/plug/skills/x/SKILL.md', 'skills', 'plugin');
+
+    const resolved = await resolveClaudeCode(snapshot([plugin, manifest, skill]));
+
+    for (const source of [plugin, manifest]) {
+      expect(find(resolved.elements, source)).toMatchObject({
+        status: 'effective',
+        applicability: { type: 'global' },
+        resolution: { strategy: 'available' },
+        activation: 'on-demand',
+      });
+    }
+    expect(find(resolved.elements, skill)).toMatchObject({
+      status: 'effective',
+      resolution: { strategy: 'available' },
+    });
+  });
+
+  it('derives instruction applicability from the file directory', async () => {
+    const root = element('CLAUDE.md', 'instructions', 'project');
+    const nested = element('docs/CLAUDE.md', 'instructions', 'project');
+    const deeper = element('docs/api/CLAUDE.md', 'instructions', 'project');
+    const parent = element('../CLAUDE.md', 'instructions', 'project');
+    const farParent = element('../../CLAUDE.md', 'instructions', 'project');
+    const user = element('~/.claude/CLAUDE.md', 'instructions', 'user');
+    const managed = element(
+      '/Library/Application Support/ClaudeCode/CLAUDE.md',
+      'instructions',
+      'managed',
+    );
+
+    const resolved = await resolveClaudeCode(
+      snapshot([root, nested, deeper, parent, farParent, user, managed]),
+    );
+
+    expect(find(resolved.elements, root).applicability).toEqual({ type: 'project' });
+    expect(find(resolved.elements, nested).applicability).toEqual({
+      type: 'directory-subtree',
+      target: 'docs',
+    });
+    expect(find(resolved.elements, deeper).applicability).toEqual({
+      type: 'directory-subtree',
+      target: 'docs/api',
+    });
+    expect(find(resolved.elements, parent).applicability).toEqual({ type: 'global' });
+    expect(find(resolved.elements, farParent).applicability).toEqual({ type: 'global' });
+    expect(find(resolved.elements, user).applicability).toEqual({ type: 'global' });
+    expect(find(resolved.elements, managed).applicability).toEqual({ type: 'global' });
+  });
+
+  it('lets CLAUDE.local.md shadow the base CLAUDE.md in the same directory only', async () => {
+    const rootBase = element('CLAUDE.md', 'instructions', 'project');
+    const rootLocal = element('CLAUDE.local.md', 'instructions', 'project');
+    const nestedBase = element('docs/CLAUDE.md', 'instructions', 'project');
+
+    const resolved = await resolveClaudeCode(snapshot([rootBase, rootLocal, nestedBase]));
+
+    expect(find(resolved.elements, rootLocal).status).toBe('effective');
+    const shadowed = find(resolved.elements, rootBase);
+    expect(shadowed.status).toBe('shadowed');
+    expect(shadowed.resolution.reason).toContain(rootLocal.id);
+    expect(resolved.relations).toContainEqual({
+      type: 'shadows',
+      from: rootLocal.id,
+      to: rootBase.id,
+    });
+    // A different directory has no local file, so the nested base stays effective.
+    expect(find(resolved.elements, nestedBase).status).toBe('effective');
+  });
+
+  it('does not shadow a base in a different directory from the local file', async () => {
+    const rootBase = element('CLAUDE.md', 'instructions', 'project');
+    const nestedLocal = element('docs/CLAUDE.local.md', 'instructions', 'project');
+    const parentLocal = element('../CLAUDE.local.md', 'instructions', 'project');
+    const nestedBase = element('docs/CLAUDE.md', 'instructions', 'project');
+
+    const resolved = await resolveClaudeCode(
+      snapshot([rootBase, nestedLocal, parentLocal, nestedBase]),
+    );
+
+    // Removing the dirname guard would shadow the root base from the parent local
+    // file and the nested base from the parent local file.
+    expect(find(resolved.elements, rootBase).status).toBe('effective');
+    expect(find(resolved.elements, nestedBase).status).toBe('shadowed');
+    expect(resolved.relations).not.toContainEqual({
+      type: 'shadows',
+      from: parentLocal.id,
+      to: rootBase.id,
+    });
+  });
+
+  it('does not let an unavailable local file shadow the base', async () => {
+    const base = element('CLAUDE.md', 'instructions', 'project');
+    const local = element('CLAUDE.local.md', 'instructions', 'project', {
+      status: 'skipped',
+      reason: 'symlink-not-followed',
+    });
+
+    const resolved = await resolveClaudeCode(snapshot([base, local]));
+
+    // Removing the observed-status guard would shadow the base from a file that
+    // was never read.
+    expect(find(resolved.elements, base).status).toBe('effective');
+    expect(find(resolved.elements, local).status).toBe('unresolved');
+  });
+
+  it('ranks managed settings above project and user settings', async () => {
+    const user = element('~/.claude/settings.json#permissions', 'permissions', 'user');
+    const project = element('.claude/settings.json#permissions', 'permissions', 'project');
+    const local = element('.claude/settings.local.json#permissions', 'permissions', 'project');
+    const managed = element(
+      '/Library/Application Support/ClaudeCode/settings.json#permissions',
+      'permissions',
+      'managed',
+    );
+
+    const resolved = await resolveClaudeCode(snapshot([user, project, local, managed]));
+
+    expect(find(resolved.elements, managed).status).toBe('effective');
+    expect(find(resolved.elements, local).status).toBe('shadowed');
+    expect(find(resolved.elements, project).status).toBe('shadowed');
+    expect(find(resolved.elements, user).status).toBe('shadowed');
+    expect(resolved.relations).toContainEqual({
+      type: 'shadows',
+      from: managed.id,
+      to: local.id,
+    });
+  });
+
   it('resolves hooks as an event pipeline with the event as target', async () => {
     const hooks = element('.claude/settings.json#hooks', 'hooks', 'project', {
       metadata: { eventNames: ['SessionStart', 'PreToolUse'] },

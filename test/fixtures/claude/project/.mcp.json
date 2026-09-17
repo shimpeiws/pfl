@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "fixture": {
+      "command": "SENTINEL_CLAUDE_MCP_COMMAND",
+      "args": ["token=SENTINEL_CLAUDE_MCP_ARG"],
+      "env": { "TOKEN": "SENTINEL_CLAUDE_MCP_ENV" }
+    }
+  }
+}

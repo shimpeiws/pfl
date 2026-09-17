@@ -50,11 +50,12 @@ export const MAX_TOML_ARRAY_ITEMS = 256;
 export const MAX_TOML_SCALAR_LENGTH = 256;
 
 /**
- * Ancestor-directory ceiling (roadmap §5 M7, issue #75). Codex reads
- * `AGENTS.md` from the project's parent directories, which is an out-of-project
- * read, so the upward walk is bounded rather than roaming to the filesystem
- * root. Hitting the ceiling is recorded as a diagnostic, so a project nested
- * deeper than this is visibly truncated rather than silently missing ancestors.
+ * Ancestor-directory ceiling (roadmap §5 M7, issues #75, #71). Codex reads
+ * `AGENTS.md` and Claude Code reads `CLAUDE.md` from the project's parent
+ * directories, which is an out-of-project read, so the upward walk is bounded
+ * rather than roaming to the filesystem root. Hitting the ceiling is recorded as
+ * a diagnostic, so a project nested deeper than this is visibly truncated rather
+ * than silently missing ancestors.
  */
 export const MAX_ANCESTOR_DIRS = 16;
 
