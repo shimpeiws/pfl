@@ -42,6 +42,13 @@ against outcomes.
 It never executes the runtime, discovered tools, skills, hooks, or MCP servers.
 See the [design document](docs/design/pfl-design-v0.1.md) for the full design.
 
+v1.0's security-hardening milestone is complete. Reading outside the project
+requires consent and fails closed without it; symlinks and hardlinks are never
+followed; resource ceilings bound what is walked and parsed; and everything
+persisted or printed passes an allowlist or the redaction layer. See
+[`SECURITY.md`](SECURITY.md) and [`docs/security/`](docs/security/) for the
+policy, the accepted risks, and the read-path inventory.
+
 ## Commands
 
 ```sh
