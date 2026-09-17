@@ -124,13 +124,28 @@ async function resolveResolvedId(
   const run = runs.find(
     (entry) => entry.resolvedId === requestedId || entry.observedId === requestedId,
   );
-  if (run === undefined || run.resolvedId === null) {
-    // A named id can be "unknown" because the artifact is present but
-    // uninterpretable; carry the scan's diagnostics so the cause is not lost
-    // (#82).
-    throw new PflError(`unknown snapshot: ${requestedId}`, EXIT_CODES.CONFIG_ERROR, {
-      ...(diagnostics.length > 0 ? { diagnostics } : {}),
-    });
+  // A named id can fail because the artifact is present but uninterpretable.
+  // Say so, naming the cause, rather than calling a readable-on-disk snapshot
+  // "unknown"; the scan's diagnostics carry it either way (#82).
+  const context = diagnostics.length > 0 ? { diagnostics } : {};
+  if (run === undefined) {
+    const unreadable = diagnostics.find((entry) => entry.path === `${requestedId}.json`);
+    if (unreadable !== undefined) {
+      throw new PflError(
+        `could not read snapshot ${requestedId}: ${unreadable.message}`,
+        EXIT_CODES.CONFIG_ERROR,
+        context,
+      );
+    }
+    throw new PflError(`unknown snapshot: ${requestedId}`, EXIT_CODES.CONFIG_ERROR, context);
+  }
+  if (run.resolvedId === null) {
+    const reason = diagnostics.find((entry) => entry.path?.startsWith('res_'));
+    throw new PflError(
+      `could not read the resolved snapshot for ${requestedId}${reason !== undefined ? `: ${reason.message}` : ''}`,
+      EXIT_CODES.CONFIG_ERROR,
+      context,
+    );
   }
   return { resolvedId: run.resolvedId, diagnostics };
 }

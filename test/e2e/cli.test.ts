@@ -557,6 +557,19 @@ describe('pfl CLI end to end', () => {
     expect(document.data.error.code).toBe('CONFIG_ERROR');
     expect(document.diagnostics[0]?.code).toBe('unsupported-snapshot-schema');
     expect(document.diagnostics[0]?.message).toContain('2');
+
+    // A named read of the same unreadable snapshot says it could not be read,
+    // rather than calling a present artifact "unknown".
+    for (const id of [pointer.observed, pointer.resolved]) {
+      const named = await runCli(m, ['report', '--snapshot', id, '--json']);
+      expect(named.code, id).toBe(EXIT_CODES.CONFIG_ERROR);
+      const namedDocument = JSON.parse(named.stdout) as {
+        data: { error: { message: string } };
+        diagnostics: { code: string }[];
+      };
+      expect(namedDocument.data.error.message, id).toMatch(/could not read/);
+      expect(namedDocument.diagnostics[0]?.code, id).toBe('unsupported-snapshot-schema');
+    }
   });
 
   it('emits the missing consent scopes in the failure document', async () => {

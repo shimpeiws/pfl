@@ -87,6 +87,10 @@ Implemented in `src/snapshot/serialization.ts` as `serializeSnapshot` /
     reserved for a store that could not be read at all.
   - Both conditions are handled identically; a malformed artifact is not a
     different failure from an unsupported version.
+  - The `latest` pointer is the one mutable artifact, not an immutable snapshot,
+    so a corrupt or unreadable pointer remains a store failure (exit 6). It
+    carries no `schemaVersion` to refuse; being unable to read it means the
+    store itself could not be read.
 - Any change to a persisted snapshot shape must bump `SNAPSHOT_SCHEMA_VERSION`
   and add the new value to `SUPPORTED_SNAPSHOT_SCHEMA_VERSIONS`.
 - A run writes several artifacts in turn — observed snapshot, resolved

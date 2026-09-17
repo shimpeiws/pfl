@@ -352,6 +352,10 @@ export async function listRuns(
 
   // Interpretations are keyed by the resolved snapshot they interpret, so a run
   // summary can name the stored interpretation (or `null` when there is none).
+  // Each is parsed rather than trusted from its name: the file name and the
+  // payload must agree, or a scan would report a run as interpreted that the
+  // direct read (which uses the path) cannot find. The id it carries is what
+  // retention reclaims the run with (#87).
   const interpretationByResolved = new Map<string, string>();
   for (const name of await artifactNames(
     interpretationsDir(projectId, home),
@@ -731,10 +735,14 @@ function isRelation(value: unknown): boolean {
 /**
  * Validates an interpretation the way the snapshot predicates validate theirs
  * (roadmap S11): a malformed artifact is refused with `invalid-snapshot` rather
- * than handed to a reader that would crash on it. Facets and finding rules are
- * checked for structure only, never against the current tables, so a stored
- * interpretation carrying a facet or rule this build does not know stays
- * readable (design doc §6: readers tolerate unknown future facets).
+ * than handed to a reader that would crash on it.
+ *
+ * Facets and finding rules are checked for structure only, never against the
+ * current tables, so a stored interpretation carrying a facet or rule this
+ * build does not know stays readable (design doc §6: readers tolerate unknown
+ * future facets). `confidence` is the deliberate exception: it is a closed
+ * three-value scale the classifier expresses, not an open vocabulary, so an
+ * unrecognised value is a malformed artifact.
  */
 function isInterpretation(value: unknown): value is Interpretation {
   if (!isRecord(value)) return false;
