@@ -628,6 +628,17 @@ describe('pfl CLI end to end', () => {
     const m = await materialize('claude');
     materialized.push(m);
 
+    // A cross-runtime or unknown scope key is rejected, not silently ignored.
+    const wrongRuntime = await runCli(m, [
+      'inspect',
+      '--runtime',
+      'claude-code',
+      '--allow-scope',
+      'codex:user',
+      '--json',
+    ]);
+    expect(wrongRuntime.code).toBe(EXIT_CODES.CONFIG_ERROR);
+
     // Install alone is not enough: the user scope is required to discover the
     // harness, and its absence is the exit-5 missing-scope document.
     const installOnly = await runCli(m, [

@@ -61,11 +61,22 @@ true }` case now asserts the version is detected while no user element
    too. The test also injects an empty managed base, so it never reads the real
    `/Library`.
 
+6. **The prompt's will-block did not follow the scope**, so the install prompt
+   claimed to read the harness and the user prompt claimed to check the version.
+   Fixed: the will-line is scope-specific, and the install prompt is rendered and
+   asserted.
+7. **A cross-runtime or misspelled `--allow-scope` key was silently ignored.**
+   Fixed: the key must be `<inspected runtime>:<user|install>`; anything else
+   exits 2. An e2e case pins a cross-runtime grant.
+8. **`resolveAccessPolicy`'s doc described a `required: false` branch that the
+   implementation no longer had.** The unused option was removed and the doc
+   corrected.
+
 No finding was accepted as a risk.
 
 ## Verification
 
-- Full gate green: `test` (56 files, 486 tests), `check`, `format`, `build`,
+- Full gate green: `test` (56 files, 487 tests), `check`, `format`, `build`,
   `typecheck:test`, `knip`.
 - New tests: `--allow-scope claude-code:user` succeeds headlessly and writes no
   `permissions.json`; install-only exits 5 with `claude-code:user` missing; a

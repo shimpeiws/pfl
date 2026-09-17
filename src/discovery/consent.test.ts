@@ -203,7 +203,6 @@ describe('renderConsentPrompt', () => {
       '  (Project-local discovery is implicit and needs no consent.)',
       'Inventory will:',
       '  ✓ Read files needed to resolve the effective harness',
-      '  ✓ Check the installed runtime version',
       '  ✓ Process content locally',
       '  ✓ Store only digests and allowlisted metadata',
       '  ✗ Store file contents',
@@ -214,5 +213,15 @@ describe('renderConsentPrompt', () => {
       expect(prompt).toContain(line);
     }
     expect(prompt.endsWith('Allow this runtime scope? [y/N] ')).toBe(true);
+  });
+
+  it('renders the install scope with only its own will-line and locations', () => {
+    const prompt = renderConsentPrompt(getConsentRequest('claude-code', 'install'));
+
+    expect(prompt).toContain('  Installation and version metadata');
+    expect(prompt).toContain('  ✓ Check the installed runtime version');
+    // The install scope does not read the harness, so the prompt must not claim it.
+    expect(prompt).not.toContain('Read files needed to resolve the effective harness');
+    expect(prompt).not.toContain('~/.claude/CLAUDE.md');
   });
 });

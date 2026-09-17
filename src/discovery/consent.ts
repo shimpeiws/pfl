@@ -166,8 +166,8 @@ export function accessPolicy(
  * interactivity check, so a non-interactive run can proceed on consent it was
  * given. With no grant, an interactive run prompts once and an answer other
  * than `y`/`yes` (including the empty default) leaves the policy closed; a
- * non-interactive run throws `CONSENT_REQUIRED` when the scope is required and
- * returns a closed policy when it is not.
+ * non-interactive run throws `CONSENT_REQUIRED`. The install scope is optional
+ * because a caller simply does not resolve it when it is not needed.
  */
 export async function resolveAccessPolicy(
   request: ConsentRequest,
@@ -210,12 +210,17 @@ export function renderConsentPrompt(request: ConsentRequest): string {
     }
     lines.push('');
   }
+  // The will-block follows the scope: the install prompt does not claim to read
+  // the harness, and the user prompt does not claim to check the version.
+  const willLines =
+    request.scope === 'install'
+      ? ['  ✓ Check the installed runtime version']
+      : ['  ✓ Read files needed to resolve the effective harness'];
   lines.push(
     '  (Project-local discovery is implicit and needs no consent.)',
     '',
     'Inventory will:',
-    '  ✓ Read files needed to resolve the effective harness',
-    '  ✓ Check the installed runtime version',
+    ...willLines,
     '  ✓ Process content locally',
     '  ✓ Store only digests and allowlisted metadata',
     '  ✗ Store file contents',
