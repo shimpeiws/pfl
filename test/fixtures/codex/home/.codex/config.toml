@@ -2,6 +2,11 @@
 approval_policy = "on-request"
 sandbox_mode = "workspace-write"
 model = "gpt-5.6-luna"
+model_reasoning_effort = "medium"
+service_tier = "flex"
+model_context_window = 272000
+model_max_output_tokens = 128000
+model_auto_compact_token_limit = 200000
 
 [mcp_servers.node_repl]
 command = "sk-ant-api03-EXFILTRATION-0123456789" # gitleaks:allow

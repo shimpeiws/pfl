@@ -2,10 +2,12 @@ import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
+import { deriveFindings } from '../../classify/findings.js';
 import type { ObservedElement } from '../../core/observed.js';
 import { MAX_ANCESTOR_DIRS, MAX_PARSE_BYTES } from '../../limits.js';
 import { collectCodexHarness } from './discovery.js';
-import { userConfigDir } from './paths.js';
+import { KNOWN_ELEMENT_KINDS, USER_DIR_KIND, userConfigDir } from './paths.js';
+import { resolveCodex } from './resolve.js';
 
 const tempDirs: string[] = [];
 
@@ -21,6 +23,27 @@ afterEach(async () => {
 
 const CONSENTED = { allowOutsideProject: true, grantedScopes: ['codex:user'] };
 const DENIED = { allowOutsideProject: false, grantedScopes: [] };
+
+/** Enough `allow` decisions to cross `BROAD_TOOL_ACCESS_MIN_ALLOW`. */
+const RULE_ALLOW_COUNT = 12;
+const RULE_DENY_COUNT = 2;
+/** A rule argument that must never be persisted, only counted. */
+const RULE_SENTINEL = 'SENTINEL_RULE_ARG';
+
+function rulesFileContent(): string {
+  return [
+    '# Codex prefix rules',
+    '',
+    ...Array.from(
+      { length: RULE_ALLOW_COUNT },
+      (_, index) => `prefix_rule(pattern=["cmd${index}"], decision="allow")`,
+    ),
+    `prefix_rule(pattern=["rm", "-rf", "${RULE_SENTINEL}"], decision="forbidden")`,
+    "prefix_rule(pattern=['git', 'push'], decision='deny')",
+    '# a comment that mentions decision="allow" is not a rule',
+    '',
+  ].join('\n');
+}
 
 interface Fixture {
   project: { id: string; displayName: string; root: string; remote: string };
@@ -75,6 +98,10 @@ async function makeFixture(): Promise<Fixture> {
       'sandbox_mode = "workspace-write"',
       'model = "gpt-5.6-luna"',
       'model_reasoning_effort = "medium"',
+      'service_tier = "flex"',
+      'model_context_window = 272000',
+      'model_max_output_tokens = 128000',
+      'model_auto_compact_token_limit = 200000',
       'notify = ["/bin/notify", "turn-ended"]',
       '[mcp_servers.node_repl]',
       'command = "SENTINEL_CODEX_MCP_COMMAND"',
@@ -117,12 +144,13 @@ async function makeFixture(): Promise<Fixture> {
       'name: tool',
       'description: "A Codex skill"',
       'allowed-tools: Read, Write',
+      'dependencies: [foundation, formatting]',
       '---',
       '# Skill',
       '',
     ].join('\n'),
   );
-  await writeFile(join(configDir, 'rules', 'rule.md'), '# Rule\n');
+  await writeFile(join(configDir, 'rules', 'default.rules'), rulesFileContent());
   await writeFile(join(configDir, 'memories', 'MEMORY.md'), '# Memory\n');
   await writeFile(join(outside, 'leaked.txt'), 'must not be discovered\n');
   await symlink(join('..', '..', '..', 'outside'), join(configDir, 'skills', 'link'));
@@ -148,7 +176,7 @@ describe('collectCodexHarness', () => {
     expect(paths.get('AGENTS.override.md')?.native.kind).toBe('fallback-instructions');
     expect(paths.get('~/.codex/AGENTS.md')?.native.kind).toBe('instructions');
     expect(paths.get('~/.codex/skills/SKILL.md')?.native.kind).toBe('skills');
-    expect(paths.get('~/.codex/rules/rule.md')?.native.kind).toBe('permissions');
+    expect(paths.get('~/.codex/rules/default.rules')?.native.kind).toBe('rules');
     expect(paths.get('~/.codex/memories/MEMORY.md')?.native.kind).toBe('memory');
   });
 
@@ -273,9 +301,15 @@ describe('collectCodexHarness', () => {
       approvalMode: 'on-request',
       sandboxMode: 'workspace-write',
     });
-    expect(paths.get('~/.codex/config.toml#context')?.metadata).toEqual({
+    expect(paths.get('~/.codex/config.toml#model')?.metadata).toEqual({
       model: 'gpt-5.6-luna',
       reasoningEffort: 'medium',
+      serviceTier: 'flex',
+    });
+    expect(paths.get('~/.codex/config.toml#context')?.metadata).toEqual({
+      contextWindow: 272000,
+      maxOutputTokens: 128000,
+      autoCompactTokenLimit: 200000,
     });
     expect(paths.get('~/.codex/config.toml#mcp_servers')?.metadata).toEqual({
       serverNames: ['node_repl'],
@@ -337,11 +371,72 @@ describe('collectCodexHarness', () => {
     expect(element?.metadata).toEqual({
       format: 'md',
       hasFrontmatter: true,
-      frontmatterKeys: ['name', 'description', 'allowed-tools'],
+      frontmatterKeys: ['name', 'description', 'allowed-tools', 'dependencies'],
       descriptionLength: 'A Codex skill'.length,
       toolNames: ['Read', 'Write'],
+      dependencyNames: ['foundation', 'formatting'],
     });
     expect(JSON.stringify(snapshot.elements)).not.toContain('A Codex skill');
+  });
+
+  it('emits a rules element and a counts-only permissions fragment', async () => {
+    const { project, home } = await makeFixture();
+
+    const snapshot = await collectCodexHarness(project, CONSENTED, home);
+    const paths = byPath(snapshot.elements);
+
+    expect(paths.get('~/.codex/rules/default.rules')).toMatchObject({
+      native: { kind: 'rules', origin: 'user', scope: 'user' },
+    });
+    // `toEqual` (not `toMatchObject`): the rules element carries only the file
+    // format, so a reverted guard that merges the counts back in turns this red.
+    expect(paths.get('~/.codex/rules/default.rules')?.metadata).toEqual({ format: 'rules' });
+    expect(paths.get('~/.codex/rules/default.rules#permissions')).toMatchObject({
+      native: { kind: 'permissions', origin: 'user', scope: 'user' },
+    });
+    // Exact equality: the fragment carries only the counts, so a regression that
+    // added a pattern or argument to the metadata turns this red.
+    expect(paths.get('~/.codex/rules/default.rules#permissions')?.metadata).toEqual({
+      allowCount: RULE_ALLOW_COUNT,
+      denyCount: RULE_DENY_COUNT,
+    });
+    // The fragment is a distinct path, so it is a distinct element id.
+    expect(paths.get('~/.codex/rules/default.rules')?.id).not.toBe(
+      paths.get('~/.codex/rules/default.rules#permissions')?.id,
+    );
+    // Only counts leave the walk: no pattern and no argument is persisted.
+    expect(JSON.stringify(snapshot.elements)).not.toContain(RULE_SENTINEL);
+    expect(JSON.stringify(snapshot.elements)).not.toContain('cmd0');
+  });
+
+  it('makes broad-tool-access reachable for a Codex permission set', async () => {
+    const { project, home } = await makeFixture();
+
+    const observed = await collectCodexHarness(project, CONSENTED, home);
+    const resolved = await resolveCodex(observed);
+    const permissions = byPath(observed.elements).get('~/.codex/rules/default.rules#permissions');
+    const finding = deriveFindings(observed, resolved).find(
+      (entry) => entry.rule === 'broad-tool-access',
+    );
+
+    expect(permissions).toBeDefined();
+    expect(finding?.elementIds).toContain(permissions?.id);
+    expect(finding?.message).toContain(String(RULE_ALLOW_COUNT));
+  });
+
+  it('redacts a secret-shaped dependency name before it is persisted', async () => {
+    const { project, home } = await makeFixture();
+    const secret = 'ghp_0123456789abcdefghijklmnopqrstuvwx'; // gitleaks:allow
+    await writeFile(
+      join(userConfigDir(home), 'skills', 'secret.md'),
+      ['---', `dependencies: [${secret}]`, '---'].join('\n'),
+    );
+
+    const snapshot = await collectCodexHarness(project, CONSENTED, home);
+    const element = byPath(snapshot.elements).get('~/.codex/skills/secret.md');
+
+    expect(element?.metadata['dependencyNames']).toEqual(['[redacted]']);
+    expect(JSON.stringify(snapshot.elements)).not.toContain(secret);
   });
 
   it('does not open user scope when consent is denied', async () => {
@@ -475,5 +570,18 @@ describe('collectCodexHarness symlinked settings (S1)', () => {
           diagnostic.code === 'limit-exceeded' && diagnostic.message.includes('MAX_PARSE_BYTES'),
       ),
     ).toBe(true);
+  });
+});
+
+describe('Codex element kinds (M7 Phase 4)', () => {
+  it('carries the corrected kinds and withdraws the dead ones', () => {
+    const kinds = KNOWN_ELEMENT_KINDS as readonly string[];
+
+    expect(kinds).toContain('rules');
+    expect(kinds).toContain('model-configuration');
+    expect(kinds).not.toContain('skill-dependencies');
+    expect(kinds).not.toContain('multi-agent-configuration');
+    // `rules` is instructional content, so it is its own kind, not `permissions`.
+    expect(USER_DIR_KIND.rules).toBe('rules');
   });
 });

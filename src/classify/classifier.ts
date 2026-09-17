@@ -22,7 +22,7 @@ import type { ResolvedSnapshot } from '../core/resolved.js';
  */
 
 export const CLASSIFIER_ID = 'pfl-native';
-export const CLASSIFIER_VERSION = '2';
+export const CLASSIFIER_VERSION = '3';
 
 interface FacetMapping {
   facets: readonly HarnessFacet[];
@@ -49,11 +49,6 @@ const FACETS_BY_KIND: Record<string, FacetMapping> = {
     facets: ['knowledge', 'actions', 'delegation'],
     confidence: 'medium',
     reason: 'supplies skills, commands, agents, or hooks',
-  },
-  'multi-agent-configuration': {
-    facets: ['delegation'],
-    confidence: 'medium',
-    reason: 'configures multi-agent delegation',
   },
   hooks: {
     facets: ['controls'],
@@ -84,6 +79,11 @@ const FACETS_BY_KIND: Record<string, FacetMapping> = {
     reason: 'provides external capabilities',
   },
   memory: { facets: ['memory'], confidence: 'high', reason: 'persistent carried-forward state' },
+  'model-configuration': {
+    facets: ['controls'],
+    confidence: 'medium',
+    reason: 'selects the model and reasoning behavior',
+  },
   'compaction-controls': {
     facets: ['controls'],
     confidence: 'medium',

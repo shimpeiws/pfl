@@ -11,8 +11,8 @@ import {
  * commands, rules, output styles, and memory files declare their identity in a
  * leading `---` fenced block; this module extracts only the *structural* facts
  * the safe-metadata allowlist admits — which keys are declared, the length of a
- * description, and declared tool names — so resolution is possible without ever
- * persisting instruction text.
+ * description, and declared tool and dependency names — so resolution is
+ * possible without ever persisting instruction text.
  *
  * It is deliberately not a YAML implementation. It understands top-level
  * `key: value` lines, inline and block string lists, and block scalars well
@@ -29,6 +29,8 @@ export interface FrontmatterFacts {
   keys: string[];
   /** Declared tool names from `tools` or `allowed-tools`. */
   toolNames: string[];
+  /** Declared skill dependency names from `dependencies`. */
+  dependencyNames: string[];
   /** Character length of the `description` value; the value itself never leaves. */
   descriptionLength?: number;
 }
@@ -47,6 +49,7 @@ const COMMENT = /^\s*#/;
 const INDENTED = /^\s/;
 
 const TOOL_KEYS = new Set(['tools', 'allowed-tools']);
+const DEPENDENCY_KEYS = new Set(['dependencies']);
 const BLOCK_SCALAR_MARKERS = new Set(['|', '>', '|-', '>-', '|+', '>+']);
 
 /**
@@ -58,6 +61,13 @@ const BLOCK_SCALAR_MARKERS = new Set(['|', '>', '|-', '>-', '|+', '>+']);
  */
 const TOOL_NAME = /^[A-Za-z0-9_.-]+(\([^()\r\n]{0,200}\))?$/;
 
+/**
+ * A declared skill dependency name: a bare identifier, with no parenthesized
+ * specifier. Prose and value-shaped fragments are dropped for the same reason
+ * as an invalid tool name.
+ */
+const DEPENDENCY_NAME = /^[A-Za-z0-9_.-]+$/;
+
 /** Reads the leading frontmatter block, if any, from file content. */
 export function readFrontmatter(content: string): FrontmatterRead {
   // The walk already refuses a file over MAX_FILE_BYTES; this keeps the parse
@@ -65,7 +75,10 @@ export function readFrontmatter(content: string): FrontmatterRead {
   const text = content.length > MAX_PARSE_BYTES ? content.slice(0, MAX_PARSE_BYTES) : content;
   const lines = stripBom(text).split(/\r?\n/);
   if (!OPENING_FENCE.test(lines[0] ?? '')) {
-    return { facts: { hasFrontmatter: false, keys: [], toolNames: [] }, malformed: false };
+    return {
+      facts: { hasFrontmatter: false, keys: [], toolNames: [], dependencyNames: [] },
+      malformed: false,
+    };
   }
 
   const close = lines.findIndex((line, index) => index > 0 && CLOSING_FENCE.test(line));
@@ -75,10 +88,12 @@ export function readFrontmatter(content: string): FrontmatterRead {
   const seenKeys = new Set<string>();
   const toolNames: string[] = [];
   const seenTools = new Set<string>();
+  const dependencyNames: string[] = [];
+  const seenDependencies = new Set<string>();
   let descriptionLength: number | undefined;
   let overflow = false;
 
-  let collecting: 'none' | 'tools' | 'description' = 'none';
+  let collecting: 'none' | 'tools' | 'dependencies' | 'description' = 'none';
 
   const addTools = (raw: string): void => {
     for (const candidate of splitTools(raw)) {
@@ -100,6 +115,26 @@ export function readFrontmatter(content: string): FrontmatterRead {
     }
   };
 
+  // A dependency name is the same kind of structural fragment as a tool name, so
+  // it shares the identity and list-shape ceilings rather than inventing ones.
+  const addDependencies = (raw: string): void => {
+    for (const candidate of splitTools(raw)) {
+      if (!DEPENDENCY_NAME.test(candidate)) continue;
+      if (candidate.length > MAX_TOOL_NAME_LENGTH) {
+        overflow = true;
+        continue;
+      }
+      if (dependencyNames.length >= MAX_TOOL_NAMES) {
+        overflow = true;
+        return;
+      }
+      if (!seenDependencies.has(candidate)) {
+        seenDependencies.add(candidate);
+        dependencyNames.push(candidate);
+      }
+    }
+  };
+
   let unreadable = false;
   for (const line of body) {
     if (line.trim() === '') continue;
@@ -108,6 +143,9 @@ export function readFrontmatter(content: string): FrontmatterRead {
       if (collecting === 'tools') {
         const item = BLOCK_ITEM.exec(line);
         if (item?.[1] !== undefined) addTools(item[1]);
+      } else if (collecting === 'dependencies') {
+        const item = BLOCK_ITEM.exec(line);
+        if (item?.[1] !== undefined) addDependencies(item[1]);
       } else if (collecting === 'description') {
         descriptionLength = (descriptionLength ?? 0) + line.trim().length;
       }
@@ -139,6 +177,10 @@ export function readFrontmatter(content: string): FrontmatterRead {
       collecting = 'none';
       if (value !== '') addTools(value);
       else collecting = 'tools';
+    } else if (DEPENDENCY_KEYS.has(key)) {
+      collecting = 'none';
+      if (value !== '') addDependencies(value);
+      else collecting = 'dependencies';
     } else if (key === 'description') {
       if (BLOCK_SCALAR_MARKERS.has(value)) {
         collecting = 'description';
@@ -152,7 +194,7 @@ export function readFrontmatter(content: string): FrontmatterRead {
     }
   }
 
-  const facts: FrontmatterFacts = { hasFrontmatter: true, keys, toolNames };
+  const facts: FrontmatterFacts = { hasFrontmatter: true, keys, toolNames, dependencyNames };
   if (descriptionLength !== undefined) facts.descriptionLength = descriptionLength;
   return { facts, malformed: close === -1 || unreadable || overflow };
 }
@@ -169,6 +211,7 @@ export function frontmatterMetadata(facts: FrontmatterFacts): Record<string, Saf
     frontmatterKeys: facts.keys,
   };
   if (facts.toolNames.length > 0) metadata['toolNames'] = facts.toolNames;
+  if (facts.dependencyNames.length > 0) metadata['dependencyNames'] = facts.dependencyNames;
   if (facts.descriptionLength !== undefined) {
     metadata['descriptionLength'] = facts.descriptionLength;
   }

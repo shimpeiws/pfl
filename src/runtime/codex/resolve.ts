@@ -21,6 +21,7 @@ import { resolveElements, type ElementResolutionInput } from '../../resolution/r
  * instructions                  global | project |  accumulate      always
  *                               directory-subtree
  * fallback-instructions         same as instructions override       always   (replaces the same-directory AGENTS.md)
+ * rules                         global              accumulate      always
  * skills                        project             available       on-demand (still effective)
  * permissions                   global              policy          always
  * memory                        project             accumulate      always
@@ -29,6 +30,7 @@ import { resolveElements, type ElementResolutionInput } from '../../resolution/r
  * shell-environment             global              policy          always   (behavioral control)
  * project-configuration         project             policy          always
  * plugin                        global              available       on-demand
+ * model-configuration           global              policy          always   (behavioral control)
  * compaction-controls           global              policy          always   (behavioral control)
  * mcp-configuration             global              available       on-demand
  * runtime-provided-instructions runtime-defined     runtime-defined always   (opaque)
@@ -103,6 +105,8 @@ function axesFor(element: ObservedElement): {
         strategy: 'override',
         activation: 'always',
       };
+    case 'rules':
+      return { applicability: { type: 'global' }, strategy: 'accumulate', activation: 'always' };
     case 'skills':
       return { applicability: { type: 'project' }, strategy: 'available', activation: 'on-demand' };
     case 'plugin':
@@ -111,6 +115,7 @@ function axesFor(element: ObservedElement): {
       return { applicability: { type: 'project' }, strategy: 'accumulate', activation: 'always' };
     case 'permissions':
     case 'approval-sandbox':
+    case 'model-configuration':
     case 'compaction-controls':
     case 'shell-environment':
       return { applicability: { type: 'global' }, strategy: 'policy', activation: 'always' };

@@ -210,6 +210,24 @@ describe('resolveCodex', () => {
     expect(find(resolved.elements, context).status).toBe('effective');
   });
 
+  it('resolves model configuration as policy and user rules as accumulated', async () => {
+    const model = element('~/.codex/config.toml#model', 'model-configuration', 'user');
+    const rules = element('~/.codex/rules/default.rules', 'rules', 'user');
+
+    const resolved = await resolveCodex(snapshot([model, rules]));
+
+    expect(find(resolved.elements, model)).toMatchObject({
+      status: 'effective',
+      applicability: { type: 'global' },
+      resolution: { strategy: 'policy' },
+    });
+    expect(find(resolved.elements, rules)).toMatchObject({
+      status: 'effective',
+      applicability: { type: 'global' },
+      resolution: { strategy: 'accumulate' },
+    });
+  });
+
   it('resolves hooks as an event pipeline with the event as target', async () => {
     const hooks = element('~/.codex/hooks.json#hooks', 'hooks', 'user', {
       metadata: { eventNames: ['SessionStart'] },

@@ -23,7 +23,12 @@ import { join } from 'node:path';
  *   skills, rules, memories, hooks   element directories
  *
  * `~/.codex/agents/` does not exist in the verified range, so it is not a
- * search area; the `custom-agents` kind is withdrawn with it.
+ * search area; the `custom-agents` kind is withdrawn with it. The
+ * `multi-agent-configuration` kind is withdrawn for the same verified range:
+ * neither a directory nor a `config.toml` section behind it was found. That
+ * evidence is one installation of one version, so it supports "not present in
+ * the verified range", not "does not exist". The withdrawal is reviewed by the
+ * layout reconciliation below.
  *
  * Codex has project-scoped configuration, stored centrally in `config.toml`
  * under `[projects."<absolute path>"]` rather than in the project directory.
@@ -31,6 +36,20 @@ import { join } from 'node:path';
  * Opaque
  *   built-in instruction layers are recorded but never readable.
  * ```
+ *
+ * ## Layout reconciliation
+ *
+ * Withdrawal is not self-correcting: an unknown item is recorded as
+ * `unsupported-by-adapter` only inside an area the adapter actually searches, so
+ * a kind whose directory is no longer searched is simply not found. Fixtures
+ * cannot be the trigger — they only cover the areas the adapter already looks
+ * at, so a kind reappearing in an unsearched directory leaves them green.
+ *
+ * The trigger is therefore a layout reconciliation performed whenever the
+ * verified range moves: compare the searched areas below against the runtime's
+ * actual configuration surface for that version, record the difference in this
+ * header, and re-check every withdrawn kind (`custom-agents`,
+ * `skill-dependencies`, `multi-agent-configuration`) as part of it.
  */
 
 /** Project-scoped instruction files, in fallback order. */
@@ -83,14 +102,14 @@ export function userConfigDir(home: string): string {
 export const KNOWN_ELEMENT_KINDS = [
   'instructions',
   'fallback-instructions',
+  'rules',
   'skills',
-  'skill-dependencies',
-  'multi-agent-configuration',
   'mcp-configuration',
   'hooks',
   'permissions',
   'approval-sandbox',
   'memory',
+  'model-configuration',
   'compaction-controls',
   'plugin',
   'shell-environment',
@@ -103,7 +122,7 @@ export type CodexElementKind = (typeof KNOWN_ELEMENT_KINDS)[number];
 /** How each user element directory maps to a harness kind. */
 export const USER_DIR_KIND: Record<(typeof USER_ELEMENT_DIRS)[number], CodexElementKind> = {
   skills: 'skills',
-  rules: 'permissions',
+  rules: 'rules',
   memories: 'memory',
   hooks: 'hooks',
 };

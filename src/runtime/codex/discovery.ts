@@ -255,6 +255,7 @@ async function collectUser(
       () => USER_DIR_KIND[dir],
       elements,
       diagnostics,
+      USER_DIR_KIND[dir] === 'rules' ? { extractPermissions: true } : {},
     );
   }
 }
@@ -307,13 +308,26 @@ async function collectToml(
     elements.push(configElement('approval-sandbox', `${displayPath}#approval`, approval));
   }
 
-  const context: Record<string, SafeMetadataValue> = {};
+  const modelConfig: Record<string, SafeMetadataValue> = {};
   const model = scalarString(root, 'model');
-  if (model !== undefined) context['model'] = model;
+  if (model !== undefined) modelConfig['model'] = model;
   const reasoningEffort = scalarString(root, 'model_reasoning_effort');
-  if (reasoningEffort !== undefined) context['reasoningEffort'] = reasoningEffort;
+  if (reasoningEffort !== undefined) modelConfig['reasoningEffort'] = reasoningEffort;
   const serviceTier = scalarString(root, 'service_tier');
-  if (serviceTier !== undefined) context['serviceTier'] = serviceTier;
+  if (serviceTier !== undefined) modelConfig['serviceTier'] = serviceTier;
+  if (Object.keys(modelConfig).length > 0) {
+    elements.push(configElement('model-configuration', `${displayPath}#model`, modelConfig));
+  }
+
+  // The context controls are the actual compaction inputs, distinct from the
+  // model selection above. Only integer values are recorded.
+  const context: Record<string, SafeMetadataValue> = {};
+  const contextWindow = scalarInteger(root, 'model_context_window');
+  if (contextWindow !== undefined) context['contextWindow'] = contextWindow;
+  const maxOutputTokens = scalarInteger(root, 'model_max_output_tokens');
+  if (maxOutputTokens !== undefined) context['maxOutputTokens'] = maxOutputTokens;
+  const autoCompactTokenLimit = scalarInteger(root, 'model_auto_compact_token_limit');
+  if (autoCompactTokenLimit !== undefined) context['autoCompactTokenLimit'] = autoCompactTokenLimit;
   if (Object.keys(context).length > 0) {
     elements.push(configElement('compaction-controls', `${displayPath}#context`, context));
   }
@@ -482,6 +496,13 @@ interface WalkedAreaOptions {
    * instructions.
    */
   extractFrontmatter?: boolean;
+  /**
+   * Derive permission counts from a rule file's content instead of frontmatter.
+   * The counts ride on the entry's metadata; the adapter emits them as a second
+   * `permissions` element and leaves only `format` on the `rules` element, so a
+   * rule pattern or command never leaves the walk (design doc §19).
+   */
+  extractPermissions?: boolean;
   /** Regular-file filter: only matching files are read and recorded. */
   selectFile?: (relativePath: string) => boolean;
   /** Directory names the walk must not descend into. */
@@ -504,11 +525,14 @@ async function addWalkedArea(
       ? { pruneDirectories: options.pruneDirectories }
       : {}),
     ...(options.selectFile !== undefined ? { selectFile: options.selectFile } : {}),
-    ...(options.extractFrontmatter === false
+    ...(options.extractFrontmatter === false && options.extractPermissions !== true
       ? {}
       : {
           describeFile: (relativePath: string, content: string) => {
             const displayPath = displayPrefix ? `${displayPrefix}/${relativePath}` : relativePath;
+            if (options.extractPermissions === true) {
+              return toSafeMetadata(permissionCounts(content));
+            }
             const read = readFrontmatter(content);
             if (read.malformed) diagnostics.push(malformedFrontmatterDiagnostic(displayPath));
             return toSafeMetadata(frontmatterMetadata(read.facts));
@@ -524,7 +548,22 @@ async function addWalkedArea(
     const displayPath = displayPrefix
       ? `${displayPrefix}/${entry.relativePath}`
       : entry.relativePath;
-    pushWalkedEntry(entry, origin, scope, kind, displayPath, elements, diagnostics);
+    // A `rules` element carries only its file format; the permission counts ride
+    // on a separate `permissions` element at `<file>#permissions`.
+    const keepEntryMetadata = options.extractPermissions !== true;
+    pushWalkedEntry(
+      entry,
+      origin,
+      scope,
+      kind,
+      displayPath,
+      elements,
+      diagnostics,
+      keepEntryMetadata,
+    );
+    if (options.extractPermissions === true) {
+      pushPermissionsFragment(entry, origin, scope, displayPath, elements);
+    }
   }
 }
 
@@ -542,6 +581,7 @@ function pushWalkedEntry(
   displayPath: string,
   elements: ObservedElement[],
   diagnostics: Diagnostic[],
+  keepEntryMetadata = true,
 ): void {
   if (entry.kind === 'symlink') {
     elements.push(symlinkElement(origin, scope, kind, displayPath));
@@ -571,9 +611,70 @@ function pushWalkedEntry(
       path: displayPath,
       digest: entry.digest,
       ...(entry.sizeBytes !== undefined ? { sizeBytes: entry.sizeBytes } : {}),
-      metadata: { ...metadataForPath(displayPath), ...(entry.metadata ?? {}) },
+      metadata: {
+        ...metadataForPath(displayPath),
+        ...(keepEntryMetadata ? (entry.metadata ?? {}) : {}),
+      },
     }),
   );
+}
+
+/**
+ * A `.rules` file's permission counts as a second element. Only the counts
+ * leave the walk — a pattern, command, or argument never does (design doc §19,
+ * §31.2). The `#permissions` fragment is a different path from the `rules`
+ * element, so it is a different element id and cannot collide with it.
+ */
+function pushPermissionsFragment(
+  entry: DiscoveredPath,
+  origin: NativeOrigin,
+  scope: string,
+  displayPath: string,
+  elements: ObservedElement[],
+): void {
+  if (entry.kind !== 'file' || entry.skipReason !== undefined || entry.digest === undefined) return;
+  const allowCount = entry.metadata?.['allowCount'];
+  const denyCount = entry.metadata?.['denyCount'];
+  if (typeof allowCount !== 'number' || typeof denyCount !== 'number') return;
+  elements.push(
+    buildObservedElement({
+      runtimeId: RUNTIME_ID,
+      origin,
+      scope,
+      kind: 'permissions',
+      path: `${displayPath}#permissions`,
+      digest: entry.digest,
+      ...(entry.sizeBytes !== undefined ? { sizeBytes: entry.sizeBytes } : {}),
+      metadata: toSafeMetadata({ allowCount, denyCount }),
+    }),
+  );
+}
+
+/**
+ * Counts `prefix_rule(...)` decisions in a `.rules` file: `decision="allow"` is
+ * an allow, `decision="forbidden"` or `"deny"` is a deny. Comments and blank
+ * lines are ignored. Counts only — no pattern, command, or argument is ever
+ * returned, so redaction is not the only thing between a rule body and the
+ * store.
+ */
+function permissionCounts(content: string): Record<string, SafeMetadataValue> {
+  let allowCount = 0;
+  let denyCount = 0;
+  for (const raw of content.split(/\r?\n/)) {
+    const line = raw.trim();
+    if (line === '' || line.startsWith('#') || !line.includes('prefix_rule(')) continue;
+    const decision = ruleDecision(line);
+    if (decision === 'allow') allowCount += 1;
+    else if (decision === 'forbidden' || decision === 'deny') denyCount += 1;
+  }
+  return { allowCount, denyCount };
+}
+
+const RULE_DECISION = /\bdecision\s*=\s*(?:"([^"]*)"|'([^']*)'|([A-Za-z0-9_-]+))/;
+
+function ruleDecision(line: string): string | undefined {
+  const match = RULE_DECISION.exec(line);
+  return match?.[1] ?? match?.[2] ?? match?.[3];
 }
 
 async function addKnownFile(
@@ -674,6 +775,11 @@ function scalarString(table: TomlTable, key: string): string | undefined {
 function scalarBoolean(table: TomlTable, key: string): boolean | undefined {
   const value = table.scalars.get(key);
   return typeof value === 'boolean' ? value : undefined;
+}
+
+function scalarInteger(table: TomlTable, key: string): number | undefined {
+  const value = table.scalars.get(key);
+  return typeof value === 'number' && Number.isInteger(value) ? value : undefined;
 }
 
 function scalarArrayLength(table: TomlTable, key: string): number | undefined {
