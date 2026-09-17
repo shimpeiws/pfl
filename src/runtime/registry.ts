@@ -1,6 +1,6 @@
 import { EXIT_CODES, PflError } from '../cli/exit-codes.js';
 import { runtimeId } from '../core/ids.js';
-import type { ConsentLocationGroup, ConsentRequest } from '../discovery/consent.js';
+import type { ConsentLocationGroup, ConsentRequest, ConsentScope } from '../discovery/consent.js';
 import { ClaudeCodeAdapter } from './claude-code/index.js';
 import {
   CONSENT_GROUPS as CLAUDE_CODE_CONSENT_GROUPS,
@@ -34,10 +34,6 @@ export function getAdapter(id: string): RuntimeAdapter {
 export function listRuntimeIds(): string[] {
   return Object.keys(ADAPTERS);
 }
-
-/** Consent scope names frozen for v1.0 (roadmap M8 #81). */
-export const CONSENT_SCOPES = ['user', 'install'] as const;
-export type ConsentScope = (typeof CONSENT_SCOPES)[number];
 
 /** Consent locations per runtime and scope, owned by the adapters (design doc §24). */
 const CONSENT: Record<

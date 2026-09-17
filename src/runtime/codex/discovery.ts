@@ -87,7 +87,7 @@ export async function collectCodexHarness(
         diagnostics: [
           {
             severity: 'info' as const,
-            code: 'consent-not-granted',
+            code: 'consent-not-granted:install',
             message: 'installation and version metadata skipped: the install scope was not granted',
           },
         ],
@@ -103,7 +103,7 @@ export async function collectCodexHarness(
     // (roadmap M8 #81).
     diagnostics.push({
       severity: 'info',
-      code: 'consent-not-granted',
+      code: 'consent-not-granted:user',
       message: 'user-scope discovery skipped: the user scope was not granted',
     });
   }

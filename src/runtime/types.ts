@@ -81,9 +81,14 @@ export interface AccessPolicy {
   grantedScopes: readonly string[];
 }
 
-/** Whether any out-of-project scope is granted (external `.git` reads, gated-git). */
+/**
+ * Whether out-of-project project-identity reads (a `.git` file's `gitdir:`, an
+ * ancestor `.git`) may run. Gated on the **user** scope, not install: install
+ * covers the runtime's installation metadata alone, and a run that granted only
+ * install must not gain a read it was never asked about.
+ */
 export function allowsOutsideProject(access: AccessPolicy): boolean {
-  return access.user || access.install;
+  return access.user;
 }
 
 /**

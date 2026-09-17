@@ -353,7 +353,10 @@ describe('collectClaudeCodeHarness', () => {
     ).toBe(false);
     expect(snapshot.runtime.version).toBeNull();
     expect(snapshot.adapter.runtimeCompatibility).toBe('unverified');
-    expect(snapshot.diagnostics.map((entry) => entry.code)).toContain('consent-not-granted');
+    expect(snapshot.diagnostics.map((entry) => entry.code)).toContain(
+      'consent-not-granted:install',
+    );
+    expect(snapshot.diagnostics.map((entry) => entry.code)).toContain('consent-not-granted:user');
   });
 
   it('bounds the upward walk at MAX_ANCESTOR_DIRS and records the truncation', async () => {

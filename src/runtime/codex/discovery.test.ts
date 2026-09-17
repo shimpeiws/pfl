@@ -475,7 +475,10 @@ describe('collectCodexHarness', () => {
     expect(snapshot.elements.some((element) => element.native.origin === 'user')).toBe(false);
     expect(snapshot.runtime.version).toBeNull();
     expect(snapshot.adapter.runtimeCompatibility).toBe('unverified');
-    expect(snapshot.diagnostics.map((entry) => entry.code)).toContain('consent-not-granted');
+    expect(snapshot.diagnostics.map((entry) => entry.code)).toContain(
+      'consent-not-granted:install',
+    );
+    expect(snapshot.diagnostics.map((entry) => entry.code)).toContain('consent-not-granted:user');
   });
 
   it('reports the detected runtime version when consented', async () => {

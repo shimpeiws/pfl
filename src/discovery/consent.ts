@@ -21,6 +21,10 @@ import { permissionsPath } from '../snapshot/store.js';
  * throws `CONSENT_REQUIRED` rather than assuming consent.
  */
 
+/** Scope names frozen for v1.0 (roadmap M8 #81). */
+export const CONSENT_SCOPES = ['user', 'install'] as const;
+export type ConsentScope = (typeof CONSENT_SCOPES)[number];
+
 /** A stable key for one runtime + scope grant. */
 export function consentScopeKey(runtimeId: RuntimeId, scope: string): string {
   return `${runtimeId}:${scope}`;
@@ -135,15 +139,12 @@ export interface ConsentOptions {
   io?: ConsentIO;
   /**
    * Scope keys granted for this run only (the `--allow-scope` flag). They are
-   * honored without prompting and are never written to the consent store.
+   * honored without prompting and are never written to the consent store. The
+   * install scope is optional: a caller resolves it only when it wants to offer
+   * the prompt, so a run without it proceeds to the `unknown` detection state
+   * (roadmap #81).
    */
   currentRunGrants?: readonly string[];
-  /**
-   * Whether a missing grant is fatal for the caller. `user` is required to
-   * discover the harness; `install` is optional (its absence yields the
-   * `unknown` detection state, roadmap #81). Defaults to `true`.
-   */
-  required?: boolean;
 }
 
 export function accessPolicy(
@@ -181,9 +182,6 @@ export async function resolveAccessPolicy(
   }
 
   if (!options.interactive) {
-    if (options.required === false) {
-      return accessPolicy(store.grantedScopes, request.runtimeId, currentRunGrants);
-    }
     throw new PflError(
       `reading outside the project requires consent for ${key}; rerun interactively or pass --allow-scope ${key}`,
       EXIT_CODES.CONSENT_REQUIRED,

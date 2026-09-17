@@ -250,22 +250,27 @@ not move a history and a v0.1 history is adopted rather than abandoned (#86).
 
 ## Correspondence to consent scopes
 
-M8 freezes `--allow-scope <runtime>:<scope>`. The scope names map onto this
-inventory:
+M8 freezes `--allow-scope <runtime>:<scope>` (implemented in #81). The scope
+names map onto this inventory:
 
-- `<runtime>:user` — every **user-scope** row above for that runtime.
+- `<runtime>:user` — every **user-scope** row above for that runtime, plus the
+  **external-gated** rows (parent-directory instructions) and the **managed**
+  scope, which are the same class of out-of-project read.
 - `<runtime>:install` — every **install-scope** row above for that runtime.
 
-External `.git` references are not a scope: under ADR 0002 §2 they are not read
-before consent at all. Project-local reads (**project-implicit**, **store**,
-**implicit-git**) need no grant.
+The mapping is enforced in one place, `src/discovery/gate.ts`, which both
+adapters use; `src/runtime/*/consent.ts` groups the prompt locations by the same
+scope, and the prompt-alignment test asserts each scope covers its constants.
+
+External `.git` references are not a scope of their own: a `.git` file's
+`gitdir:` outside the root is authorised by `<runtime>:user`, never by `install`
+alone. Project-local reads (**project-implicit**, **store**, **implicit-git**)
+need no grant.
 
 The **external-gated** parent-directory instruction read and the **managed**
-scope read (Claude Code's `/Library/Application Support/ClaudeCode`) are keyed on
-the same out-of-project consent (`allowOutsideProject`), which today the
-`<runtime>:user` grant provides; the M8 scope taxonomy assigns them their final
-scope. Both are listed in the consent prompt — the parent read under **External
-references**, the managed locations under **User**.
+scope read (Claude Code's `/Library/Application Support/ClaudeCode`) are
+authorised by `<runtime>:user` (#81), alongside the user harness. Both are listed
+in the user scope's prompt group.
 
 The consent prompt's location groups are derived from the same adapter path
 constants discovery uses, and a per-adapter test asserts the groups cover every

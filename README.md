@@ -255,7 +255,8 @@ good or bad.
 
 Project-local discovery is implicit. Reading anything outside the project — your
 `~/.claude` / `~/.codex` user scope, and the installed runtime's version metadata
-— requires explicit, persisted consent, per runtime and scope:
+— requires explicit consent, per runtime and scope (persisted between runs, or
+granted for a single run with `--allow-scope`):
 `<runtime>:user` for the user harness and `<runtime>:install` for installation
 and version metadata. A non-interactive run that lacks the user scope fails
 closed with exit code 5 rather than assuming consent; without the install scope

@@ -661,7 +661,9 @@ describe('pfl CLI end to end', () => {
     };
     expect(document.ok).toBe(true);
     expect(document.data.runtimeVersion).toBeNull();
-    expect(document.diagnostics.some((entry) => entry.code === 'consent-not-granted')).toBe(true);
+    expect(document.diagnostics.some((entry) => entry.code === 'consent-not-granted:install')).toBe(
+      true,
+    );
 
     // The grant is for this run only: nothing is written to the consent store.
     expect(await readFile(permissionsPath(m.home), 'utf8').catch(() => null)).toBeNull();

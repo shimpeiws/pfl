@@ -1,3 +1,4 @@
+import type { ConsentScope } from './consent.js';
 import type { AccessPolicy } from '../runtime/types.js';
 
 /**
@@ -15,8 +16,6 @@ import type { AccessPolicy } from '../runtime/types.js';
  * before consent at all, and `allowsOutsideProject` covers the residual
  * project-identity reads a granted run may perform.
  */
-export type ReadScope = 'user' | 'install';
-
-export function grants(access: AccessPolicy, scope: ReadScope): boolean {
+export function grants(access: AccessPolicy, scope: ConsentScope): boolean {
   return scope === 'user' ? access.user : access.install;
 }
