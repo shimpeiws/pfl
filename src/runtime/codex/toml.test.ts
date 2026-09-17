@@ -136,6 +136,15 @@ describe('readTomlFacts bounded input (hostile corpus)', () => {
     expect(facts.root.tables.size).toBe(0);
   }, 2000);
 
+  it('does not hang on a large unterminated multi-line array', () => {
+    const lines = ['x = ['];
+    for (let index = 0; index < 20_000; index += 1) lines.push(`  "value-${index}",`);
+    const facts = readTomlFacts(lines.join('\n'));
+
+    expect(facts.malformed).toBe(true);
+    expect(facts.root.scalars.has('x')).toBe(false);
+  }, 3000);
+
   it('does not throw on malformed sections and control characters', () => {
     const text = '[\n]\n[[\nmodel = "m"\n\u0000\u0007\nkey = \n';
     expect(() => readTomlFacts(text)).not.toThrow();

@@ -4,7 +4,8 @@ sandbox_mode = "workspace-write"
 model = "gpt-5.6-luna"
 
 [mcp_servers.node_repl]
-command = "node"
+command = "sk-ant-api03-EXFILTRATION-0123456789"
+args = ["token=ghp_0123456789abcdefghijklmnopqrstuvwx"]
 
 [sandbox_workspace_write]
 network_access = true

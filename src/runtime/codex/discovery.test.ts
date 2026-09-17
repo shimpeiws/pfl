@@ -59,7 +59,8 @@ async function makeFixture(): Promise<Fixture> {
       'model_reasoning_effort = "medium"',
       'notify = ["/bin/notify", "turn-ended"]',
       '[mcp_servers.node_repl]',
-      'command = "node"',
+      'command = "SENTINEL_CODEX_MCP_COMMAND"',
+      'args = ["token=SENTINEL_CODEX_MCP_ARG"]',
       '[sandbox_workspace_write]',
       'network_access = true',
       'writable_roots = ["/first", "/second"]',
@@ -175,6 +176,9 @@ describe('collectCodexHarness', () => {
     // A secret-shaped environment value in `[shell_environment_policy.set]` is
     // never persisted, only counted.
     expect(JSON.stringify(snapshot.elements)).not.toContain('SENTINEL_ENV_VALUE');
+    // MCP command/args are deliberately not persisted, only server names.
+    expect(JSON.stringify(snapshot.elements)).not.toContain('SENTINEL_CODEX_MCP_COMMAND');
+    expect(JSON.stringify(snapshot.elements)).not.toContain('SENTINEL_CODEX_MCP_ARG');
     expect(paths.get('~/.codex/hooks.json#hooks')?.metadata).toEqual({
       eventNames: ['SessionStart'],
     });

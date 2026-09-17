@@ -74,19 +74,20 @@ export function readTomlFacts(text: string): TomlFacts {
     }
 
     let valueText = line.slice(equals + 1).trim();
-    if (valueText.startsWith('[') && !arrayIsClosed(valueText)) {
+    if (valueText.startsWith('[')) {
       // TOML arrays may span lines. Accumulate until the brackets balance,
-      // bounded by the parse ceiling so a hostile open bracket cannot roam.
-      let buffer = valueText;
-      while (
-        !arrayIsClosed(buffer) &&
-        index + 1 < lines.length &&
-        buffer.length <= MAX_PARSE_BYTES
-      ) {
+      // tracking depth incrementally so each character is scanned once (a
+      // rescan of the whole buffer per line would be quadratic on a hostile
+      // unterminated `[`), and bounded by the parse ceiling.
+      const scan = startArrayScan(valueText);
+      let total = valueText.length;
+      while (!scan.closed && index + 1 < lines.length && total <= MAX_PARSE_BYTES) {
         index += 1;
-        buffer += ` ${stripComment(lines[index] ?? '').trim()}`;
+        const chunk = ` ${stripComment(lines[index] ?? '').trim()}`;
+        valueText += chunk;
+        total += chunk.length;
+        feedArrayScan(scan, chunk);
       }
-      valueText = buffer;
     }
 
     const value = parseValue(valueText, state);
@@ -198,7 +199,7 @@ function parseValue(text: string, state: ParseState): TomlScalar | undefined {
   if (/^-?\d+$/.test(trimmed)) return Number.parseInt(trimmed, 10);
   if (/^-?\d+\.\d+$/.test(trimmed)) return Number.parseFloat(trimmed);
   if (first === '[') {
-    if (!arrayIsClosed(trimmed)) return undefined;
+    if (!startArrayScan(trimmed).closed) return undefined;
     return parseArray(trimmed, state);
   }
   return undefined;
@@ -275,26 +276,36 @@ function splitTopLevel(inner: string): string[] {
   return parts;
 }
 
-/** Whether every `[` in `text` has a matching `]` outside strings. */
-function arrayIsClosed(text: string): boolean {
-  let depth = 0;
-  let quote: string | null = null;
+interface ArrayScan {
+  depth: number;
+  quote: string | null;
+  closed: boolean;
+}
+
+/** Begins tracking bracket depth and quote state for a possibly multi-line array. */
+function startArrayScan(text: string): ArrayScan {
+  const scan: ArrayScan = { depth: 0, quote: null, closed: false };
+  feedArrayScan(scan, text);
+  return scan;
+}
+
+/** Consumes one chunk into an existing scan; each character is visited once. */
+function feedArrayScan(scan: ArrayScan, text: string): void {
   for (let index = 0; index < text.length; index += 1) {
     const char = text[index] ?? '';
-    if (quote !== null) {
-      if (quote === '"' && char === '\\') {
+    if (scan.quote !== null) {
+      if (scan.quote === '"' && char === '\\') {
         index += 1;
         continue;
       }
-      if (char === quote) quote = null;
+      if (char === scan.quote) scan.quote = null;
       continue;
     }
-    if (char === '"' || char === "'") quote = char;
-    else if (char === '[') depth += 1;
-    else if (char === ']') depth -= 1;
-    if (depth < 0) return false;
+    if (char === '"' || char === "'") scan.quote = char;
+    else if (char === '[') scan.depth += 1;
+    else if (char === ']') scan.depth -= 1;
   }
-  return depth === 0;
+  scan.closed = scan.depth <= 0 && scan.quote === null;
 }
 
 /** The index of the first `=` outside a quoted string, or -1. */
