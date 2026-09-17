@@ -61,9 +61,12 @@ path-derived history is M8's root index (ADR 0002 §2).
 
 ### `discovery/consent.ts`
 
-| Line | Read                                 | Guard | Classification                          |
-| ---- | ------------------------------------ | ----- | --------------------------------------- |
-| 34   | `readFile` `~/.pfl/permissions.json` | —     | store (is the consent mechanism itself) |
+| Read                                 | Guard                                        | Classification                          |
+| ------------------------------------ | -------------------------------------------- | --------------------------------------- |
+| `readFile` `~/.pfl/permissions.json` | ancestor guard (base: home); symlink refused | store (is the consent mechanism itself) |
+
+The consent writer applies the same guard before writing, so a symlinked
+`~/.pfl` or `permissions.json` is neither read nor written (roadmap S10).
 
 ### `util/fs.ts`
 
@@ -80,26 +83,26 @@ reports the size for the caller to bound. `readTextFileGuarded` builds on it.
 
 ### `runtime/claude-code`
 
-| Location       | Read                                               | Guard                              | Classification                |
-| -------------- | -------------------------------------------------- | ---------------------------------- | ----------------------------- |
-| `detect.ts`    | `lstat` of `~/.local/share/claude`, `~/.local/bin` | non-following leaf                 | install-scope                 |
-| `detect.ts`    | `lstat` + `readdir` of `.../claude/versions`       | non-following leaf                 | install-scope                 |
-| `detect.ts`    | `readFile` `~/.claude/.last-update-result.json`    | `readTextFileGuarded` (leaf guard) | install-scope                 |
-| `discovery.ts` | `readFile` known instruction/MCP files             | `inspectFileTarget(root, …)`       | project-implicit / user-scope |
-| `discovery.ts` | walk `.claude/**` and `~/.claude/<dirs>/**`        | walk guards                        | project-implicit / user-scope |
-| `discovery.ts` | `readFile` `settings.json`, `settings.local.json`  | `readTextFileGuarded` + scope base | project-implicit / user-scope |
-| `discovery.ts` | `readFile` `~/.claude.json`                        | `readTextFileGuarded` (base: home) | user-scope                    |
+| Location       | Read                                                      | Guard                              | Classification                |
+| -------------- | --------------------------------------------------------- | ---------------------------------- | ----------------------------- |
+| `detect.ts`    | `lstat` of `~/.local/share/claude`, `~/.local/bin/claude` | ancestor guard (base: home)        | install-scope                 |
+| `detect.ts`    | `lstat` + `readdir` of `~/.local/share/claude/versions`   | ancestor guard (base: home)        | install-scope                 |
+| `detect.ts`    | `readFile` `~/.claude/.last-update-result.json`           | `readTextFileGuarded` (leaf guard) | install-scope                 |
+| `discovery.ts` | `readFile` known instruction/MCP files                    | `inspectFileTarget(root, …)`       | project-implicit / user-scope |
+| `discovery.ts` | walk `.claude/**` and `~/.claude/<dirs>/**`               | walk guards                        | project-implicit / user-scope |
+| `discovery.ts` | `readFile` `settings.json`, `settings.local.json`         | `readTextFileGuarded` + scope base | project-implicit / user-scope |
+| `discovery.ts` | `readFile` `~/.claude.json`                               | `readTextFileGuarded` (base: home) | user-scope                    |
 
 ### `runtime/codex`
 
-| Location       | Read                                           | Guard                              | Classification                |
-| -------------- | ---------------------------------------------- | ---------------------------------- | ----------------------------- |
-| `detect.ts`    | `lstat` + `readdir` of `~/.codex/.../releases` | non-following leaf                 | install-scope                 |
-| `detect.ts`    | `lstat` of the install dirs                    | non-following leaf                 | install-scope                 |
-| `discovery.ts` | `readFile` known instruction files             | `inspectFileTarget(root, …)`       | project-implicit / user-scope |
-| `discovery.ts` | walk `~/.codex/<dirs>/**`                      | walk guards                        | user-scope                    |
-| `discovery.ts` | `readFile` `config.toml`                       | `readTextFileGuarded` + scope base | user-scope                    |
-| `discovery.ts` | `readFile` `hooks.json`                        | `readTextFileGuarded` + scope base | user-scope                    |
+| Location       | Read                                                               | Guard                              | Classification                |
+| -------------- | ------------------------------------------------------------------ | ---------------------------------- | ----------------------------- |
+| `detect.ts`    | `lstat` + `readdir` of `~/.codex/packages/standalone/releases`     | ancestor guard (base: `~/.codex`)  | install-scope                 |
+| `detect.ts`    | `lstat` of `~/.codex/packages/standalone/releases`, `…/standalone` | ancestor guard (base: `~/.codex`)  | install-scope                 |
+| `discovery.ts` | `readFile` known instruction files                                 | `inspectFileTarget(root, …)`       | project-implicit / user-scope |
+| `discovery.ts` | walk `~/.codex/<dirs>/**`                                          | walk guards                        | user-scope                    |
+| `discovery.ts` | `readFile` `config.toml`                                           | `readTextFileGuarded` + scope base | user-scope                    |
+| `discovery.ts` | `readFile` `hooks.json`                                            | `readTextFileGuarded` + scope base | user-scope                    |
 
 ### `snapshot/store.ts`
 
@@ -126,6 +129,11 @@ inventory:
 External `.git` references are not a scope: under ADR 0002 §2 they are not read
 before consent at all. Project-local reads (**project-implicit**, **store**,
 **implicit-git**) need no grant.
+
+The consent prompt's location groups are derived from the same adapter path
+constants discovery uses, and a per-adapter test asserts the groups cover every
+constant (roadmap S2), so this inventory and the prompt cannot drift apart
+silently.
 
 ## Extending this inventory
 

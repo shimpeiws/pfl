@@ -1,11 +1,16 @@
 import { execFile, spawn } from 'node:child_process';
-import { rm } from 'node:fs/promises';
+import { rm, readFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { EXIT_CODES } from '../../src/cli/exit-codes.js';
-import { grantConsent, materialize, type Materialized } from '../fixtures/materialize.js';
+import {
+  grantConsent,
+  materialize,
+  type FixtureRuntime,
+  type Materialized,
+} from '../fixtures/materialize.js';
 
 const execFileAsync = promisify(execFile);
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -47,10 +52,10 @@ function runCli(m: Materialized, args: string[]): Promise<CliResult> {
   });
 }
 
-async function fixture(): Promise<Materialized> {
-  const m = await materialize('claude');
+async function fixture(runtime: FixtureRuntime = 'claude'): Promise<Materialized> {
+  const m = await materialize(runtime);
   materialized.push(m);
-  await grantConsent(m.home, 'claude');
+  await grantConsent(m.home, runtime);
   return m;
 }
 
@@ -105,5 +110,55 @@ describe('pfl CLI end to end', () => {
     expect(result.code).toBe(EXIT_CODES.SUCCESS);
     expect(result.stdout).toContain('+ 0 added');
     expect(result.stdout).toContain('+ 0 newly effective');
+  });
+
+  it('inspects a Codex harness and reads back Codex-specific content', async () => {
+    const m = await fixture('codex');
+
+    const inspect = await runCli(m, ['inspect', '--runtime', 'codex']);
+    expect(inspect.code, inspect.stderr).toBe(EXIT_CODES.SUCCESS);
+    expect(inspect.stdout).toContain('Observed');
+
+    for (const args of [['report'], ['list'], ['graph'], ['snapshots']]) {
+      const result = await runCli(m, args);
+      expect(result.code, `${args.join(' ')}: ${result.stderr}`).toBe(EXIT_CODES.SUCCESS);
+    }
+
+    // Codex-specific evidence, not just "it exited 0": the provenance path and
+    // the runtime id must actually be Codex, so a silent claude-code fallback
+    // or an empty harness would fail.
+    const graph = await runCli(m, ['graph']);
+    expect(graph.stdout).toContain('~/.codex');
+
+    const snapshots = await runCli(m, ['snapshots']);
+    expect(snapshots.stdout).toContain('codex@');
+
+    const list = await runCli(m, ['list', '--json']);
+    const listed = JSON.parse(list.stdout.trim().split('\n').at(-1) ?? '{}');
+    const userElement = listed.elements.find(
+      (element: { origin: string }) => element.origin === 'user',
+    );
+    const show = await runCli(m, ['show', userElement.id]);
+    expect(show.code, show.stderr).toBe(EXIT_CODES.SUCCESS);
+    expect(show.stdout).toContain('~/.codex');
+
+    const snapshotsJson = await runCli(m, ['snapshots', '--json']);
+    const payload = JSON.parse(snapshotsJson.stdout.trim().split('\n').at(-1) ?? '{}');
+    const resolvedId: string = payload.runs[0].resolvedId;
+    const diff = await runCli(m, ['diff', resolvedId, resolvedId]);
+    expect(diff.code, diff.stderr).toBe(EXIT_CODES.SUCCESS);
+    expect(diff.stdout).toContain('+ 0 added');
+  });
+
+  it('reports the package version from the packed layout', async () => {
+    const m = await fixture();
+    const manifest = JSON.parse(await readFile(join(repoRoot, 'package.json'), 'utf8')) as {
+      version: string;
+    };
+
+    const result = await runCli(m, ['--version']);
+
+    expect(result.code).toBe(EXIT_CODES.SUCCESS);
+    expect(result.stdout.trim()).toContain(manifest.version);
   });
 });

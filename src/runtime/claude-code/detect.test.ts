@@ -120,4 +120,16 @@ describe('detectClaudeCode', () => {
 
     expect(detection.version).toBeNull();
   });
+
+  it('does not traverse a symlinked install ancestor', async () => {
+    const home = await tempHome();
+    const outside = join(home, 'outside');
+    await mkdir(join(outside, 'share', 'claude', 'versions'), { recursive: true });
+    await writeFile(join(outside, 'share', 'claude', 'versions', '2.1.100'), '');
+    await symlink(outside, join(home, '.local'));
+
+    const detection = await detectClaudeCode(home);
+
+    expect(detection.version).toBeNull();
+  });
 });

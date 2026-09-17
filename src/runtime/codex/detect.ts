@@ -5,6 +5,7 @@ import { runtimeId } from '../../core/ids.js';
 import { pathExists, readDirectoryNames } from '../../util/fs.js';
 import type { RuntimeDetection } from '../types.js';
 import { highestVersion, isWithinRange, type VersionRange } from '../version-compat.js';
+import { userConfigDir } from './paths.js';
 
 /**
  * Static runtime detection for Codex (design doc §8, §17). Reads version
@@ -22,10 +23,19 @@ import { highestVersion, isWithinRange, type VersionRange } from '../version-com
  */
 export const VERIFIED_CODEX_RANGE: VersionRange = { min: '0.150.0', max: '0.155.0' };
 
+/**
+ * Installation locations, relative to the home directory. Exported so the
+ * consent prompt lists exactly what detection reads (roadmap S2).
+ */
+export const INSTALL_LOCATIONS = [
+  '.codex/packages/standalone/releases',
+  '.codex/packages/standalone',
+] as const;
+
 const RUNTIME_ID = runtimeId('codex');
 
 export async function detectCodex(home: string = homedir()): Promise<RuntimeDetection> {
-  const releaseNames = await readDirectoryNames(codexReleasesDir(home));
+  const releaseNames = await readDirectoryNames(userConfigDir(home), codexReleasesDir(home));
   const version = highestVersion(releaseNames);
   const installed = version !== null || (await codexIsPresent(home));
 
@@ -61,11 +71,12 @@ export async function detectCodex(home: string = homedir()): Promise<RuntimeDete
 }
 
 function codexReleasesDir(home: string): string {
-  return join(home, '.codex', 'packages', 'standalone', 'releases');
+  return join(home, INSTALL_LOCATIONS[0]);
 }
 
 async function codexIsPresent(home: string): Promise<boolean> {
-  const installations = [codexReleasesDir(home), join(home, '.codex', 'packages', 'standalone')];
-  const found = await Promise.all(installations.map((location) => pathExists(location)));
+  const found = await Promise.all(
+    INSTALL_LOCATIONS.map((location) => pathExists(userConfigDir(home), join(home, location))),
+  );
   return found.some(Boolean);
 }
