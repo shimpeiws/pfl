@@ -728,16 +728,64 @@ function isRelation(value: unknown): boolean {
   );
 }
 
+/**
+ * Validates an interpretation the way the snapshot predicates validate theirs
+ * (roadmap S11): a malformed artifact is refused with `invalid-snapshot` rather
+ * than handed to a reader that would crash on it. Facets and finding rules are
+ * checked for structure only, never against the current tables, so a stored
+ * interpretation carrying a facet or rule this build does not know stays
+ * readable (design doc §6: readers tolerate unknown future facets).
+ */
 function isInterpretation(value: unknown): value is Interpretation {
   if (!isRecord(value)) return false;
+  if (
+    typeof value['schemaVersion'] !== 'string' ||
+    typeof value['interpretationId'] !== 'string' ||
+    typeof value['resolvedSnapshotId'] !== 'string'
+  ) {
+    return false;
+  }
+  const classifier = value['classifier'];
+  if (
+    !isRecord(classifier) ||
+    typeof classifier['id'] !== 'string' ||
+    typeof classifier['version'] !== 'string'
+  ) {
+    return false;
+  }
+  if (!Array.isArray(value['elements']) || !value['elements'].every(isElementInterpretation)) {
+    return false;
+  }
+  if (!isHarnessStats(value['stats'])) return false;
+  return Array.isArray(value['findings']) && value['findings'].every(isFinding);
+}
+
+function isElementInterpretation(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (typeof value['elementId'] !== 'string' || typeof value['reason'] !== 'string') return false;
+  const confidence = value['confidence'];
+  if (confidence !== 'high' && confidence !== 'medium' && confidence !== 'unknown') return false;
   return (
-    typeof value['schemaVersion'] === 'string' &&
-    typeof value['interpretationId'] === 'string' &&
-    typeof value['resolvedSnapshotId'] === 'string' &&
-    isRecord(value['classifier']) &&
-    Array.isArray(value['elements']) &&
-    isRecord(value['stats']) &&
-    Array.isArray(value['findings'])
+    Array.isArray(value['facets']) && value['facets'].every((facet) => typeof facet === 'string')
+  );
+}
+
+function isHarnessStats(value: unknown): value is Interpretation['stats'] {
+  if (!isRecord(value)) return false;
+  for (const count of ['observed', 'effective', 'shadowed', 'conditional', 'opaque']) {
+    if (typeof value[count] !== 'number') return false;
+  }
+  const byFacet = value['byFacet'];
+  return isRecord(byFacet) && Object.values(byFacet).every((count) => typeof count === 'number');
+}
+
+function isFinding(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value['rule'] === 'string' &&
+    typeof value['message'] === 'string' &&
+    Array.isArray(value['elementIds']) &&
+    value['elementIds'].every((id) => typeof id === 'string')
   );
 }
 

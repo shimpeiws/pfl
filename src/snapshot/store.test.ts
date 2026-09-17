@@ -505,6 +505,32 @@ describe('readInterpretationForResolved', () => {
     await expect(readInterpretationForResolved('proj', 'res_absent', home)).resolves.toBeNull();
   });
 
+  it('rejects a structurally malformed interpretation as invalid-snapshot', async () => {
+    const home = await tempHome();
+    await mkdir(interpretationsDir('proj', home), { recursive: true });
+    // Valid JSON and a supported schema, but the contents are the wrong shape:
+    // a reader would dereference a null element. The predicate must refuse it.
+    await writeFile(
+      join(interpretationsDir('proj', home), 'res_y.json'),
+      `${JSON.stringify({
+        schemaVersion: '1',
+        interpretationId: 'int_x',
+        resolvedSnapshotId: 'res_y',
+        classifier: {},
+        elements: [null],
+        stats: {},
+        findings: [],
+      })}\n`,
+    );
+
+    const error = await readInterpretationForResolved('proj', 'res_y', home).catch(
+      (e: unknown) => e,
+    );
+    expect(error).toBeInstanceOf(PflError);
+    expect((error as PflError).exitCode).toBe(EXIT_CODES.CONFIG_ERROR);
+    expect((error as PflError).data?.diagnostics?.[0]?.code).toBe('invalid-snapshot');
+  });
+
   it('fails closed when an artifact claims a different resolved snapshot', async () => {
     const home = await tempHome();
     await mkdir(interpretationsDir('proj', home), { recursive: true });

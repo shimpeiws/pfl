@@ -53,7 +53,7 @@ field passes the redaction layer at the export boundary.
 
 ## Findings and disposition
 
-Three review rounds found and closed three consistency gaps; all were remediated
+Four review rounds found and closed four consistency gaps; all were remediated
 in this pull request:
 
 1. A well-formed envelope whose contents failed validation still exited 6.
@@ -67,6 +67,12 @@ in this pull request:
    interpretation is stored and read by `interpretations/<resolvedSnapshotId>.json`,
    so the run-to-interpretation mapping is a path, not a scan; the scan also
    refuses an artifact whose file name disagrees with its payload.
+4. `isInterpretation` validated only the top-level shape, so a structurally
+   malformed interpretation (a null element, a missing `classifier.version`)
+   passed validation and crashed a reader with a `TypeError` instead of the
+   `invalid-snapshot` diagnostic. Fixed: the predicate validates each element,
+   the stats, and each finding, while still tolerating an unknown future facet
+   or rule.
 
 No finding was accepted as a risk.
 
