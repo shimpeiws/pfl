@@ -55,7 +55,7 @@ strongest first:
 
 | Tag                          | Meaning                                                                                                                                                                                                        |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **[installed: measured]**    | The installed binary's own behaviour: `--help`, the `debug` subcommands, `agent list`, or an isolated run against a throwaway `HOME`/`XDG_*` tree. **The version is carried by the row or its section, never by the tag.** Most rows below were measured on 1.18.30; the surfaces §0 lists as exercised were re-probed on 1.18.31, and a surface — or a part of one §0 marks — first measured there says so. This is the strongest evidence here. |
+| **[installed: measured]**    | The installed binary's own behaviour: `--help`, the `debug` subcommands, `agent list`, or an isolated run against a throwaway `HOME`/`XDG_*` tree. **The version is carried by the row or its section, never by the tag.** Rows below were measured on 1.18.30, on 1.18.31, or on both; §0's exercised list and the per-row clauses are what say which. A surface — or a part of one §0 marks — measured on 1.18.31 for the first time says so. This is the strongest evidence here. |
 | **[installed: self-described]** | Text the installed binary embeds and prints — in practice the `debug skill` body of `customize-opencode`. That the text exists, and that this binary printed it, is measured. The layout and merge rules *inside* that text are the vendor's own description of its layout, not independently reproduced on this host, and are weaker than a measured behaviour. |
 | **[yuurei]**                 | Prior evidence in the sibling project's adapter and spike (verified on 1.18.0). Re-verified here where relied on.                                                                                    |
 | **[upstream]**               | The vendor's published documentation (`opencode.ai/docs/*`, schema `opencode.ai/config.json`). Not reproducible from this host.                                                                                  |
@@ -112,11 +112,12 @@ No `OPENCODE_*` or `XDG_*` variable is set in the environment this document was
 recorded in (`env | grep -E '^(OPENCODE|XDG)'` returns nothing), so the
 observations below were taken from the default layout rather than from an
 inherited override. The probe below is the script that produced the **1.18.31**
-observations in this document: the §1 roots, §2's precedence, walk stop and
+observations in this document — the §1 roots, §2's precedence, walk stop and
 `OPENCODE_CONFIG_DIR`, §4's element and MCP surfaces in both scopes, §6's
-collision, and the compiled-in layers of §8. The 1.18.30 observations came from
-earlier versions of it; the load-bearing details below and the **1.18.31 only**
-marks in the exercised list delimit where the two differ. The earlier fixture's
+collision, and the compiled-in layers of §8 — with one exception: the
+walk-independence check recorded in §2 has its own fixture. The 1.18.30
+observations came from earlier versions of it; the load-bearing details below and
+the **1.18.31 only** marks in the exercised list delimit where the two differ. The earlier fixture's
 same-name element markers (`agent/command/skill/marker`) are identical to the ones
 above; what differs is the config fixture — it gave every source the same single
 key and created no repository. That is why the agent and command element results
@@ -296,7 +297,8 @@ only**:
   loaded and lost from one that was never read. Where `#3` sits against `#2`,
   `#4` and `#6` is not measured by either; it is the order §2 cites as
   [upstream];
-- the walk stop at a real git root and its absence without one (§2, §3) —
+- the walk stop at a real git root and its absence without one, and the
+  walk-independence check with the project config present (§2, §3) —
   **(1.18.31 only)**: the recorded 1.18.30-era probe (`e98dbfc`) creates no
   repository, so no 1.18.30 observation of the stop exists — this is a first
   measurement, not a failed re-measurement;
@@ -381,9 +383,11 @@ sources (#2–#6) measured in §0, to the extent §2 states]:
 `NativeOrigin` members: §5 maps the remote layer to `unknown`, and the two custom
 sources are execution context, not elements (§5.3).
 
-The precedence relations in this table are measured on 1.18.31 only; the sources
-themselves are read in both versions where §0's exercised list says so (see the
-prose below).
+The precedence relations in this table are measured on 1.18.31 only. No 1.18.30
+record establishes which of #2–#6 was read, so these rows' **[installed:
+measured]** tags carry 1.18.31 evidence only; the 1.18.30 observations in §0's
+exercised list cover the `.opencode/` **element** directories, not the config
+files.
 
 `OPENCODE_CONFIG_DIR` names an additional directory searched for agents,
 commands, modes, and plugins "just like the standard `.opencode` directory",
@@ -430,8 +434,8 @@ remains the order the table above cites as [upstream]:
   fixture that creates `.git` with `mkdir` therefore measures a different shape
   from one that runs `git init`, so §0 uses `git init` and both cases are recorded
   here. **1.18.31 only** (§0): the recorded earlier probe creates no repository,
-  so the stop the earlier draft asserted without a reproducible probe does not
-  re-measure this bullet.
+  so no 1.18.30 observation of the stop exists: this bullet is a first
+  measurement, not a failed re-measurement.
 
 The stop is a property of the walk, not of the ladder. A separate 1.18.31 check
 with the same parent decoy and the project config present resolved
@@ -663,9 +667,10 @@ file, and deciding what consent covers — is a change to the harness boundary
 
 The resolver separates Native source, Applicability, Resolution semantics, and
 Activation (design doc §11). OpenCode's behaviour on each [installed: measured
-unless noted; the measured rows rest on the §0 ladder and collision fixtures,
-which are 1.18.31 only, while the self-described and upstream rows are unchanged
-from the 1.18.30 record]:
+unless noted; the measured rows rest on the §0 ladder (1.18.31 only) and the
+collision fixture, whose skill results are 1.18.31 only while its agent and
+command results carry 1.18.30 evidence (§0), while the self-described and upstream
+rows are unchanged from the 1.18.30 record]:
 
 ### Native source
 
@@ -756,7 +761,7 @@ of `global` is a single observation the re-probe did not reproduce: failure to
 reproduce is not proof that it was wrong, and one observation could not have
 established it as a property of that version. Nor does `global` mark a version
 difference in the other direction — the 1.18.31 runs above returned `global` for
-the first invocation of four of the seven.
+the first invocation of four of the eight.
 
 M9 must therefore record a duplicate-name diagnostic and must not depend on any
 winner: a fixture cannot be trusted to reproduce the loss. This row is also the
@@ -946,9 +951,11 @@ outstanding obligation rather than a future one — tracked as §11.6. Meanwhile
 how far that is. It supports three different kinds of **1.18.31 only** evidence,
 which §0's exercised list distinguishes:
 
-- **No 1.18.30 record.** The user-scope-only elements (step 10),
-  `OPENCODE_CONFIG_DIR` (step 11), the MCP resolved key set (step 8), and the walk
-  stop have no 1.18.30 observation at all.
+- **No 1.18.30 record of the claim as stated.** The user-scope-only elements
+  (step 10), `OPENCODE_CONFIG_DIR` (step 11), the MCP resolved key set (step 8),
+  the project-scope skill row (§4.2), and the walk stop have no 1.18.30
+  observation; the MCP path does have a 1.18.30 mention count, but not one of the
+  resolved key set.
 - **A record whose fixture cannot support the claim.** The precedence ladder: the
   1.18.30 fixture gave every source the same single key, so it could not separate
   a source that loaded and lost from one that was never read (§0).
@@ -1019,7 +1026,9 @@ outranks every file on disk, and once a `cfg` call leaked it, every later step i
 that run resolved a configuration that the fixture could not influence. The
 exclusion is by **when the run was taken**, not by what it reported: the leak
 bounds what the run's other steps can be compared against, so its values are read
-in neither direction. (The leak is a config-file input, so it does not mechanically
+in neither direction. Row 1 is excluded on the same ground — it predates the fix
+and its fixture is not the §0 one — even though the recorded row names the
+collision fixture alone. (The leak is a config-file input, so it does not mechanically
 explain a skill-catalog value either — which is why the rows are kept rather than
 discarded as wrong.)
 They are kept because the earlier draft of §6's table was built from them. Their
@@ -1029,7 +1038,7 @@ would only reproduce the leak.
 Including them changes no conclusion. Over all ten runs (30 invocations) the
 skill splits 18 `project` / 12 `global`; 8 of the 10 runs vary within the run; 12
 of the 20 consecutive pairs change; and 6 of the 10 runs start `global`. Every
-statistic moves the same way as the counted eight and the winner is still not
+statistic points the same way as the counted eight — the winner is still not
 determined, so the exclusion is presentational — a choice of which runs the tally
 is stated over, not which evidence counts.
 
