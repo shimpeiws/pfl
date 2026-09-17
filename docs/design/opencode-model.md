@@ -2,9 +2,10 @@
 
 - **Status:** investigation complete; input to the M8 freeze. M9 implements the
   adapter against this document and does not alter it.
-- **Runtime:** OpenCode **1.18.30** was the measured binary
+- **Runtime:** OpenCode **1.18.30** was the originally measured binary
   (`/opt/homebrew/bin/opencode` → `…/Cellar/opencode/1.18.30/bin/opencode`,
-  Homebrew formula `anomalyco/tap/opencode`, build dated 2026-09-09).
+  Homebrew formula `anomalyco/tap/opencode`, build dated 2026-09-09); the §0 probe
+  has since been re-run on 1.18.31 (*Verified range* below).
 - **Verified range:** **1.18.0 and 1.18.30, plus the §0 surfaces on 1.18.31** —
   discrete versions, not a floor. yuurei verified 1.18.0; this document measured
   1.18.30. On 1.18.31 the §0 probe has been re-run over the surfaces §0 lists as
@@ -124,9 +125,9 @@ the two differ. That earlier version's same-name element markers
 fixture gave every source the same single key and created no repository. A later
 pre-fix version (`655939e`) added `git init` and the per-key decoys; it is an
 1.18.31 run and corresponds to the **§0-fixture row** in Appendix A, whose other
-row predates even that script. Neither pre-fix version is used as 1.18.30 evidence
-except for the element markers, which are identical throughout. That is why the
-agent and command element results carry 1.18.30 evidence
+row predates even that script. Only `e98dbfc` supplies 1.18.30 evidence, and only
+its element-marker results; `655939e` is an 1.18.31 run and supplies none. That is
+why the agent and command element results carry 1.18.30 evidence
 while the precedence ladder and the walk stop do not. The probe is reproduced in
 full so the 1.18.31 observations can be re-derived rather than taken on trust; it
 writes only under a `mktemp` directory, and the decoy files it creates are never
@@ -325,8 +326,8 @@ only**:
   `grep -ci`, not the resolved key set (step 8);
 - that a same-name agent and command resolve to the project's copy while a
   same-name skill is lost unstably (§6; re-measured: the agent and command winners
-  reproduced, and the 1.18.30 skill winner (`global`) recurred but not stably —
-  `global` in 9 of 24 invocations);
+  reproduced, and the single 1.18.30 skill observation (`global`) recurred but not
+  stably — `global` in 9 of 24 invocations);
 - the compiled-in layers: the agents `agent list` reports and the built-in skill
   `customize-opencode`, reported with `"location": "<built-in>"` (§5, §7, §8) —
   the built-in listing reproduced, but whether `agent list` shows the fixture's
@@ -366,8 +367,10 @@ and `TMPDIR` fallbacks. `opencode debug paths` is authoritative [installed: meas
 `TMPDIR` is a real redirection the adapter owns: it does not follow `HOME`
 [yuurei, re-verified]. The probe confirmed every root moved under the throwaway
 tree: the eight `HOME`-derived roots under the probe's `HOME`, and `tmp` under its
-`TMPDIR`, which is a sibling of that `HOME` rather than a descendant of it. The `config` root is the "user scope" of §4; the runtime never reads a
-`~/.opencode/` directory [installed: self-described].
+`TMPDIR`, which is a sibling of that `HOME` rather than a descendant of it. The
+`config` root is the "user scope" of §4. The built-in skill body documents
+`$XDG_CONFIG_HOME/opencode` as the user scope and names no `~/.opencode/`
+directory; no probe searched for one [installed: self-described].
 
 ## 2. Configuration file locations and search order
 
@@ -531,13 +534,13 @@ not evidence of a version difference. What 1.18.31 does establish is that
 collision is unstable.
 
 **Claude-compat is narrower than Claude Code's own surface.** OpenCode reads
-Claude skills and the `CLAUDE.md` rules fallback, but does **not** contribute an
-`mcp` key from Claude Code's `.mcp.json` when it is the only source present (§0
-step 8; the co-present case is unexercised). Three runs each declare the server in
-a different place, counted the same way in all three (`grep -c '\"mcp\"'` on the
-resolved
-config) [installed: measured; **all three cases are 1.18.31 only** — the 1.18.30
-record counted `mcp` mentions with `grep -ci`, not the resolved key set, §0].
+Claude skills and the `CLAUDE.md` rules fallback [installed: self-described;
+unexercised here], but does **not** contribute an `mcp` key from Claude Code's
+`.mcp.json` when it is the only source present (§0 step 8; the co-present case is
+unexercised). Three runs each declare the server in a different place, counted the
+same way in all three (`grep -c '\"mcp\"'` on the resolved config) [installed:
+measured; **all three cases are 1.18.31 only** — the 1.18.30 record counted `mcp`
+mentions with `grep -ci`, not the resolved key set, §0].
 Cases a and b run under the probe's own global config; case c runs under its own
 `HOME`:
 
@@ -681,13 +684,14 @@ file, and deciding what consent covers — is a change to the harness boundary
 
 The resolver separates Native source, Applicability, Resolution semantics, and
 Activation (design doc §11). OpenCode's behaviour on each [installed: measured
-unless noted; the measured rows rest on three fixtures, each with its own version
+unless noted; the measured rows rest on four fixtures, each with its own version
 profile — the §0 ladder (1.18.31 only), the collision fixture (its project-scope
 skill result and collision outcome are 1.18.31 only, while its agent and command
 results carry 1.18.30 evidence, §0; its lone 1.18.30 skill observation is recorded
-below), and step 9's built-in listing (built-in entries on both binaries, with the
-fixture-agent difference noted at its row). The self-described and upstream rows
-are unchanged from the 1.18.30 record]:
+below), step 10's user-scope-only fixture (1.18.31 only), and step 9's built-in
+listing (built-in entries on both binaries, with the fixture-agent difference noted
+at its row). The self-described and upstream rows are unchanged from the 1.18.30
+record]:
 
 ### Native source
 
@@ -699,7 +703,7 @@ Managed configuration overrides everything and is not user-overridable
 
 | Value                | OpenCode surface                                                                | Tag |
 | -------------------- | ------------------------------------------------------------------------------- | --- |
-| `global`             | `~/.config/opencode/AGENTS.md`, global config keys, user-scope element dirs      | element dirs [installed: measured; 1.18.31 only, §0 step 10]; config keys [installed: measured; 1.18.31 only]; `AGENTS.md` [installed: self-described] |
+| `global`             | `~/.config/opencode/AGENTS.md`, global config keys, user-scope element dirs      | element dirs [installed: measured; agent/command 1.18.31 only, §0 step 10; the user-scope skill dir also has a 1.18.30 observation, §4.1]; config keys [installed: measured; 1.18.31 only]; `AGENTS.md` [installed: self-described] |
 | `project`            | project `opencode.json`, `.opencode/**`, project `AGENTS.md`                      | element dirs [installed: measured; skills 1.18.31 only, §4.2]; config keys [installed: measured; 1.18.31 only]; `AGENTS.md` [installed: self-described] |
 | `directory-subtree`  | a nested `AGENTS.md`/`CLAUDE.md` and skills found along the walk to the git root | [upstream] — the walk stop is measured on 1.18.31 only, the content found along it is not |
 | `tool-event`         | `permission.bash` patterns; plugin hook events                                   | [upstream] |
@@ -765,8 +769,9 @@ The documentation requires these names to be unique across locations, so a
 collision is outside the documented behaviour rather than resolved by a documented
 rule — and the observed outcome is not a rule either. Across the eight §0 runs
 (24 invocations on 1.18.31) the skill split 15 `project` / 9 `global`, while agent
-and command were `project` in every one of them, so the instability is specific to
-the skill catalog rather than to element loading in general. The winner was not
+and command were `project` in every one of them, so, in this fixture, the
+instability is specific to the skill catalog rather than to element loading in
+general. The winner was not
 constant within a run in six of those eight runs, and it changed between
 consecutive invocations — same fixture, nothing changed on disk — ten of the
 sixteen consecutive pairs inside those runs.
@@ -967,8 +972,9 @@ catches it.
 outstanding obligation rather than a future one — tracked as §11.6. Meanwhile the
 **schema** conclusion (§9) is unaffected. The **layout** claims were re-checked on
 1.18.31 as far as the §0 probe reaches, and §0's exercised list is the record of
-how far that is. It supports three different kinds of **1.18.31 only** evidence,
-which §0's exercised list distinguishes:
+how far that is. It supports several kinds of evidence, which §0's exercised list
+distinguishes — the first two are **1.18.31 only**, the last two are
+re-measurements that carry 1.18.30 evidence as well:
 
 - **No 1.18.30 record of the claim as stated.** The user-scope-only elements
   (step 10), `OPENCODE_CONFIG_DIR` (step 11), the project-scope skill row (§4.2),
@@ -1056,15 +1062,18 @@ collision fixture alone. (The leak is a config-file input, so it does not mechan
 explain a skill-catalog value either — which is why the rows are kept rather than
 discarded as wrong.)
 They are kept because the earlier draft of §6's table was built from them. Their
-values are reproduced as recorded in `655939e` and not re-run — re-running them
-would only reproduce the leak.
+values are reproduced as written down in `655939e` — row 1 was produced by an
+earlier script version — and not re-run: re-running them would only reproduce the
+leak.
 
-Including them changes no conclusion. Over all ten runs (30 invocations) the
-skill splits 18 `project` / 12 `global`; 8 of the 10 runs vary within the run; 12
-of the 20 consecutive pairs change; and 6 of the 10 runs start `global`. Every
-statistic points the same way as the counted eight — the winner is still not
-determined, so the exclusion is presentational — a choice of which runs the tally
-is stated over, not which evidence counts.
+Including them changes no conclusion. The statistics below are not offered as
+evidence for the collision behaviour; they only show that the exclusion is not
+outcome-selective — over all ten runs (30 invocations) the skill splits 18
+`project` / 12 `global`; 8 of the 10 runs vary within the run; 12 of the 20
+consecutive pairs change; and 6 of the 10 runs start `global`. Every statistic
+points the same way as the counted eight — the winner is still not determined — so
+the exclusion is presentational: a choice of which runs the tally is stated over,
+not which evidence counts.
 
 | Run, as recorded then                    | Agent   | Command | Skill, three consecutive invocations |
 | ---------------------------------------- | ------- | ------- | ------------------------------------ |
