@@ -81,14 +81,16 @@ export interface DiffResult {
 export async function runDiff(
   cwd: string,
   snapshotA: string,
-  snapshotB: string,
+  snapshotB: string | undefined,
   options: DiffOptions,
   logger: Logger,
 ): Promise<CommandOutcome<DiffData>> {
   const home = options.home ?? homedir();
   const out = redactingLogger(logger, options.json ? 'export' : 'display', { home });
   const runA = await loadInterpretation(cwd, snapshotA, home);
-  const runB = await loadInterpretation(cwd, snapshotB, home);
+  // The second operand defaults to `latest`, consistently with every other read
+  // command, so `pfl diff <a>` compares a snapshot against the current one.
+  const runB = await loadInterpretation(cwd, snapshotB ?? 'latest', home);
   const diagnostics = [...runA.diagnostics, ...runB.diagnostics];
   for (const diagnostic of diagnostics) {
     out.warn(diagnostic.message, { code: diagnostic.code, path: diagnostic.path ?? undefined });

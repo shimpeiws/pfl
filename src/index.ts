@@ -30,7 +30,7 @@ interface CommonFlags {
  * envelope on completion, or the failure envelope on any exit. The exit code is
  * set on every failure, exactly when `ok` is false. Human runs are unchanged.
  */
-function withErrorHandling<Args extends [...unknown[], CommonFlags]>(
+function withErrorHandling<Args extends [...unknown[], CommonFlags | undefined]>(
   command: string,
   action: (...args: Args) => Promise<CommandOutcome>,
 ): (...args: Args) => Promise<void> {
@@ -168,18 +168,29 @@ cli
   );
 
 cli
-  .command('diff <snapshot-a> <snapshot-b>', 'Compare two snapshots')
+  .command('diff <snapshot-a> [snapshot-b]', 'Compare two snapshots (default: latest)')
   .option('--json', 'Output as JSON')
   .action(
-    withErrorHandling('diff', async (snapshotA: string, snapshotB: string, flags: CommonFlags) => {
-      return runDiff(
-        process.cwd(),
-        snapshotA,
-        snapshotB,
-        { json: flags.json ?? false },
-        loggerForFlags(flags),
-      );
-    }),
+    withErrorHandling(
+      'diff',
+      async (
+        snapshotA: string,
+        snapshotBOrFlags: string | CommonFlags | undefined,
+        maybeFlags: CommonFlags | undefined,
+      ) => {
+        // `cac` omits the second positional when it is not given and passes the
+        // options object in its place, so it is recovered from either position.
+        const flags = maybeFlags ?? (snapshotBOrFlags as CommonFlags) ?? {};
+        const snapshotB = typeof snapshotBOrFlags === 'string' ? snapshotBOrFlags : undefined;
+        return runDiff(
+          process.cwd(),
+          snapshotA,
+          snapshotB,
+          { json: flags.json ?? false },
+          loggerForFlags(flags),
+        );
+      },
+    ),
   );
 
 cli.help();

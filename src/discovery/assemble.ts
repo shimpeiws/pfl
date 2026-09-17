@@ -16,6 +16,7 @@ import {
 } from '../redact/output.js';
 import { harnessContentDigest } from '../snapshot/digest.js';
 import { SNAPSHOT_SCHEMA_VERSION } from '../snapshot/serialization.js';
+import { deepFreeze } from '../util/freeze.js';
 
 /**
  * Assembles the immutable ObservedSnapshot (design doc §13.1) from discovered
@@ -82,16 +83,6 @@ function redactProject(project: ObservedProject, ctx: RedactionContext): Observe
       ? { remote: redactFreeText(project.remote, 'persistence', ctx) }
       : {}),
   };
-}
-
-function deepFreeze<T>(value: T): T {
-  if (value !== null && typeof value === 'object' && !Object.isFrozen(value)) {
-    Object.freeze(value);
-    for (const nested of Object.values(value as Record<string, unknown>)) {
-      deepFreeze(nested);
-    }
-  }
-  return value;
 }
 
 export function completenessOf(

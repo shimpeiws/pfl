@@ -287,6 +287,38 @@ describe('resolved snapshots', () => {
     expect(await readdir(snapshotsDir('proj', home))).toEqual([`${resolved.snapshotId}.json`]);
   });
 
+  it('still reads a schema-1 artifact carrying a withdrawn relation type', async () => {
+    // #83 withdrew four relation types from the model but did not bump the
+    // schema, so a schema-1 artifact that carries one must stay readable. An
+    // unknown value is still refused, so the leniency is bounded.
+    const home = await tempHome();
+    const observed = makeObserved();
+    const legacy = {
+      ...makeResolved(observed.snapshotId),
+      relations: [{ type: 'contains', from: 'el_a', to: 'el_b' }],
+    } as unknown as ResolvedSnapshot;
+    await mkdir(snapshotsDir('proj', home), { recursive: true });
+    await writeFile(
+      join(snapshotsDir('proj', home), `${legacy.snapshotId}.json`),
+      `${JSON.stringify(legacy)}\n`,
+    );
+
+    await expect(readResolvedSnapshot('proj', legacy.snapshotId, home)).resolves.toMatchObject({
+      relations: [{ type: 'contains', from: 'el_a', to: 'el_b' }],
+    });
+
+    const unknown = {
+      ...legacy,
+      snapshotId: 'res_unknown',
+      relations: [{ type: 'nonsense', from: 'el_a', to: 'el_b' }],
+    };
+    await writeFile(
+      join(snapshotsDir('proj', home), 'res_unknown.json'),
+      `${JSON.stringify(unknown)}\n`,
+    );
+    await expect(readResolvedSnapshot('proj', 'res_unknown', home)).rejects.toThrowError(PflError);
+  });
+
   it('rejects a file missing a valid resolution/confidence', async () => {
     const home = await tempHome();
     await mkdir(snapshotsDir('proj', home), { recursive: true });

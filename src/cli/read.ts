@@ -23,7 +23,9 @@ import { EXIT_CODES, PflError } from './exit-codes.js';
  * so improved classification logic always applies to existing snapshots.
  *
  * `--snapshot` accepts either an observation id (`obs_…`) or a resolved id
- * (`res_…`); `latest` points at a resolved snapshot.
+ * (`res_…`). The literal `latest` (and an absent option) selects the most
+ * recent run's resolved snapshot, so `--snapshot latest` is accepted anywhere
+ * an id is, including as `diff`'s second operand (#89).
  */
 export interface InterpretedRun {
   observed: ObservedSnapshot;
@@ -59,7 +61,7 @@ async function resolveResolvedId(
   requestedId: string | undefined,
   home: string,
 ): Promise<{ resolvedId: string; diagnostics: Diagnostic[] }> {
-  if (requestedId === undefined) {
+  if (requestedId === undefined || requestedId === 'latest') {
     const pointer = await readLatestPointer(projectId, home);
     if (pointer === null) {
       throw new PflError(

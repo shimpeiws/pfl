@@ -115,6 +115,27 @@ describe('pfl CLI end to end', () => {
     expect(result.stdout).toContain('+ 0 newly effective');
   });
 
+  it('defaults the second diff operand to latest and accepts the literal latest', async () => {
+    const m = await fixture();
+    await runCli(m, ['inspect', '--runtime', 'claude-code']);
+    const snapshots = await runCli(m, ['snapshots', '--json']);
+    const resolvedId: string = JSON.parse(snapshots.stdout).data.runs[0].resolvedId;
+
+    // One positional: the second operand defaults to the latest resolved snapshot.
+    const defaulted = await runCli(m, ['diff', resolvedId]);
+    expect(defaulted.code, defaulted.stderr).toBe(EXIT_CODES.SUCCESS);
+    expect(defaulted.stdout).toContain('+ 0 added');
+
+    // The literal `latest` is accepted anywhere an id is.
+    const literalSecond = await runCli(m, ['diff', resolvedId, 'latest']);
+    expect(literalSecond.code, literalSecond.stderr).toBe(EXIT_CODES.SUCCESS);
+    expect(literalSecond.stdout).toContain('+ 0 added');
+
+    const literalFirst = await runCli(m, ['diff', 'latest']);
+    expect(literalFirst.code, literalFirst.stderr).toBe(EXIT_CODES.SUCCESS);
+    expect(literalFirst.stdout).toContain('+ 0 added');
+  });
+
   it('inspects a Codex harness and reads back Codex-specific content', async () => {
     const m = await fixture('codex');
 
