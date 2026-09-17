@@ -42,8 +42,11 @@ function escapeRegExp(value: string): string {
  * matching a longer `-Users-alice2` run.
  */
 function replaceHomeSegment(value: string, home: string): string {
+  // The pattern is built from `escapeRegExp(home)`, a trusted local value.
+  // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp
   const raw = new RegExp(`${escapeRegExp(home)}(?=/|$)`, 'g');
   const encodedHome = home.replaceAll('/', '-');
+  // nosemgrep: javascript.lang.security.audit.detect-non-literal-regexp
   const encoded = new RegExp(`${escapeRegExp(encodedHome)}(?=-|$)`, 'g');
   return value.replace(raw, '~').replace(encoded, '~');
 }

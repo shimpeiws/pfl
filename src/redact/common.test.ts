@@ -36,6 +36,8 @@ describe('redactText — common policy', () => {
   it('redacts known token shapes', () => {
     expect(redactText('ghp_abcdefghijklmnopqrstuvwxyz0123456789')).toBe('[redacted]');
     expect(redactText('sk-abcdefghijklmnop')).toBe('[redacted]');
+    // A JWT-shaped fixture, not a real credential.
+    // nosemgrep: generic.secrets.security.detected-jwt-token.detected-jwt-token
     expect(redactText('eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0In0.abcdefghijk')).toBe('[redacted]');
   });
 
