@@ -22,9 +22,17 @@ followed, resource ceilings bound every walk and parse, every persisted or
 displayed field passes the allowlist or the redaction layer, the consent wording
 is derived from the read-path inventory, and the security-ops baseline (CI
 scans, the `security-review` required check, the `security-auditor` agent, and
-`docs/security/`) is in place. M7 (harness depth), M8 (interfaces and schema
-freeze), M9 (OpenCode adapter), and M10 (release preparation) remain; M8 and M10
-carry the items M6 deferred. See `docs/design/pfl-roadmap-v1.0.md`.
+`docs/security/`) is in place.
+
+v1.0's harness-depth milestone (**M7**) is complete: a shared frontmatter parser
+resolves skills, subagents, commands, rules, output styles, and memory files; the
+Claude Code and Codex adapters reach their real discovery surfaces (managed
+scope, `.mcp.json`, plugins, hooks, the `CLAUDE.md`/`AGENTS.md` trees,
+project-scoped skills, and the full `config.toml` section surface); and kind
+assignments, dead kinds, version handling, and the classification and findings
+gaps are settled. M8 (interfaces and schema freeze), M9 (OpenCode adapter), and
+M10 (release preparation) remain; M8 and M10 carry the items M6 deferred. See
+`docs/design/pfl-roadmap-v1.0.md`.
 
 ## Commands
 
