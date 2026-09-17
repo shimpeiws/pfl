@@ -6,13 +6,13 @@ describe('CODEX_SAFE_METADATA_ALLOWLIST', () => {
   it('keeps allowlisted structural fields and drops unknown ones', () => {
     const filtered = filterToAllowlist(
       {
-        kind: 'mcp-configuration',
         approvalMode: 'on-request',
+        sandboxMode: 'workspace-write',
         apiKey: 'sk-proj-secret',
         rawContent: 'raw instruction text',
       },
       CODEX_SAFE_METADATA_ALLOWLIST,
     );
-    expect(filtered).toEqual({ kind: 'mcp-configuration', approvalMode: 'on-request' });
+    expect(filtered).toEqual({ approvalMode: 'on-request', sandboxMode: 'workspace-write' });
   });
 });

@@ -8,22 +8,16 @@
  * settings are read as values; they are never applied.
  */
 export const CODEX_SAFE_METADATA_ALLOWLIST: readonly string[] = [
-  'kind',
   'format',
-  'sizeBytes',
-  'isSymlink',
-  'entryCount',
   'hasFrontmatter',
   'frontmatterKeys',
   'descriptionLength',
-  'agentCount',
-  'eventNames',
   'toolNames',
+  'eventNames',
   'approvalMode',
   'sandboxMode',
   'model',
   'reasoningEffort',
   'serviceTier',
   'serverNames',
-  'enabledPluginCount',
 ];

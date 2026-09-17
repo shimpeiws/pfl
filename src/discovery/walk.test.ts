@@ -158,6 +158,53 @@ describe('walkHarnessPaths', () => {
   });
 });
 
+describe('walkHarnessPaths content-derived metadata', () => {
+  it('runs describeFile on content it already read and attaches the result', async () => {
+    const fixture = await makeFixture();
+    const seen: string[] = [];
+
+    const { entries } = await walkHarnessPaths(fixture.root, ['.claude'], {
+      describeFile: (relativePath, content) => {
+        seen.push(relativePath);
+        return { length: content.length };
+      },
+    });
+
+    const skill = entries.find((entry) => entry.relativePath === '.claude/skills/foo/SKILL.md');
+    expect(skill?.metadata).toEqual({ length: '# Foo skill'.length });
+    expect(seen).toContain('.claude/skills/foo/SKILL.md');
+  });
+
+  it('omits empty metadata and records nothing when no extractor is given', async () => {
+    const fixture = await makeFixture();
+
+    const withEmpty = await walkHarnessPaths(fixture.root, ['.claude'], {
+      describeFile: () => ({}),
+    });
+    const without = await walkHarnessPaths(fixture.root, ['.claude']);
+
+    expect(withEmpty.entries.every((entry) => entry.metadata === undefined)).toBe(true);
+    expect(without.entries.every((entry) => entry.metadata === undefined)).toBe(true);
+  });
+
+  it('records a throwing extractor as a diagnostic and keeps the digest', async () => {
+    const fixture = await makeFixture();
+
+    const { entries, diagnostics } = await walkHarnessPaths(fixture.root, ['.claude'], {
+      describeFile: () => {
+        throw new Error('hostile content');
+      },
+    });
+
+    const skill = entries.find((entry) => entry.relativePath === '.claude/skills/foo/SKILL.md');
+    expect(skill?.digest).toMatch(/^sha256:/);
+    expect(skill?.metadata).toBeUndefined();
+    expect(diagnostics.some((d) => d.code === 'metadata-extraction-failed')).toBe(true);
+    // The walk never aborts: a sibling is still discovered.
+    expect(entries.some((entry) => entry.relativePath === '.claude/settings.json')).toBe(true);
+  });
+});
+
 describe('walkHarnessPaths hostile input (S3, S7)', () => {
   it('refuses a hardlinked regular file (nlink > 1)', async () => {
     const fixture = await makeFixture();

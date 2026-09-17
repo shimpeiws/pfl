@@ -2,6 +2,7 @@ import type { Dir } from 'node:fs';
 import { lstat, opendir, readFile } from 'node:fs/promises';
 import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 import type { Diagnostic } from '../core/diagnostics.js';
+import type { SafeMetadataValue } from '../core/observed.js';
 import {
   MAX_FILE_BYTES,
   MAX_WALK_DEPTH,
@@ -25,6 +26,12 @@ export interface DiscoveredPath {
   digest?: string;
   sizeBytes?: number;
   /**
+   * Allowlisted, redacted metadata derived from the file's content by the
+   * caller's `describeFile`. Raw content never leaves the walk, so it cannot be
+   * persisted.
+   */
+  metadata?: Record<string, SafeMetadataValue>;
+  /**
    * A regular file the walk refused to read: an inode reachable from outside
    * the root (`nlink > 1`, roadmap S3) or one over the per-file byte ceiling
    * (roadmap S7). The caller records it as skipped.
@@ -33,6 +40,21 @@ export interface DiscoveredPath {
 }
 
 export type WalkSkipReason = 'hardlink-not-followed' | 'file-too-large';
+
+/**
+ * Derives allowlisted, redacted metadata from a file the walk already read, so
+ * content-derived facts (frontmatter keys, tool names, lengths) can be resolved
+ * without exposing the bytes. It runs inside the walk; a throw is recorded as a
+ * diagnostic and never aborts the walk.
+ */
+export type DescribeFile = (
+  relativePath: string,
+  content: string,
+) => Record<string, SafeMetadataValue>;
+
+export interface WalkOptions {
+  describeFile?: DescribeFile;
+}
 
 export interface WalkResult {
   entries: DiscoveredPath[];
@@ -43,6 +65,7 @@ interface WalkState {
   root: string;
   entries: Map<string, DiscoveredPath>;
   diagnostics: Diagnostic[];
+  describeFile?: DescribeFile;
   /** Entries examined so far, across every subpath, against `MAX_WALK_ENTRIES`. */
   walked: number;
   /** Set once the entry ceiling is hit, so the walk stops instead of roaming. */
@@ -63,6 +86,7 @@ interface WalkState {
 export async function walkHarnessPaths(
   root: string,
   subpaths: readonly string[],
+  options: WalkOptions = {},
 ): Promise<WalkResult> {
   const state: WalkState = {
     root: resolve(root),
@@ -70,6 +94,7 @@ export async function walkHarnessPaths(
     diagnostics: [],
     walked: 0,
     entryLimitHit: false,
+    ...(options.describeFile !== undefined ? { describeFile: options.describeFile } : {}),
   };
 
   for (const subpath of subpaths) {
@@ -218,10 +243,44 @@ async function fileEntry(state: WalkState, full: string): Promise<DiscoveredPath
 
   try {
     const content = await readFile(full);
-    return { relativePath, kind: 'file', digest: sha256Digest(content), sizeBytes: content.length };
+    const metadata = describeFile(state, relativePath, content);
+    return {
+      relativePath,
+      kind: 'file',
+      digest: sha256Digest(content),
+      sizeBytes: content.length,
+      ...(metadata !== undefined ? { metadata } : {}),
+    };
   } catch {
     state.diagnostics.push(unreadableFile(relativePath));
     return { relativePath, kind: 'file' };
+  }
+}
+
+/**
+ * Runs the caller's `describeFile` on content the walk already read. Content
+ * never leaves the walk: only the caller's allowlisted, redacted record is
+ * returned. A throwing extractor is a diagnostic — the entry keeps its digest
+ * — never an abort (design doc §18).
+ */
+function describeFile(
+  state: WalkState,
+  relativePath: string,
+  content: Buffer,
+): Record<string, SafeMetadataValue> | undefined {
+  const describe = state.describeFile;
+  if (describe === undefined) return undefined;
+  try {
+    const metadata = describe(relativePath, content.toString('utf8'));
+    return Object.keys(metadata).length > 0 ? metadata : undefined;
+  } catch {
+    state.diagnostics.push({
+      severity: 'warning',
+      code: 'metadata-extraction-failed',
+      message: `could not extract metadata from ${relativePath}`,
+      path: relativePath,
+    });
+    return undefined;
   }
 }
 
