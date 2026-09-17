@@ -141,7 +141,8 @@ unset OPENCODE_CONFIG OPENCODE_CONFIG_DIR OPENCODE_CONFIG_CONTENT
 cd "$P" || exit 1
 
 cfg()   { opencode debug config 2>&1 | grep -E '"(model|small_model)":' ; }
-model() { opencode debug config 2>&1 | grep -o '"model": "[^"]*"' | head -1; }
+# `debug config` pretty-prints, so strip the indent or every comparison fails.
+model() { opencode debug config 2>&1 | grep -o '"model": "[^"]*"' | head -1 | sed 's/^ *//'; }
 skill() { opencode debug skill  2>&1 | grep -o '\(GLOBAL\|PROJECT\) skill marker'; }
 agent() { opencode debug config 2>&1 | grep -o '\(GLOBAL\|PROJECT\) agent marker'; }
 
@@ -154,12 +155,26 @@ mv "$P/opencode.json" "$ROOT/h2";           echo "3. both removed (global + pare
 model
 printf '   parent-dir config read? '; [ "$(model)" = '"model": "above-git-root-marker"' ] && echo yes || echo no
 mv "$ROOT/h2" "$P/opencode.json"
-echo "4. OPENCODE_CONFIG set";  OPENCODE_CONFIG="$ROOT/custom.json" cfg
+# A prefix assignment to a shell *function* persists in bash, so steps 4-5 run in
+# a subshell; without it every later step is measured with these variables set.
+echo "4. OPENCODE_CONFIG set";  (OPENCODE_CONFIG="$ROOT/custom.json" cfg)
 echo "5. OPENCODE_CONFIG_CONTENT set"
-OPENCODE_CONFIG_CONTENT='{"model":"env-content-marker"}' cfg
+(OPENCODE_CONFIG_CONTENT='{"model":"env-content-marker"}' cfg)
 echo "6. same-name agent / command / skill, three consecutive invocations"
 i=1; while [ "$i" -le 3 ]; do printf '   run %s: agent=%s command=%s skill=%s\n' "$i" "$(agent)" "$(opencode debug config 2>&1 | grep -o '\(GLOBAL\|PROJECT\) command marker')" "$(skill)"; i=$((i+1)); done
-echo "7. .mcp.json beside the project config"
+echo "7. what the walk stop depends on (fresh fixture; the project holds no config)"
+S="$ROOT/stop"; mkdir -p "$S/proj/sub"
+printf '{"model":"above-git-root-marker"}\n' > "$S/opencode.json"
+walkstop() { printf '   %-10s parent-dir config wins? %s\n' "$1" \
+  "$(cd "$S/proj" && opencode debug config 2>&1 \
+     | grep -q 'above-git-root-marker' && echo yes || echo 'no, global wins')"; }
+git init -q "$S/proj" >/dev/null 2>&1;   walkstop "git-init"
+rm -rf "$S/proj/.git"; mkdir -p "$S/proj/.git"; walkstop "empty-.git"
+rm -rf "$S/proj/.git";                    walkstop "no-.git"
+printf 'gitdir: /nonexistent\n' > "$S/proj/.git"; walkstop "dangling-.git"
+rm -f "$S/proj/.git"
+
+echo "8. .mcp.json beside the project config"
 printf '{"mcpServers":{"probe":{"command":"true"}}}\n' > "$P/.mcp.json"
 printf '   mcp mentions in debug config: %s\n' "$(opencode debug config 2>&1 | grep -ci mcp)"
 rm "$P/.mcp.json"
@@ -181,6 +196,15 @@ measured something else:
   `opencode agent list` reports nothing for a `mode: subagent` fixture, so a probe
   that reads it concludes no agent was loaded at all; the winning agent is visible
   in `debug config`'s `agent` map.
+- **`$OPENCODE_CONFIG` and `$OPENCODE_CONFIG_CONTENT` set only inside a
+  subshell.** A prefix assignment to a shell *function* persists in bash, so
+  setting them on the `cfg` call leaks them into every later step — and since #6
+  outranks every on-disk source, the remaining steps are then measured against a
+  config that cannot be overridden. Every step after 5 silently reported the same
+  value until this was caught.
+- **`grep` for a marker, or strip `debug config`'s indent before comparing.**
+  Its output is pretty-printed, so a literal comparison against `"model": …`
+  never matches and the check reports the negative case for every input.
 
 ### What the probe exercises, and what it does not
 
@@ -508,18 +532,24 @@ command winners are read from the `agent`/`command` maps of `debug config`, not
 from `agent list`, which reports nothing for a `mode: subagent` fixture; the skill
 winner is read from `debug skill`, which lists one surviving entry per name.
 
-| Binary and fixture                              | Agent   | Command | Skill, three consecutive invocations |
-| ----------------------------------------------- | ------- | ------- | ------------------------------------ |
-| 1.18.30 (as originally recorded)                | project | project | global                               |
-| 1.18.31, collision fixture alone                | project | project | global, **project**, **project**     |
-| 1.18.31, the §0 fixture (with the config decoys) | project | project | **global**, **global**, project      |
+| Binary and fixture                | Agent   | Command | Skill, three consecutive invocations |
+| --------------------------------- | ------- | ------- | ------------------------------------ |
+| 1.18.30, as first recorded        | project | project | global                               |
+| 1.18.31, collision fixture alone  | project | project | global, project, project             |
+| 1.18.31, §0 fixture, run 1        | project | project | global, project, global              |
+| 1.18.31, §0 fixture, run 2        | project | project | project, project, project            |
+| 1.18.31, §0 fixture, run 3        | project | project | project, project, project            |
+| 1.18.31, §0 fixture, run 4        | project | project | global, project, project             |
 
 The documentation requires these names to be unique across locations, so a
 collision is undefined behaviour rather than a documented tie-break. On 1.18.31 the
 skill winner changed **between consecutive invocations with nothing changed on
-disk** — four times in six runs, in both directions, and once in the same run that
-recorded the opposite first. Agent and command were `project` in all six runs and
-the skill was not.
+disk** in three of the four §0 runs above, and the 15 invocations on 1.18.31
+split 11 `project` / 4 `global` overall. Agent and command were `project` in
+every one of them, so the instability is specific to the skill catalog rather
+than to element loading in general. Four earlier runs are excluded from the
+table: they were taken before the §0 script scoped `$OPENCODE_CONFIG*` to a
+subshell, so they ran under a config source that outranks every file on disk.
 That is what an unordered directory scan deciding the skill catalog looks like, and
 it means the earlier 1.18.30 record of "global" was never a stable property of that
 version either — the re-probe did not refute it so much as fail to reproduce it.
