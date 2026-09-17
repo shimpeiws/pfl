@@ -51,6 +51,10 @@ corrupt artifact attributable to its own run instead of being mistaken for
 absence, and a `latest` pointer carries the interpretation id alongside the
 observed and resolved ids for reclaiming the run as a unit.
 
+The `interpretationId` is **identity, not a path key**: retention and GC remove
+`interpretations/<resolvedSnapshotId>.json`, derived from the run's resolved
+snapshot id, never `interpretations/<interpretationId>.json` (#87).
+
 ## Reproducibility
 
 Because the classifier version is stored with the interpretation, a report

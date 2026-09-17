@@ -450,11 +450,13 @@ describe('pfl CLI end to end', () => {
     const artifact = join(interpretationsDir(projectId, m.home), `${pointer.resolved}.json`);
 
     await writeFile(artifact, '{ not json');
-    const corrupt = await runCli(m, ['report', '--snapshot', pointer.observed, '--json']);
-    expect(corrupt.code).toBe(EXIT_CODES.CONFIG_ERROR);
-    expect(
-      (JSON.parse(corrupt.stdout) as { diagnostics: { code: string }[] }).diagnostics[0]?.code,
-    ).toBe('invalid-snapshot');
+    for (const id of [pointer.observed, pointer.resolved]) {
+      const corrupt = await runCli(m, ['report', '--snapshot', id, '--json']);
+      expect(corrupt.code, id).toBe(EXIT_CODES.CONFIG_ERROR);
+      expect(
+        (JSON.parse(corrupt.stdout) as { diagnostics: { code: string }[] }).diagnostics[0]?.code,
+      ).toBe('invalid-snapshot');
+    }
 
     // A snapshot the schema does not support is the same fail-closed path.
     await writeFile(artifact, '{"schemaVersion":"2"}\n');

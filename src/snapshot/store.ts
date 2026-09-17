@@ -364,6 +364,20 @@ export async function listRuns(
         isInterpretation,
         pflHome(home),
       );
+      const keyedAs = name.slice(0, -ARTIFACT_SUFFIX.length);
+      // The artifact is keyed by the resolved snapshot id, so the file name and
+      // the payload must agree. A mismatch is the same inconsistency a direct
+      // read refuses, and the scan must not report a run as interpreted when
+      // the read path would not find it.
+      if (interpretation.resolvedSnapshotId !== keyedAs) {
+        diagnostics.push({
+          severity: 'warning',
+          code: 'invalid-snapshot',
+          message: `interpretation ${interpretation.interpretationId} is stored under ${keyedAs} but claims ${interpretation.resolvedSnapshotId}`,
+          path: name,
+        });
+        continue;
+      }
       interpretationByResolved.set(
         interpretation.resolvedSnapshotId,
         interpretation.interpretationId,

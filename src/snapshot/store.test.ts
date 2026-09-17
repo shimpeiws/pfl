@@ -433,6 +433,34 @@ describe('listRuns', () => {
     });
   });
 
+  it('refuses a misnamed interpretation and does not report the run as interpreted', async () => {
+    const home = await tempHome();
+    const observed = makeObserved();
+    const resolved = makeResolved(observed.snapshotId);
+    await writeObservedSnapshot('proj', observed, home);
+    await writeResolvedSnapshot('proj', resolved, home);
+    // Keyed under `foo` but claiming the real resolved id: the direct read would
+    // look for `<resolvedId>.json`, so the scan must not claim it either.
+    await mkdir(interpretationsDir('proj', home), { recursive: true });
+    await writeFile(
+      join(interpretationsDir('proj', home), 'foo.json'),
+      serializeSnapshot({
+        schemaVersion: '1',
+        interpretationId: 'int_x',
+        resolvedSnapshotId: resolved.snapshotId,
+        classifier: { id: 'classifier', version: '1' },
+        elements: [],
+        stats: { observed: 0, effective: 0, shadowed: 0, conditional: 0, opaque: 0, byFacet: {} },
+        findings: [],
+      }),
+    );
+
+    const { runs, diagnostics } = await listRuns('proj', home);
+
+    expect(runs[0]?.interpretationId).toBeNull();
+    expect(diagnostics.map((entry) => entry.code)).toContain('invalid-snapshot');
+  });
+
   it('records an unreadable observation as a diagnostic instead of failing', async () => {
     const home = await tempHome();
     await mkdir(observationsDir('proj', home), { recursive: true });
