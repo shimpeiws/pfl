@@ -31,10 +31,13 @@ in `pfl` that deletes.
 - **Deletion is bounded and explicit.** `pfl gc` deletes only under
   `~/.pfl/projects/<validated id>/`, only files it constructs from a run's
   observed/resolved ids and its interpretation key, and only whole runs (the
-  three artifacts together). An artifact that cannot be parsed is reported as a
-  diagnostic and never deleted; `--dry-run` deletes nothing. `--prune-orphans`
-  removes a project directory recursively, and only for an id that is either
-  unindexed or whose every root is gone.
+  three artifacts together). An artifact that cannot be attributed to a run — an
+  observation with no resolved snapshot, or a file no run references — is
+  reported and never deleted; an artifact that belongs to a reclaimed run is
+  deleted with it. `--dry-run` deletes nothing. `--prune-orphans` removes a
+  project directory recursively, and only for an id the index references whose
+  every root is gone; a directory the index does not reference is reported and
+  never deleted.
 - **Fail closed.** A corrupt or unsupported-version index is a store failure
   (exit 6) rather than a rebuild that could re-mint a stranded history.
 - **The index is not the snapshot schema.** It is mutable store metadata with
@@ -107,6 +110,11 @@ were remediated in this pull request:
 16. **The index accepted a non-absolute root**, which would be resolved against
     the working directory when checking whether an orphan's root exists. Fixed:
     a root must be absolute.
+17. **A run with no resolved snapshot was half-deleted and reported as
+    reclaimed.** Removing only its observation hid the remaining artifacts from
+    every future scan. Fixed: such a run is left whole and reported as
+    `unreclaimable-run`. The gc summary and `reclaimedOrphans` now list what this
+    run actually deleted rather than what it planned.
 
 The comment that a path-derived sibling is "reported by `pfl gc` as reclaimable"
 was corrected: after the first fix it is reported as unreferenced and never
@@ -114,7 +122,7 @@ deleted automatically, because its root is unknown.
 
 ## Verification
 
-- Full gate green: `test` (55 files, 477 tests), `check`, `format`, `build`,
+- Full gate green: `test` (55 files, 478 tests), `check`, `format`, `build`,
   `typecheck:test`, `knip`.
 - New tests: retention keeps the newest and the latest (including a dangling
   pointer); a dry run deletes nothing; an unparseable artifact is kept and

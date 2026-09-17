@@ -218,17 +218,57 @@ describe('runGc', () => {
     const listed = await runGc(projectRoot, { home }, silent);
     expect(listed.data.orphans.map((orphan) => orphan.id)).toEqual([rootGone]);
     expect(listed.data.unreferenced.map((entry) => entry.id)).toEqual([unclaimed]);
-    expect(listed.data.orphansReclaimed).toBe(false);
+    expect(listed.data.reclaimedOrphans).toHaveLength(0);
 
     // A dry run with --prune-orphans still deletes nothing.
     const dry = await runGc(projectRoot, { home, pruneOrphans: true, dryRun: true }, silent);
-    expect(dry.data.orphansReclaimed).toBe(false);
+    expect(dry.data.reclaimedOrphans).toHaveLength(0);
     expect(await exists(projectDir(rootGone, home))).toBe(true);
 
     const pruned = await runGc(projectRoot, { home, pruneOrphans: true }, silent);
-    expect(pruned.data.orphansReclaimed).toBe(true);
+    expect(pruned.data.reclaimedOrphans.map((orphan) => orphan.id)).toEqual([rootGone]);
     expect(await exists(projectDir(rootGone, home))).toBe(false);
     expect(await exists(projectDir(unclaimed, home))).toBe(true);
+  });
+
+  it('leaves a run without a resolved snapshot whole instead of half-deleting it', async () => {
+    const projectRoot = await tempDir('pfl-gc-project-');
+    const home = await tempDir('pfl-gc-home-');
+    const projectId = (await resolveProjectContext(projectRoot)).id;
+    // An observation with no resolved snapshot: it cannot be reclaimed as a run.
+    const observedOnly = generateObservedSnapshotId();
+    await writeObservedSnapshot(
+      projectId,
+      {
+        schemaVersion: '1',
+        snapshotId: observedOnly,
+        capturedAt: '2026-01-01T00:00:00.000Z',
+        project: { id: projectId, displayName: 'owner/repo', root: '/repo' },
+        runtime: { id: runtimeId('claude-code'), version: '2.1.272' },
+        adapter: { id: 'claude-code', version: '0.1.0', runtimeCompatibility: 'verified' },
+        elements: [],
+        diagnostics: [],
+        completeness: 'complete',
+        digests: { observed: 'sha256:abc' },
+      },
+      home,
+    );
+    const newer = await seedRun(home, projectId, '2026-02-01T00:00:00.000Z');
+    await writeLatestPointer(
+      projectId,
+      {
+        observed: newer.observedId,
+        resolved: newer.resolvedId,
+        interpretation: newer.interpretationId,
+      },
+      home,
+    );
+
+    const outcome = await runGc(projectRoot, { home, keep: 1 }, silent);
+
+    expect(outcome.data.reclaimed.map((run) => run.observedId)).not.toContain(observedOnly);
+    expect(await exists(join(observationsDir(projectId, home), `${observedOnly}.json`))).toBe(true);
+    expect(outcome.diagnostics.map((entry) => entry.code)).toContain('unreclaimable-run');
   });
 
   it('reclaims the interpretation even when it could not be parsed', async () => {

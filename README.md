@@ -83,7 +83,8 @@ defaults to it, and the literal `latest` is accepted anywhere an id is.
 `pfl gc` reclaims old runs (the twenty most recent are kept by default) and
 orphaned histories. It is never a side effect of `inspect`; `--dry-run` lists
 what it would reclaim, and orphaned project directories are removed only with
-`--prune-orphans`.
+`--prune-orphans`. Because that option is destructive, run
+`pfl gc --dry-run --prune-orphans` first.
 
 ## Machine-readable output (`--json`)
 

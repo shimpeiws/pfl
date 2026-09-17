@@ -54,8 +54,8 @@ export interface GcData {
   reclaimed: GcRunRef[];
   /** Orphaned histories (every claiming root is gone); deleted with `--prune-orphans`. */
   orphans: GcOrphanRef[];
-  /** Whether this run actually deleted the orphans. */
-  orphansReclaimed: boolean;
+  /** The subset of `orphans` this run actually deleted. */
+  reclaimedOrphans: GcOrphanRef[];
   /** Store directories the index does not reference; reported, never auto-deleted. */
   unreferenced: GcOrphanRef[];
 }
@@ -99,6 +99,18 @@ export async function runGc(
   const reclaimedRuns: GcRunRef[] = [];
   if (!dryRun) {
     for (const run of reclaimed) {
+      if (run.resolvedId === null) {
+        // A run without a resolved snapshot cannot be deleted as a unit, and
+        // removing only its observation would hide the rest from every future
+        // scan. Leave it whole and report it.
+        diagnostics.push({
+          severity: 'warning',
+          code: 'unreclaimable-run',
+          message: `run ${run.observedId} has no resolved snapshot and was not reclaimed`,
+          path: `observations/${run.observedId}.json`,
+        });
+        continue;
+      }
       const failures = await reclaimRun(stored.id, run, home);
       diagnostics.push(...failures);
       // Report a run as reclaimed only when every artifact is gone; a partial
@@ -124,8 +136,7 @@ export async function runGc(
       }
     }
   }
-  const orphansReclaimed = prunedOrphans.length > 0;
-  if (!orphansReclaimed && orphans.length > 0 && !pruneOrphans) {
+  if (orphans.length > 0 && !pruneOrphans) {
     diagnostics.push({
       severity: 'info',
       code: 'orphans-not-reclaimed',
@@ -134,7 +145,7 @@ export async function runGc(
   }
 
   for (const diagnostic of diagnostics) {
-    out.warn(diagnostic.message, { code: diagnostic.code, path: diagnostic.path ?? undefined });
+    logDiagnostic(out, diagnostic);
   }
 
   const data: GcData = {
@@ -143,7 +154,7 @@ export async function runGc(
     retained: retained.map(toRunRef),
     reclaimed: dryRun ? reclaimed.map(toRunRef) : reclaimedRuns,
     orphans,
-    orphansReclaimed,
+    reclaimedOrphans: prunedOrphans,
     unreferenced,
   };
   const outcome = { data, diagnostics, completeness: 'unknown' as const };
@@ -158,14 +169,16 @@ export async function runGc(
     out.info(`  ${verb} ${run.observedId}${run.resolvedId !== null ? ` → ${run.resolvedId}` : ''}`);
   }
   if (orphans.length > 0) {
-    out.info(
-      orphansReclaimed
-        ? `Reclaimed ${orphans.length} orphaned histor(y/ies).`
-        : dryRun
-          ? `Would reclaim ${orphans.length} orphaned histor(y/ies) (--prune-orphans).`
-          : `${orphans.length} orphaned histor(y/ies) (use --prune-orphans to reclaim).`,
-    );
-    for (const orphan of orphans) out.info(`  ${orphan.id}  ${orphan.path}  (${orphan.reason})`);
+    const summary = dryRun
+      ? `Would reclaim ${orphans.length} orphaned histor(y/ies) with --prune-orphans.`
+      : pruneOrphans
+        ? `Reclaimed ${prunedOrphans.length} of ${orphans.length} orphaned histor(y/ies).`
+        : `${orphans.length} orphaned histor(y/ies) (use --prune-orphans to reclaim).`;
+    out.info(summary);
+    for (const orphan of orphans) {
+      const state = prunedOrphans.some((entry) => entry.id === orphan.id) ? 'reclaimed' : 'kept';
+      out.info(`  ${state} ${orphan.id}  ${orphan.path}  (${orphan.reason})`);
+    }
   }
   for (const entry of unreferenced) {
     out.info(`  unreferenced: ${entry.id}  ${entry.path}  (${entry.reason})`);
@@ -216,14 +229,16 @@ async function reclaimRun(
 ): Promise<Diagnostic[]> {
   // Ids come from parsed artifacts; validate each before it becomes a path
   // segment so a crafted id cannot make gc delete outside the store.
-  const targets: string[] = [];
-  if (run.resolvedId !== null) {
+  // Callers never pass a run without a resolved snapshot (that case is left
+  // whole and reported), so the run is deleted as a complete unit.
+  const resolvedId = run.resolvedId as string;
+  const targets = [
     // The interpretation is keyed by the resolved id and belongs to the run even
     // when its payload could not be parsed (then `interpretationId` is null).
-    targets.push(artifactFilePath(interpretationsDir(projectId, home), run.resolvedId));
-    targets.push(artifactFilePath(snapshotsDir(projectId, home), run.resolvedId));
-  }
-  targets.push(artifactFilePath(observationsDir(projectId, home), run.observedId));
+    artifactFilePath(interpretationsDir(projectId, home), resolvedId),
+    artifactFilePath(snapshotsDir(projectId, home), resolvedId),
+    artifactFilePath(observationsDir(projectId, home), run.observedId),
+  ];
 
   const failures: Diagnostic[] = [];
   for (const target of targets) {
@@ -321,4 +336,11 @@ function toRunRef(run: StoredRunSummary): GcRunRef {
     resolvedId: run.resolvedId,
     interpretationId: run.interpretationId,
   };
+}
+
+function logDiagnostic(out: Logger, diagnostic: Diagnostic): void {
+  const options = { code: diagnostic.code, path: diagnostic.path ?? undefined };
+  if (diagnostic.severity === 'error') out.error(diagnostic.message, options);
+  else if (diagnostic.severity === 'warning') out.warn(diagnostic.message, options);
+  else out.info(diagnostic.message);
 }
