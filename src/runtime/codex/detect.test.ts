@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -87,5 +87,19 @@ describe('detectCodex', () => {
     const detection = await detectCodex(home);
 
     expect(detection.installed).toBe(false);
+  });
+
+  it('does not traverse a symlinked install ancestor', async () => {
+    const home = await tempHome();
+    const outside = join(home, 'outside');
+    await mkdir(join(outside, 'standalone', 'releases', '0.154.0-aarch64-apple-darwin'), {
+      recursive: true,
+    });
+    await mkdir(join(home, '.codex'), { recursive: true });
+    await symlink(outside, join(home, '.codex', 'packages'));
+
+    const detection = await detectCodex(home);
+
+    expect(detection.version).toBeNull();
   });
 });
