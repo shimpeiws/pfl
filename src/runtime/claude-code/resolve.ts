@@ -1,3 +1,4 @@
+import { basename, dirname } from 'node:path';
 import type { ElementId } from '../../core/ids.js';
 import type { ObservedElement, ObservedSnapshot } from '../../core/observed.js';
 import type {
@@ -9,6 +10,7 @@ import type {
 } from '../../core/resolved.js';
 import { assembleResolvedSnapshot } from '../../resolution/assemble.js';
 import { resolveElements, type ElementResolutionInput } from '../../resolution/resolver.js';
+import { PROJECT_CONFIG_DIR } from './paths.js';
 
 /**
  * Claude Code resolution rules, verified against Claude Code 2.1.272 (design doc
@@ -17,12 +19,14 @@ import { resolveElements, type ElementResolutionInput } from '../../resolution/r
  *
  * ```text
  * kind                          applicability      strategy       activation
- * instructions                  project            accumulate     always
+ * instructions                  global | project |  accumulate     always
+ *                               directory-subtree
  * rules                         project            accumulate     always
  * memory                        project            accumulate     always
  * skills                        project            available      on-demand   (still effective)
  * commands                      project            available      on-demand
  * subagents                     project            available      on-demand
+ * plugin                        global             available      on-demand
  * hooks                         tool-event(target) event-pipeline event-driven
  * permissions                   global             policy         always
  * approval-policy               global             policy         always
@@ -32,21 +36,33 @@ import { resolveElements, type ElementResolutionInput } from '../../resolution/r
  * anything else                 unknown            unknown        unknown     (unresolved)
  * ```
  *
- * Settings precedence (highest first): project-local `.claude/settings.local.json`
- * > project `.claude/settings.json` > user `~/.claude/settings.json`. The same
- * config key at a lower scope is `shadowed`; managed settings are not discovered
- * yet, so they are not considered.
+ * Instruction applicability is derived from where the file sits, not from its
+ * origin: `../…` (a parent directory read under consent) and the user or managed
+ * scope are `global`, a file in the project root is `project`, and a nested file
+ * governs its own directory subtree — which is what makes the classifier's
+ * `subtree-specific-instruction` rule reachable.
+ *
+ * Settings precedence (highest first): managed `/Library/…/ClaudeCode/settings.json`
+ * > project-local `.claude/settings.local.json` > project `.claude/settings.json`
+ * > user `~/.claude/settings.json`. The same config key at a lower scope is
+ * `shadowed`. Inside one directory, `CLAUDE.local.md` shadows `CLAUDE.md`; the
+ * precedence is keyed on the file's directory and never crosses one, so a nested
+ * or parent-directory file is independent.
  */
 
 const USER_SETTINGS_RANK = 1;
 const PROJECT_SETTINGS_RANK = 2;
 const PROJECT_LOCAL_SETTINGS_RANK = 3;
+const MANAGED_SETTINGS_RANK = 4;
 
 export async function resolveClaudeCode(
   observed: ObservedSnapshot,
   home = '',
 ): Promise<ResolvedSnapshot> {
-  const shadowedBy = settingsShadowing(observed.elements);
+  const shadowedBy = new Map<ElementId, ElementId>([
+    ...settingsShadowing(observed.elements),
+    ...localInstructionShadowing(observed.elements),
+  ]);
 
   const inputs: ElementResolutionInput[] = observed.elements.map((element) => {
     const axes = axesFor(element);
@@ -84,6 +100,11 @@ function axesFor(element: ObservedElement): {
 
   switch (element.native.kind) {
     case 'instructions':
+      return {
+        applicability: instructionApplicability(element),
+        strategy: 'accumulate',
+        activation: 'always',
+      };
     case 'rules':
     case 'memory':
       return { applicability: { type: 'project' }, strategy: 'accumulate', activation: 'always' };
@@ -91,6 +112,8 @@ function axesFor(element: ObservedElement): {
     case 'commands':
     case 'subagents':
       return { applicability: { type: 'project' }, strategy: 'available', activation: 'on-demand' };
+    case 'plugin':
+      return { applicability: { type: 'global' }, strategy: 'available', activation: 'on-demand' };
     case 'hooks':
       return {
         applicability: { type: 'tool-event', ...eventTarget(element) },
@@ -122,6 +145,20 @@ function eventTarget(element: ObservedElement): { target?: string } {
 }
 
 /**
+ * An instruction file's applicability comes from its directory: a parent read
+ * (`../CLAUDE.md`), the user scope, and the managed scope are global, the
+ * project-root file is project, and a nested file governs its directory subtree.
+ */
+function instructionApplicability(element: ObservedElement): Applicability {
+  if (element.native.origin !== 'project') return { type: 'global' };
+  const path = element.source.path;
+  if (path === undefined) return { type: 'unknown' };
+  const directory = dirname(path);
+  if (directory === '..' || directory.startsWith('../')) return { type: 'global' };
+  return directory === '.' ? { type: 'project' } : { type: 'directory-subtree', target: directory };
+}
+
+/**
  * For each settings key, the highest-precedence element wins; the rest are
  * shadowed by it. Returns loser id -> winner id.
  */
@@ -149,6 +186,40 @@ function settingsShadowing(elements: readonly ObservedElement[]): Map<ElementId,
   return shadowed;
 }
 
+/**
+ * `CLAUDE.local.md` shadows the base `CLAUDE.md` in the *same directory* only —
+ * never across directories. The directory is derived from the element path, so a
+ * nested local file cannot shadow an unrelated base.
+ */
+function localInstructionShadowing(
+  elements: readonly ObservedElement[],
+): Map<ElementId, ElementId> {
+  const localsByDirectory = new Map<string, ElementId>();
+  for (const element of elements) {
+    // An unavailable file (symlink, hardlink, oversized, unreadable) cannot
+    // shadow anything: it is recorded, but it is not in force.
+    if (element.native.kind !== 'instructions' || element.status !== 'observed') continue;
+    const path = element.source.path;
+    if (path === undefined || basename(path) !== 'CLAUDE.local.md') continue;
+    const directory = dirname(path);
+    if (!localsByDirectory.has(directory)) {
+      localsByDirectory.set(directory, element.id);
+    }
+  }
+
+  const shadowed = new Map<ElementId, ElementId>();
+  for (const element of elements) {
+    if (element.native.kind !== 'instructions') continue;
+    const path = element.source.path;
+    if (path === undefined || basename(path) !== 'CLAUDE.md') continue;
+    const local = localsByDirectory.get(dirname(path));
+    if (local !== undefined) {
+      shadowed.set(element.id, local);
+    }
+  }
+  return shadowed;
+}
+
 function settingsKeyOf(element: ObservedElement): string | null {
   const path = element.source.path;
   if (path === undefined) return null;
@@ -157,10 +228,15 @@ function settingsKeyOf(element: ObservedElement): string | null {
 }
 
 function settingsRankOf(element: ObservedElement): number | null {
+  // Managed settings outrank every other scope. The origin is authoritative, not
+  // the path, so an injected managed base in a test still ranks correctly.
+  if (element.native.origin === 'managed') return MANAGED_SETTINGS_RANK;
   const path = element.source.path;
   if (path === undefined) return null;
-  if (path.includes('.claude/settings.local.json')) return PROJECT_LOCAL_SETTINGS_RANK;
-  if (path.startsWith('~/.claude/settings.json')) return USER_SETTINGS_RANK;
-  if (path.includes('.claude/settings.json')) return PROJECT_SETTINGS_RANK;
+  if (path.startsWith('~/.claude/settings')) return USER_SETTINGS_RANK;
+  if (path.startsWith(`${PROJECT_CONFIG_DIR}/settings.local.json`)) {
+    return PROJECT_LOCAL_SETTINGS_RANK;
+  }
+  if (path.startsWith(`${PROJECT_CONFIG_DIR}/settings.json`)) return PROJECT_SETTINGS_RANK;
   return null;
 }

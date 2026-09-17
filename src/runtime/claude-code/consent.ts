@@ -1,6 +1,7 @@
 import type { ConsentLocationGroup } from '../../discovery/consent.js';
 import { INSTALL_LOCATIONS, UPDATE_RESULT_FILE, VERSIONS_DIR } from './detect.js';
 import {
+  MANAGED_CONFIG_DIR,
   PROJECT_CONFIG_DIR,
   PROJECT_INSTRUCTION_FILES,
   PROJECT_MCP_FILE,
@@ -40,6 +41,10 @@ export const CONSENT_GROUPS: readonly ConsentLocationGroup[] = [
       `${USER_PREFIX}/${USER_PROJECTS_DIR}/**/memory/**`,
       `${USER_PREFIX}/${USER_PLUGINS_DIR}/**`,
       '~/.claude.json',
+      // The managed scope is a system location read under the same out-of-project
+      // consent. It is listed here so the prompt states the real read scope.
+      `${MANAGED_CONFIG_DIR}/${USER_INSTRUCTION_FILE}`,
+      `${MANAGED_CONFIG_DIR}/${SETTINGS_FILES[0]}`,
     ],
   },
   {
@@ -53,6 +58,7 @@ export const CONSENT_GROUPS: readonly ConsentLocationGroup[] = [
   {
     title: 'External references',
     locations: [
+      '../ (parent directories, bounded)',
       'Plugin directories referenced by Claude Code config',
       'MCP configuration metadata',
     ],

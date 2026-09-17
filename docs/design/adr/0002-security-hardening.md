@@ -127,7 +127,7 @@ security review:
 | `MAX_WALK_DEPTH` | directory recursion depth | 32 | deep nesting is not a harness shape |
 | `MAX_ARTIFACT_BYTES` | snapshot artifact read size | 16 MiB | a 10 000-element snapshot is single-digit MiB in canonical JSON |
 | `MAX_PARSE_BYTES` | JSON / TOML parse input size | 1 MiB (= `MAX_FILE_BYTES`) | parsing is bounded by what a file read may return |
-| `MAX_ANCESTOR_DIRS` | parent directories walked above the project root for `AGENTS.md` | 16 | bounds the out-of-project instruction search (M7, issue #75) |
+| `MAX_ANCESTOR_DIRS` | parent directories walked above the project root for an instruction file (`AGENTS.md`, `CLAUDE.md`) | 16 | bounds the out-of-project instruction search (M7, issues #75, #71) |
 
 Semantics:
 

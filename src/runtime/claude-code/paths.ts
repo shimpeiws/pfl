@@ -7,7 +7,9 @@ import { join } from 'node:path';
  *
  * ```text
  * Project scope (implicit)
- *   CLAUDE.md, CLAUDE.local.md      instructions
+ *   CLAUDE.md, CLAUDE.local.md      instructions (project root, nested
+ *                                   directories, and — read under consent —
+ *                                   parent directories)
  *   .claude/settings.json           permissions / hooks / outputStyle / mcp / plugins
  *   .claude/settings.local.json     local overrides of the same keys
  *   .claude/skills/<name>/SKILL.md  skills
@@ -16,7 +18,7 @@ import { join } from 'node:path';
  *   .claude/rules/**                rules
  *   .claude/output-styles/*.md      output styles
  *   .claude/hooks/**                hook scripts
- *   .mcp.json                       project MCP servers
+ *   .mcp.json                       project MCP servers (server names only)
  *
  * User scope (requires consent), under <home>/.claude
  *   CLAUDE.md, settings.json        user instructions, user settings
@@ -25,8 +27,12 @@ import { join } from 'node:path';
  *   plugins/**                      plugin-provided elements
  *   <home>/.claude.json             user MCP servers
  *
- * Managed scope (macOS) is not discovered yet:
+ * Managed scope (requires consent, macOS only):
  *   /Library/Application Support/ClaudeCode/{CLAUDE.md,settings.json}
+ *   system-wide policy; the read is an out-of-project read and is gated on the
+ *   same consent as the user scope. The directory is a parameter of discovery
+ *   (`collectClaudeCodeHarness`) so a test can inject a base and never touch
+ *   `/Library`.
  *
  * Opaque
  *   built-in instruction layers are recorded but never readable.
@@ -35,6 +41,16 @@ import { join } from 'node:path';
 
 /** Project-scoped instruction files, read implicitly. */
 export const PROJECT_INSTRUCTION_FILES = ['CLAUDE.md', 'CLAUDE.local.md'] as const;
+
+/** Directories a project-wide instruction walk must not descend into. */
+export const PROJECT_WALK_PRUNE_DIRECTORIES = ['node_modules', '.git'] as const;
+
+/**
+ * macOS managed-scope config directory (design doc §31.1). Reading it is an
+ * out-of-project read gated on consent. Absolute because the location is
+ * system-wide, not home-relative.
+ */
+export const MANAGED_CONFIG_DIR = '/Library/Application Support/ClaudeCode';
 
 /** Project-scoped configuration directory. */
 export const PROJECT_CONFIG_DIR = '.claude';

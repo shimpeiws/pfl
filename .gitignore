@@ -22,6 +22,9 @@ graft/
 .claude/helpers/
 .claude/skills/graft/
 .mcp.json
+# ...except the committed Claude adapter fixture, which exercises that exact
+# project file path.
+!test/fixtures/**/.mcp.json
 opencode.json
 .ignore
 *.tgz
