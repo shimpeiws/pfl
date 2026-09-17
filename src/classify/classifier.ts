@@ -22,7 +22,7 @@ import type { ResolvedSnapshot } from '../core/resolved.js';
  */
 
 export const CLASSIFIER_ID = 'pfl-native';
-export const CLASSIFIER_VERSION = '3';
+export const CLASSIFIER_VERSION = '4';
 
 interface FacetMapping {
   facets: readonly HarnessFacet[];
@@ -37,6 +37,11 @@ interface FacetMapping {
  */
 const FACETS_BY_KIND: Record<string, FacetMapping> = {
   instructions: { facets: ['instructions'], confidence: 'high', reason: 'defines agent behavior' },
+  'fallback-instructions': {
+    facets: ['instructions'],
+    confidence: 'medium',
+    reason: 'highest-precedence instruction file (replaces AGENTS.md in its directory)',
+  },
   rules: { facets: ['instructions'], confidence: 'medium', reason: 'instruction-like rule' },
   skills: {
     facets: ['knowledge', 'actions'],
@@ -95,6 +100,19 @@ const FACETS_BY_KIND: Record<string, FacetMapping> = {
     reason: 'runtime-provided layer; contents are opaque',
   },
 };
+
+/**
+ * Native kinds deliberately left without a facet mapping, so a kind the table
+ * does not know is recorded as unclassified rather than guessed. Empty while
+ * every kind an adapter declares has a deterministic mapping; a kind added
+ * without a row must be named here or the kind-coverage test fails.
+ */
+export const UNCLASSIFIED_KINDS: ReadonlySet<string> = new Set<string>();
+
+/** Whether `kind` has a deterministic facet mapping in `FACETS_BY_KIND`. */
+export function classifiedKind(kind: string): boolean {
+  return Object.hasOwn(FACETS_BY_KIND, kind);
+}
 
 export function classify(
   observed: ObservedSnapshot,

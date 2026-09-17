@@ -6,9 +6,18 @@ import {
   runtimeId,
   type ResolvedSnapshotId,
 } from '../core/ids.js';
+import type { ClassificationConfidence } from '../core/interpretation.js';
 import type { ObservedElement, ObservedSnapshot } from '../core/observed.js';
 import type { ResolvedElement, ResolvedSnapshot, ResolvedStatus } from '../core/resolved.js';
-import { CLASSIFIER_ID, CLASSIFIER_VERSION, classify } from './classifier.js';
+import { KNOWN_ELEMENT_KINDS as CLAUDE_CODE_KINDS } from '../runtime/claude-code/paths.js';
+import { KNOWN_ELEMENT_KINDS as CODEX_KINDS } from '../runtime/codex/paths.js';
+import {
+  CLASSIFIER_ID,
+  CLASSIFIER_VERSION,
+  classify,
+  classifiedKind,
+  UNCLASSIFIED_KINDS,
+} from './classifier.js';
 
 const rid = runtimeId('claude-code');
 
@@ -146,6 +155,28 @@ describe('classify', () => {
     expect(byId.get(dependencies.observed.id)).toMatchObject({ facets: [], confidence: 'unknown' });
   });
 
+  it('gives the Codex fallback instruction file and the plugin kind facet mappings', () => {
+    const fallback = makePair('fallback-instructions', 'AGENTS.override.md');
+    const plugin = makePair('plugin', '~/.codex/config.toml#plugins');
+    const all = [fallback, plugin];
+    const { observed, resolved } = snapshots(
+      all.map((pair) => pair.observed),
+      all.map((pair) => pair.resolved),
+    );
+
+    const result = classify(observed, resolved);
+    const byId = new Map(result.elements.map((element) => [element.elementId, element]));
+
+    expect(byId.get(fallback.observed.id)).toMatchObject({
+      facets: ['instructions'],
+      confidence: 'medium',
+    });
+    expect(byId.get(plugin.observed.id)).toMatchObject({
+      facets: ['knowledge', 'actions', 'delegation'],
+      confidence: 'medium',
+    });
+  });
+
   it('computes stats: counts and per-facet totals', () => {
     const effective = makePair('instructions', 'CLAUDE.md', 'effective');
     const shadowed = makePair('permissions', '.claude/settings.json#permissions', 'shadowed');
@@ -208,5 +239,35 @@ describe('classify', () => {
     const result = classify(observed, resolved);
 
     expect(facetsOf('.claude/commands/x.md', result)).toEqual(['actions']);
+  });
+
+  it('no longer declares a low classification confidence', () => {
+    // A type-level assertion: if `'low'` reappears in ClassificationConfidence
+    // this alias collapses to `never` and the assignment below fails to compile.
+    type LowIsRemoved = 'low' extends ClassificationConfidence ? never : true;
+    const lowIsRemoved: LowIsRemoved = true;
+
+    expect(lowIsRemoved).toBe(true);
+  });
+});
+
+describe('classifier kind coverage', () => {
+  const adapterKinds: readonly string[] = [...CLAUDE_CODE_KINDS, ...CODEX_KINDS];
+
+  it('classifies or explicitly records every kind an adapter declares', () => {
+    const uncovered = adapterKinds.filter(
+      (kind) => !classifiedKind(kind) && !UNCLASSIFIED_KINDS.has(kind),
+    );
+
+    expect(uncovered).toEqual([]);
+    // The sets are disjoint: a mapped kind is never also declared unclassified.
+    for (const kind of UNCLASSIFIED_KINDS) {
+      expect(classifiedKind(kind)).toBe(false);
+      expect(adapterKinds).toContain(kind);
+    }
+    // `classifiedKind` must consult own keys only: an unknown kind and an
+    // inherited `Object` key both report false.
+    expect(classifiedKind('mystery-kind')).toBe(false);
+    expect(classifiedKind('constructor')).toBe(false);
   });
 });
