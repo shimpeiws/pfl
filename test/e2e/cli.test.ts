@@ -158,10 +158,10 @@ describe('pfl CLI end to end', () => {
     const inspect = await runCli(m, ['inspect', '--runtime', 'codex']);
     expect(inspect.code, inspect.stderr).toBe(EXIT_CODES.SUCCESS);
 
-    const idFor = (path: string): string =>
-      elementIdFor({ runtimeId: runtimeId('codex'), origin: 'project', path });
-    const show = async (path: string) => {
-      const result = await runCli(m, ['show', idFor(path), '--json']);
+    const idFor = (path: string, kind: string): string =>
+      elementIdFor({ runtimeId: runtimeId('codex'), origin: 'project', path, kind });
+    const show = async (path: string, kind: string) => {
+      const result = await runCli(m, ['show', idFor(path, kind), '--json']);
       expect(result.code, `${path}: ${result.stderr}`).toBe(EXIT_CODES.SUCCESS);
       return JSON.parse(result.stdout.trim().split('\n').at(-1) ?? '{}') as {
         observed: { native: { kind: string; origin: string; scope: string } };
@@ -170,7 +170,7 @@ describe('pfl CLI end to end', () => {
     };
 
     // A project-scoped skill, discovered under `<project>/.codex/skills/**`.
-    const skill = await show('.codex/skills/project-skill/SKILL.md');
+    const skill = await show('.codex/skills/project-skill/SKILL.md', 'skills');
     expect(skill.observed.native).toMatchObject({
       kind: 'skills',
       origin: 'project',
@@ -182,20 +182,22 @@ describe('pfl CLI end to end', () => {
     });
 
     // A nested AGENTS.md governs its own directory subtree.
-    const nested = await show('docs/AGENTS.md');
+    const nested = await show('docs/AGENTS.md', 'instructions');
     expect(nested.resolved).toMatchObject({
       status: 'effective',
       applicability: { type: 'directory-subtree', target: 'docs' },
     });
 
     // The parent-directory file is read under consent and is global.
-    const parent = await show('../AGENTS.md');
+    const parent = await show('../AGENTS.md', 'instructions');
     expect(parent.resolved.applicability).toEqual({ type: 'global' });
 
     // Same-directory override shadows the base; the nested base in a different
     // directory is not shadowed by any override.
-    expect((await show('AGENTS.md')).resolved.status).toBe('shadowed');
-    expect((await show('AGENTS.override.md')).resolved.status).toBe('effective');
+    expect((await show('AGENTS.md', 'instructions')).resolved.status).toBe('shadowed');
+    expect((await show('AGENTS.override.md', 'fallback-instructions')).resolved.status).toBe(
+      'effective',
+    );
     expect(nested.resolved.status).toBe('effective');
   });
 
@@ -204,10 +206,10 @@ describe('pfl CLI end to end', () => {
     const inspect = await runCli(m, ['inspect', '--runtime', 'codex']);
     expect(inspect.code, inspect.stderr).toBe(EXIT_CODES.SUCCESS);
 
-    const idFor = (path: string): string =>
-      elementIdFor({ runtimeId: runtimeId('codex'), origin: 'user', path });
-    const show = async (path: string) => {
-      const result = await runCli(m, ['show', idFor(path), '--json']);
+    const idFor = (path: string, kind: string): string =>
+      elementIdFor({ runtimeId: runtimeId('codex'), origin: 'user', path, kind });
+    const show = async (path: string, kind: string) => {
+      const result = await runCli(m, ['show', idFor(path, kind), '--json']);
       expect(result.code, `${path}: ${result.stderr}`).toBe(EXIT_CODES.SUCCESS);
       return JSON.parse(result.stdout.trim().split('\n').at(-1) ?? '{}') as {
         observed: {
@@ -219,14 +221,14 @@ describe('pfl CLI end to end', () => {
 
     // `model` and its behavior siblings are model configuration, not compaction
     // controls; the real context controls live on the `#context` element.
-    const model = await show('~/.codex/config.toml#model');
+    const model = await show('~/.codex/config.toml#model', 'model-configuration');
     expect(model.observed.native.kind).toBe('model-configuration');
     expect(model.observed.metadata).toMatchObject({
       model: 'gpt-5.6-luna',
       reasoningEffort: 'medium',
       serviceTier: 'flex',
     });
-    const context = await show('~/.codex/config.toml#context');
+    const context = await show('~/.codex/config.toml#context', 'compaction-controls');
     expect(context.observed.native.kind).toBe('compaction-controls');
     expect(context.observed.metadata).toMatchObject({
       contextWindow: 272000,
@@ -237,15 +239,15 @@ describe('pfl CLI end to end', () => {
 
     // `rules/**` is instructional content; its permission counts are a second
     // element, and only the counts are stored.
-    const rules = await show('~/.codex/rules/default.rules');
+    const rules = await show('~/.codex/rules/default.rules', 'rules');
     expect(rules.observed.native.kind).toBe('rules');
     expect(rules.observed.metadata).not.toHaveProperty('allowCount');
-    const permissions = await show('~/.codex/rules/default.rules#permissions');
+    const permissions = await show('~/.codex/rules/default.rules#permissions', 'permissions');
     expect(permissions.observed.native.kind).toBe('permissions');
     expect(permissions.observed.metadata).toMatchObject({ allowCount: 3, denyCount: 1 });
 
     // `skill-dependencies` rides on the `skills` kind as frontmatter metadata.
-    const skill = await show('~/.codex/skills/tool.md');
+    const skill = await show('~/.codex/skills/tool.md', 'skills');
     expect(skill.observed.native.kind).toBe('skills');
     expect(skill.observed.metadata).toMatchObject({
       dependencyNames: ['fixture-foundation', 'fixture-formatting'],
@@ -257,8 +259,8 @@ describe('pfl CLI end to end', () => {
     const inspect = await runCli(m, ['inspect', '--runtime', 'claude-code']);
     expect(inspect.code, inspect.stderr).toBe(EXIT_CODES.SUCCESS);
 
-    const show = async (origin: 'project' | 'user' | 'plugin', path: string) => {
-      const id = elementIdFor({ runtimeId: runtimeId('claude-code'), origin, path });
+    const show = async (origin: 'project' | 'user' | 'plugin', path: string, kind: string) => {
+      const id = elementIdFor({ runtimeId: runtimeId('claude-code'), origin, path, kind });
       const result = await runCli(m, ['show', id, '--json']);
       expect(result.code, `${path}: ${result.stderr}`).toBe(EXIT_CODES.SUCCESS);
       return JSON.parse(result.stdout.trim().split('\n').at(-1) ?? '{}') as {
@@ -271,17 +273,17 @@ describe('pfl CLI end to end', () => {
     };
 
     // `.mcp.json` is parsed for server names, not only digested.
-    const mcp = await show('project', '.mcp.json#mcpServers');
+    const mcp = await show('project', '.mcp.json#mcpServers', 'mcp-configuration');
     expect(mcp.observed.native.kind).toBe('mcp-configuration');
     expect(mcp.observed.metadata).toEqual({ serverNames: ['fixture'] });
 
     // The approval mode lives under `permissions.defaultMode` and is its own kind.
-    const approval = await show('project', '.claude/settings.json#defaultMode');
+    const approval = await show('project', '.claude/settings.json#defaultMode', 'approval-policy');
     expect(approval.observed.native.kind).toBe('approval-policy');
     expect(approval.observed.metadata).toEqual({ approvalPolicy: 'acceptEdits' });
 
     // Hooks expose matcher patterns; the command strings never leave the adapter.
-    const hooks = await show('project', '.claude/settings.json#hooks');
+    const hooks = await show('project', '.claude/settings.json#hooks', 'hooks');
     expect(hooks.observed.metadata).toMatchObject({
       eventNames: ['SessionStart', 'PreToolUse'],
       hookMatchers: ['startup|resume|compact', 'Bash'],
@@ -289,28 +291,38 @@ describe('pfl CLI end to end', () => {
     });
 
     // A plugin is a `plugin` element; the elements it supplies keep their own kind.
-    const plugin = await show('plugin', '~/.claude/plugins/market/plug/plugin.json');
+    const plugin = await show('plugin', '~/.claude/plugins/market/plug/plugin.json', 'plugin');
     expect(plugin.observed.native.kind).toBe('plugin');
     expect(plugin.resolved).toMatchObject({
       status: 'effective',
       applicability: { type: 'global' },
       resolution: { strategy: 'available' },
     });
-    const pluginSkill = await show('plugin', '~/.claude/plugins/market/plug/skills/x/SKILL.md');
+    const pluginSkill = await show(
+      'plugin',
+      '~/.claude/plugins/market/plug/skills/x/SKILL.md',
+      'skills',
+    );
     expect(pluginSkill.observed.native.kind).toBe('skills');
-    const pluginAgent = await show('plugin', '~/.claude/plugins/market/plug/agents/reviewer.md');
+    const pluginAgent = await show(
+      'plugin',
+      '~/.claude/plugins/market/plug/agents/reviewer.md',
+      'subagents',
+    );
     expect(pluginAgent.observed.native.kind).toBe('subagents');
 
     // The CLAUDE.md tree: the same-directory local file shadows the base, the
     // nested file governs its subtree, and the parent read is global.
-    const root = await show('project', 'CLAUDE.md');
+    const root = await show('project', 'CLAUDE.md', 'instructions');
     expect(root.resolved).toMatchObject({ status: 'shadowed', applicability: { type: 'project' } });
-    expect((await show('project', 'CLAUDE.local.md')).resolved.status).toBe('effective');
-    expect((await show('project', 'docs/CLAUDE.md')).resolved).toMatchObject({
+    expect((await show('project', 'CLAUDE.local.md', 'instructions')).resolved.status).toBe(
+      'effective',
+    );
+    expect((await show('project', 'docs/CLAUDE.md', 'instructions')).resolved).toMatchObject({
       status: 'effective',
       applicability: { type: 'directory-subtree', target: 'docs' },
     });
-    expect((await show('project', '../CLAUDE.md')).resolved.applicability).toEqual({
+    expect((await show('project', '../CLAUDE.md', 'instructions')).resolved.applicability).toEqual({
       type: 'global',
     });
   });

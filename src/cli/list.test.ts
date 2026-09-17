@@ -36,7 +36,7 @@ export function pair(
   } = {},
 ): Pair {
   const origin = options.origin ?? (path.startsWith('~/') ? 'user' : 'project');
-  const id = elementIdFor({ runtimeId: rid, origin, path });
+  const id = elementIdFor({ runtimeId: rid, origin, path, kind });
   return {
     observed: {
       id,

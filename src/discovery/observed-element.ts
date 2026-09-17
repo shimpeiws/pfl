@@ -10,9 +10,10 @@ import type {
 
 /**
  * Builds an ObservedElement from a discovered entry (design doc §13.2). The id
- * is derived deterministically from runtime + origin + path, so the same element
- * keeps the same id across runs. Metadata is expected to be allowlisted and
- * redacted by the caller before it reaches here.
+ * is derived deterministically from runtime + origin + path + kind, so the same
+ * element keeps the same id across runs and two elements from one file with
+ * different kinds never collide (ADR 0003). Metadata is expected to be
+ * allowlisted and redacted by the caller before it reaches here.
  */
 export interface ObservedElementInput {
   runtimeId: RuntimeId;
@@ -32,7 +33,12 @@ export interface ObservedElementInput {
 export function buildObservedElement(input: ObservedElementInput): ObservedElement {
   const { digest, sizeBytes, symlink, reason } = input;
   return {
-    id: elementIdFor({ runtimeId: input.runtimeId, origin: input.origin, path: input.path }),
+    id: elementIdFor({
+      runtimeId: input.runtimeId,
+      origin: input.origin,
+      path: input.path,
+      kind: input.kind,
+    }),
     native: { kind: input.kind, origin: input.origin, scope: input.scope },
     source: {
       path: input.path,

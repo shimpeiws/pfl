@@ -1,3 +1,4 @@
+import { fragmentKeyOf } from '../core/element-path.js';
 import type { ElementId } from '../core/ids.js';
 import type { Finding } from '../core/interpretation.js';
 import type { ObservedElement, ObservedSnapshot } from '../core/observed.js';
@@ -164,7 +165,5 @@ function subtreeSpecificInstruction(
 
 function settingsKey(element: ObservedElement): string | null {
   const path = element.source.path;
-  if (path === undefined) return null;
-  const hash = path.indexOf('#');
-  return hash === -1 ? null : path.slice(hash + 1);
+  return path === undefined ? null : fragmentKeyOf(path);
 }

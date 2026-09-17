@@ -63,7 +63,7 @@ interface Pair {
 
 function pair(kind: string, path: string, resolvedStatus: ResolvedStatus = 'effective'): Pair {
   const origin = path.startsWith('~/') ? 'user' : 'project';
-  const id = elementIdFor({ runtimeId: rid, origin, path });
+  const id = elementIdFor({ runtimeId: rid, origin, path, kind });
   return {
     observed: {
       id,

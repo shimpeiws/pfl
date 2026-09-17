@@ -22,7 +22,7 @@ import {
 const rid = runtimeId('claude-code');
 
 function makePair(kind: string, path: string, status: ResolvedStatus = 'effective') {
-  const id = elementIdFor({ runtimeId: rid, origin: 'project', path });
+  const id = elementIdFor({ runtimeId: rid, origin: 'project', path, kind });
   const observed: ObservedElement = {
     id,
     native: { kind, origin: 'project', scope: 'project' },
@@ -69,9 +69,9 @@ function snapshots(observedElements: ObservedElement[], resolvedElements: Resolv
   return { observed, resolved };
 }
 
-function facetsOf(path: string, result: ReturnType<typeof classify>): HarnessFacet[] {
+function facetsOf(kind: string, path: string, result: ReturnType<typeof classify>): HarnessFacet[] {
   const element = result.elements.find(
-    (entry) => entry.elementId === elementIdFor({ runtimeId: rid, origin: 'project', path }),
+    (entry) => entry.elementId === elementIdFor({ runtimeId: rid, origin: 'project', path, kind }),
   );
   if (element === undefined) throw new Error('expected a classified element');
   return element.facets;
@@ -95,16 +95,16 @@ describe('classify', () => {
     const result = classify(observed, resolved);
     const byId = new Map(result.elements.map((e) => [e.elementId, e]));
 
-    const expectFacets = (path: string, facets: HarnessFacet[]) =>
-      expect(byId.get(elementIdFor({ runtimeId: rid, origin: 'project', path }))?.facets).toEqual(
-        facets,
-      );
-    expectFacets('CLAUDE.md', ['instructions']);
-    expectFacets('.claude/skills/foo/SKILL.md', ['knowledge', 'actions']);
-    expectFacets('.claude/agents/reviewer.md', ['delegation']);
-    expectFacets('.claude/settings.json#hooks', ['controls']);
-    expectFacets('.claude/settings.json#permissions', ['controls']);
-    expectFacets('~/.claude/projects/x/memory/MEMORY.md', ['memory']);
+    const expectFacets = (kind: string, path: string, facets: HarnessFacet[]) =>
+      expect(
+        byId.get(elementIdFor({ runtimeId: rid, origin: 'project', path, kind }))?.facets,
+      ).toEqual(facets);
+    expectFacets('instructions', 'CLAUDE.md', ['instructions']);
+    expectFacets('skills', '.claude/skills/foo/SKILL.md', ['knowledge', 'actions']);
+    expectFacets('subagents', '.claude/agents/reviewer.md', ['delegation']);
+    expectFacets('hooks', '.claude/settings.json#hooks', ['controls']);
+    expectFacets('permissions', '.claude/settings.json#permissions', ['controls']);
+    expectFacets('memory', '~/.claude/projects/x/memory/MEMORY.md', ['memory']);
 
     for (const element of result.elements) {
       expect(element.reason).toBeTruthy();
@@ -238,7 +238,7 @@ describe('classify', () => {
 
     const result = classify(observed, resolved);
 
-    expect(facetsOf('.claude/commands/x.md', result)).toEqual(['actions']);
+    expect(facetsOf('commands', '.claude/commands/x.md', result)).toEqual(['actions']);
   });
 
   it('no longer declares a low classification confidence', () => {

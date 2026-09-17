@@ -5,8 +5,8 @@ import { resolveElement, resolveElements, type ElementResolutionInput } from './
 
 const rid = runtimeId('claude-code');
 
-function id(path: string): ElementResolutionInput['id'] {
-  return elementIdFor({ runtimeId: rid, origin: 'project', path });
+function id(path: string, kind = 'instructions'): ElementResolutionInput['id'] {
+  return elementIdFor({ runtimeId: rid, origin: 'project', path, kind });
 }
 
 function input(overrides: Partial<ElementResolutionInput> = {}): ElementResolutionInput {

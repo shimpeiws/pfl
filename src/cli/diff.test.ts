@@ -73,7 +73,7 @@ function pair(
   } = {},
 ): Pair {
   const origin = options.origin ?? (path.startsWith('~/') ? 'user' : 'project');
-  const id = elementIdFor({ runtimeId: rid, origin, path });
+  const id = elementIdFor({ runtimeId: rid, origin, path, kind });
   return {
     observed: {
       id,
@@ -243,7 +243,10 @@ describe('computeDiff', () => {
     expect(result.structural.added).toBe(1);
   });
 
-  it('detects a kind change for the same path', () => {
+  it('treats a kind change for the same path as a distinct element', () => {
+    // Kind is part of the id (ADR 0003), so a different kind at one path is a
+    // different element: it cannot silently share an id and be reported as a
+    // one-element "change". It is a removal plus an addition.
     const a = makeRun({
       projectId: 'p1',
       runtimeId: 'claude-code',
@@ -261,8 +264,66 @@ describe('computeDiff', () => {
 
     const result = computeDiff(a, b);
 
+    expect(result.structural.removed).toBe(1);
+    expect(result.structural.added).toBe(1);
+    expect(result.structural.changed).toBe(0);
+  });
+
+  it('still reports a kind change between two snapshots that share an id', () => {
+    // Snapshots captured under the previous derivation carry ids that covered
+    // runtime, origin and path only, so one id can sit beside two kinds: the
+    // `.codex/skills/AGENTS.md` case, recorded as `instructions` in one capture
+    // and as `skills` in another. The compatibility promise is that an old
+    // snapshot diffs against another old snapshot exactly as before, so the id
+    // here is minted once and both kinds are recorded against it. Which digest
+    // mints it does not matter to the comparison under test.
+    const legacyPath = '.codex/skills/AGENTS.md';
+    const previousDerivationPair = (kind: string): Pair => {
+      const id = elementIdFor({
+        runtimeId: rid,
+        origin: 'project',
+        path: legacyPath,
+        kind: 'instructions',
+      });
+      return {
+        observed: {
+          id,
+          native: { kind, origin: 'project', scope: 'project' },
+          source: { path: legacyPath },
+          inspectability: 'observable',
+          metadata: {},
+          status: 'observed',
+        },
+        resolved: {
+          id,
+          status: 'effective',
+          applicability: { type: 'project' },
+          activation: 'always',
+          resolution: { strategy: 'accumulate', reason: 'test' },
+        },
+      };
+    };
+
+    const a = makeRun({
+      projectId: 'p1',
+      runtimeId: 'codex',
+      runtimeVersion: '1',
+      contentDigest: 'sha256:a',
+      pairs: [previousDerivationPair('instructions')],
+    });
+    const b = makeRun({
+      projectId: 'p1',
+      runtimeId: 'codex',
+      runtimeVersion: '1',
+      contentDigest: 'sha256:b',
+      pairs: [previousDerivationPair('skills')],
+    });
+
+    const result = computeDiff(a, b);
+
     expect(result.structural.changed).toBe(1);
     expect(result.structural.added).toBe(0);
+    expect(result.structural.removed).toBe(0);
   });
 
   it('returns id lists in a deterministic order', () => {
