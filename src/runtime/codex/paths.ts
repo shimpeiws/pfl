@@ -119,6 +119,27 @@ export const KNOWN_ELEMENT_KINDS = [
 
 export type CodexElementKind = (typeof KNOWN_ELEMENT_KINDS)[number];
 
+/**
+ * The kind `config.toml` falls back to when it cannot be read or parsed: a
+ * deliberate best-effort value, not a known kind. It stays out of
+ * `KNOWN_ELEMENT_KINDS` so the classifier kind-coverage test does not demand
+ * a facet mapping for it (roadmap M9 #131). The shared observed-element boundary
+ * still takes a `string`, which is the separate design #131 leaves open.
+ */
+export const FALLBACK_ELEMENT_KINDS = ['config'] as const;
+export type CodexFallbackKind = (typeof FALLBACK_ELEMENT_KINDS)[number];
+
+/** The kind recorded for an item inside a known area the adapter cannot classify. */
+export const UNKNOWN_ELEMENT_KIND = 'unknown' as const;
+
+/**
+ * Every kind an element builder may carry: a known kind, the explicit fallback,
+ * or the explicit unknown. A bare `string` is no longer accepted, so a typo at a
+ * known-kind call site is a compile error rather than a different `ElementId`
+ * (roadmap M9 #131).
+ */
+export type CodexRecordedKind = CodexElementKind | CodexFallbackKind | typeof UNKNOWN_ELEMENT_KIND;
+
 /** How each user element directory maps to a harness kind. */
 export const USER_DIR_KIND: Record<(typeof USER_ELEMENT_DIRS)[number], CodexElementKind> = {
   skills: 'skills',

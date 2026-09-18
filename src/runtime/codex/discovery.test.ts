@@ -5,8 +5,15 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { deriveFindings } from '../../classify/findings.js';
 import type { ObservedElement } from '../../core/observed.js';
 import { MAX_ANCESTOR_DIRS, MAX_PARSE_BYTES } from '../../limits.js';
-import { collectCodexHarness } from './discovery.js';
-import { KNOWN_ELEMENT_KINDS, USER_DIR_KIND, userConfigDir } from './paths.js';
+import { collectCodexHarness, type AssertKindsNarrow } from './discovery.js';
+import {
+  FALLBACK_ELEMENT_KINDS,
+  KNOWN_ELEMENT_KINDS,
+  UNKNOWN_ELEMENT_KIND,
+  USER_DIR_KIND,
+  userConfigDir,
+  type CodexRecordedKind,
+} from './paths.js';
 import { resolveCodex } from './resolve.js';
 
 const originalPath = process.env['PATH'];
@@ -32,6 +39,25 @@ async function tempDir(prefix: string): Promise<string> {
 afterEach(async () => {
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
+
+describe('element kind boundary', () => {
+  it('keeps the fallback and unknown kinds out of the known kinds', () => {
+    for (const kind of [...FALLBACK_ELEMENT_KINDS, UNKNOWN_ELEMENT_KIND]) {
+      expect((KNOWN_ELEMENT_KINDS as readonly string[]).includes(kind)).toBe(false);
+    }
+  });
+});
+
+// A typo'd kind must not compile: if the union widened back to `string` this
+// directive would be unused, which is itself a compile error (roadmap #131).
+// @ts-expect-error
+const typoKind: CodexRecordedKind = 'skils';
+void typoKind;
+
+// Pins the helper signatures, not only the union: if a builder helper's `kind`
+// is retyped to `string`, `AssertKindsNarrow` becomes `never` and this fails.
+const helpersNarrow: AssertKindsNarrow = true;
+void helpersNarrow;
 
 const CONSENTED = { user: true, install: true, grantedScopes: ['codex:user'] };
 const DENIED = { user: false, install: false, grantedScopes: [] };

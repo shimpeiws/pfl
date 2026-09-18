@@ -44,6 +44,8 @@ import {
   encodeProjectDir,
   userConfigDir,
   type ClaudeCodeElementKind,
+  UNKNOWN_ELEMENT_KIND,
+  type ClaudeCodeRecordedKind,
 } from './paths.js';
 import { redactClaudeCode } from './redact.js';
 
@@ -796,7 +798,7 @@ function configElement(
 function symlinkElement(
   origin: NativeOrigin,
   scope: string,
-  kind: string,
+  kind: ClaudeCodeRecordedKind,
   path: string,
 ): ObservedElement {
   return buildObservedElement({
@@ -816,7 +818,7 @@ function unsupportedElement(origin: NativeOrigin, scope: string, path: string): 
     runtimeId: RUNTIME_ID,
     origin,
     scope,
-    kind: 'unknown',
+    kind: UNKNOWN_ELEMENT_KIND,
     path,
     status: 'unsupported',
     reason: 'unsupported-by-adapter',
@@ -826,7 +828,7 @@ function unsupportedElement(origin: NativeOrigin, scope: string, path: string): 
 function unreadableElement(
   origin: NativeOrigin,
   scope: string,
-  kind: string,
+  kind: ClaudeCodeRecordedKind,
   path: string,
 ): ObservedElement {
   return buildObservedElement({
@@ -897,7 +899,7 @@ function arrayLength(value: unknown): number {
 function skippedElement(
   origin: NativeOrigin,
   scope: string,
-  kind: string,
+  kind: ClaudeCodeRecordedKind,
   path: string,
   reason: ObservedReason,
 ): ObservedElement {
@@ -915,11 +917,25 @@ function skippedElement(
 function skippedNonRegularElement(
   origin: NativeOrigin,
   scope: string,
-  kind: string,
+  kind: ClaudeCodeRecordedKind,
   path: string,
 ): ObservedElement {
   return skippedElement(origin, scope, kind, path, 'non-regular-file-not-opened');
 }
+
+/**
+ * Compile-time guard (roadmap M9 #131). If any builder helper's `kind` widens
+ * back to `string`, this becomes `never`, and the assertion in the test fails.
+ * The `@ts-expect-error` test pins the kind union; this pins the helpers that
+ * use it, which the union alone does not (a helper could be retyped to `string`
+ * while the union stayed narrow).
+ */
+type KindParams =
+  | Parameters<typeof symlinkElement>[2]
+  | Parameters<typeof unreadableElement>[2]
+  | Parameters<typeof skippedElement>[2]
+  | Parameters<typeof skippedNonRegularElement>[2];
+export type AssertKindsNarrow = string extends KindParams ? never : true;
 
 function reasonForWalkSkip(skipReason: 'hardlink-not-followed' | 'file-too-large'): ObservedReason {
   return skipReason === 'hardlink-not-followed' ? 'hardlink-not-followed' : 'limit-exceeded';

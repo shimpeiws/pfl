@@ -5,8 +5,20 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { deriveFindings } from '../../classify/findings.js';
 import type { ObservedElement } from '../../core/observed.js';
 import { MAX_ANCESTOR_DIRS } from '../../limits.js';
-import { MANAGED_CONFIG_DIR, encodeProjectDir, userConfigDir } from './paths.js';
-import { collectClaudeCodeHarness, managedConfigDirFor } from './discovery.js';
+import {
+  FALLBACK_ELEMENT_KINDS,
+  KNOWN_ELEMENT_KINDS,
+  MANAGED_CONFIG_DIR,
+  UNKNOWN_ELEMENT_KIND,
+  encodeProjectDir,
+  type ClaudeCodeRecordedKind,
+  userConfigDir,
+} from './paths.js';
+import {
+  collectClaudeCodeHarness,
+  managedConfigDirFor,
+  type AssertKindsNarrow,
+} from './discovery.js';
 import { resolveClaudeCode } from './resolve.js';
 
 const originalPath = process.env['PATH'];
@@ -32,6 +44,27 @@ async function tempDir(prefix: string): Promise<string> {
 afterEach(async () => {
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
 });
+
+describe('element kind boundary', () => {
+  it('keeps the fallback and unknown kinds out of the known kinds', () => {
+    // The known-kind list drives the classifier's coverage check, so the
+    // deliberate best-effort kinds must not be in it (roadmap M9 #131).
+    for (const kind of [...FALLBACK_ELEMENT_KINDS, UNKNOWN_ELEMENT_KIND]) {
+      expect((KNOWN_ELEMENT_KINDS as readonly string[]).includes(kind)).toBe(false);
+    }
+  });
+});
+
+// A typo'd kind must not compile: if the union widened back to `string` this
+// directive would be unused, which is itself a compile error (roadmap #131).
+// @ts-expect-error
+const typoKind: ClaudeCodeRecordedKind = 'skils';
+void typoKind;
+
+// Pins the helper signatures, not only the union: if a builder helper's `kind`
+// is retyped to `string`, `AssertKindsNarrow` becomes `never` and this fails.
+const helpersNarrow: AssertKindsNarrow = true;
+void helpersNarrow;
 
 const CONSENTED = { user: true, install: true, grantedScopes: ['claude-code:user'] };
 const DENIED = { user: false, install: false, grantedScopes: [] };
