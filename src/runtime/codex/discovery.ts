@@ -44,6 +44,7 @@ import {
   USER_INSTRUCTION_FILE,
   userConfigDir,
   type CodexElementKind,
+  type CodexRecordedKind,
 } from './paths.js';
 import { readTomlFacts, type TomlTable } from './toml.js';
 
@@ -825,7 +826,7 @@ function scalarArrayLength(table: TomlTable, key: string): number | undefined {
 function symlinkElement(
   origin: NativeOrigin,
   scope: string,
-  kind: string,
+  kind: CodexRecordedKind,
   path: string,
 ): ObservedElement {
   return buildObservedElement({
@@ -843,7 +844,7 @@ function symlinkElement(
 function unreadableElement(
   origin: NativeOrigin,
   scope: string,
-  kind: string,
+  kind: CodexRecordedKind,
   path: string,
 ): ObservedElement {
   return buildObservedElement({
@@ -908,7 +909,7 @@ function redactValue(value: SafeMetadataValue): SafeMetadataValue {
 function skippedElement(
   origin: NativeOrigin,
   scope: string,
-  kind: string,
+  kind: CodexRecordedKind,
   path: string,
   reason: ObservedReason,
 ): ObservedElement {
@@ -926,7 +927,7 @@ function skippedElement(
 function skippedNonRegularElement(
   origin: NativeOrigin,
   scope: string,
-  kind: string,
+  kind: CodexRecordedKind,
   path: string,
 ): ObservedElement {
   return skippedElement(origin, scope, kind, path, 'non-regular-file-not-opened');

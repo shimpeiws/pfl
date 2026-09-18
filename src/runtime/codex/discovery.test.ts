@@ -6,7 +6,13 @@ import { deriveFindings } from '../../classify/findings.js';
 import type { ObservedElement } from '../../core/observed.js';
 import { MAX_ANCESTOR_DIRS, MAX_PARSE_BYTES } from '../../limits.js';
 import { collectCodexHarness } from './discovery.js';
-import { KNOWN_ELEMENT_KINDS, USER_DIR_KIND, userConfigDir } from './paths.js';
+import {
+  FALLBACK_ELEMENT_KINDS,
+  KNOWN_ELEMENT_KINDS,
+  UNKNOWN_ELEMENT_KIND,
+  USER_DIR_KIND,
+  userConfigDir,
+} from './paths.js';
 import { resolveCodex } from './resolve.js';
 
 const originalPath = process.env['PATH'];
@@ -31,6 +37,14 @@ async function tempDir(prefix: string): Promise<string> {
 
 afterEach(async () => {
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+});
+
+describe('element kind boundary', () => {
+  it('keeps the fallback and unknown kinds out of the known kinds', () => {
+    for (const kind of [...FALLBACK_ELEMENT_KINDS, UNKNOWN_ELEMENT_KIND]) {
+      expect((KNOWN_ELEMENT_KINDS as readonly string[]).includes(kind)).toBe(false);
+    }
+  });
 });
 
 const CONSENTED = { user: true, install: true, grantedScopes: ['codex:user'] };

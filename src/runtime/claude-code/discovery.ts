@@ -44,6 +44,7 @@ import {
   encodeProjectDir,
   userConfigDir,
   type ClaudeCodeElementKind,
+  type ClaudeCodeRecordedKind,
 } from './paths.js';
 import { redactClaudeCode } from './redact.js';
 
@@ -796,7 +797,7 @@ function configElement(
 function symlinkElement(
   origin: NativeOrigin,
   scope: string,
-  kind: string,
+  kind: ClaudeCodeRecordedKind,
   path: string,
 ): ObservedElement {
   return buildObservedElement({
@@ -826,7 +827,7 @@ function unsupportedElement(origin: NativeOrigin, scope: string, path: string): 
 function unreadableElement(
   origin: NativeOrigin,
   scope: string,
-  kind: string,
+  kind: ClaudeCodeRecordedKind,
   path: string,
 ): ObservedElement {
   return buildObservedElement({
@@ -897,7 +898,7 @@ function arrayLength(value: unknown): number {
 function skippedElement(
   origin: NativeOrigin,
   scope: string,
-  kind: string,
+  kind: ClaudeCodeRecordedKind,
   path: string,
   reason: ObservedReason,
 ): ObservedElement {
@@ -915,7 +916,7 @@ function skippedElement(
 function skippedNonRegularElement(
   origin: NativeOrigin,
   scope: string,
-  kind: string,
+  kind: ClaudeCodeRecordedKind,
   path: string,
 ): ObservedElement {
   return skippedElement(origin, scope, kind, path, 'non-regular-file-not-opened');

@@ -108,3 +108,27 @@ export const KNOWN_ELEMENT_KINDS = [
 ] as const;
 
 export type ClaudeCodeElementKind = (typeof KNOWN_ELEMENT_KINDS)[number];
+
+/**
+ * The kind a settings file falls back to when it cannot be read or parsed: a
+ * deliberate best-effort value, not a known kind. It stays out of
+ * `KNOWN_ELEMENT_KINDS` so the classifier's kind-coverage check does not demand
+ * a facet mapping for it (roadmap M9 #131). The shared observed-element boundary
+ * still takes a `string`, which is the separate design #131 leaves open.
+ */
+export const FALLBACK_ELEMENT_KINDS = ['settings'] as const;
+export type ClaudeCodeFallbackKind = (typeof FALLBACK_ELEMENT_KINDS)[number];
+
+/** The kind recorded for an item inside a known area the adapter cannot classify. */
+export const UNKNOWN_ELEMENT_KIND = 'unknown' as const;
+
+/**
+ * Every kind an element builder may carry: a known kind, the explicit fallback,
+ * or the explicit unknown. A bare `string` is no longer accepted, so a typo at a
+ * known-kind call site is a compile error rather than a different `ElementId`
+ * (roadmap M9 #131).
+ */
+export type ClaudeCodeRecordedKind =
+  | ClaudeCodeElementKind
+  | ClaudeCodeFallbackKind
+  | typeof UNKNOWN_ELEMENT_KIND;

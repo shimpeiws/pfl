@@ -17,49 +17,56 @@ import type { RuntimeAdapter } from './types.js';
  * The only module allowed to import concrete RuntimeAdapters. Everything else
  * must go through `getAdapter(id)`, so the core stays adapter-agnostic
  * (design doc §8).
+ *
+ * Registering a runtime is **one entry here**, carrying the adapter factory, its
+ * display name, and its per-scope consent groups together (roadmap M9 #92).
+ * Previously these were three parallel records keyed by the same string with no
+ * link between them, so forgetting one surfaced at runtime when a user ran the
+ * command. One record makes an incomplete entry — a missing field — a compile
+ * error. To add a runtime: create its adapter, export its `RUNTIME_NAME` and
+ * `CONSENT_GROUPS`, and add a single entry below. The registry stays internal and
+ * is not in `package.json` `exports` (the CLI-and-schema-only contract).
  */
-const ADAPTERS: Record<string, () => RuntimeAdapter> = {
-  'claude-code': () => new ClaudeCodeAdapter(),
-  codex: () => new CodexAdapter(),
+interface RuntimeRegistration {
+  create: () => RuntimeAdapter;
+  runtimeName: string;
+  /** Consent locations per scope, owned by the adapter (design doc §24). */
+  consentGroups: Record<ConsentScope, readonly ConsentLocationGroup[]>;
+}
+
+const REGISTRY: Record<string, RuntimeRegistration> = {
+  'claude-code': {
+    create: () => new ClaudeCodeAdapter(),
+    runtimeName: CLAUDE_CODE_RUNTIME_NAME,
+    consentGroups: CLAUDE_CODE_CONSENT_GROUPS,
+  },
+  codex: {
+    create: () => new CodexAdapter(),
+    runtimeName: CODEX_RUNTIME_NAME,
+    consentGroups: CODEX_CONSENT_GROUPS,
+  },
 };
 
 export function getAdapter(id: string): RuntimeAdapter {
-  const factory = ADAPTERS[id];
-  if (!factory) {
+  const entry = REGISTRY[id];
+  if (!entry) {
     throw new PflError(`unknown runtime: ${id}`, EXIT_CODES.RUNTIME_UNSUPPORTED);
   }
-  return factory();
+  return entry.create();
 }
 
 export function listRuntimeIds(): string[] {
-  return Object.keys(ADAPTERS);
+  return Object.keys(REGISTRY);
 }
-
-/** Consent locations per runtime and scope, owned by the adapters (design doc §24). */
-const CONSENT: Record<
-  string,
-  { runtimeName: string; groups: Record<ConsentScope, readonly ConsentLocationGroup[]> }
-> = {
-  'claude-code': {
-    runtimeName: CLAUDE_CODE_RUNTIME_NAME,
-    groups: CLAUDE_CODE_CONSENT_GROUPS,
-  },
-  codex: { runtimeName: CODEX_RUNTIME_NAME, groups: CODEX_CONSENT_GROUPS },
-};
-
-const RUNTIME_NAMES: Record<string, string> = {
-  'claude-code': CLAUDE_CODE_RUNTIME_NAME,
-  codex: CODEX_RUNTIME_NAME,
-};
 
 /** Human-readable runtime name for rendering (design doc §26); falls back to the id. */
 export function getRuntimeName(id: string): string {
-  return RUNTIME_NAMES[id] ?? id;
+  return REGISTRY[id]?.runtimeName ?? id;
 }
 
 /** Builds the consent request for one runtime + scope (roadmap M8 #81). */
 export function getConsentRequest(id: string, scope: ConsentScope = 'user'): ConsentRequest {
-  const entry = CONSENT[id];
+  const entry = REGISTRY[id];
   if (!entry) {
     throw new PflError(`unknown runtime: ${id}`, EXIT_CODES.RUNTIME_UNSUPPORTED);
   }
@@ -67,6 +74,6 @@ export function getConsentRequest(id: string, scope: ConsentScope = 'user'): Con
     runtimeId: runtimeId(id),
     runtimeName: entry.runtimeName,
     scope,
-    groups: entry.groups[scope],
+    groups: entry.consentGroups[scope],
   };
 }
