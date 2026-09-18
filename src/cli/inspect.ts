@@ -8,7 +8,7 @@ import type { ResolvedSnapshot, ResolvedStatus } from '../core/resolved.js';
 import { resolveAccessPolicy, type ConsentIO } from '../discovery/consent.js';
 import { resolveProjectContext } from '../discovery/project-identity.js';
 import { resolveHarness } from '../resolution/resolver.js';
-import { getAdapter, getConsentRequest } from '../runtime/registry.js';
+import { getAdapter, getClassifierContribution, getConsentRequest } from '../runtime/registry.js';
 import { allowsOutsideProject, type RuntimeDetection } from '../runtime/types.js';
 import { resolveStoredProjectId } from '../snapshot/project-index.js';
 import { SNAPSHOT_SCHEMA_VERSION } from '../snapshot/serialization.js';
@@ -125,12 +125,13 @@ export async function runInspect(
   const diagnostics = [...stored.diagnostics, ...observed.diagnostics, ...resolved.diagnostics];
   let interpretationId: string | undefined;
   try {
+    const { mappings, findingKinds } = getClassifierContribution();
     const interpretation: Interpretation = {
       schemaVersion: SNAPSHOT_SCHEMA_VERSION,
       interpretationId: generateInterpretationId(),
       resolvedSnapshotId: resolved.snapshotId,
-      ...classify(observed, resolved),
-      findings: deriveFindings(observed, resolved),
+      ...classify(observed, resolved, mappings),
+      findings: deriveFindings(observed, resolved, findingKinds),
     };
     await writeInterpretation(project.id, interpretation, home);
     interpretationId = interpretation.interpretationId;

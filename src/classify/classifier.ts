@@ -1,12 +1,12 @@
 import type { HarnessFacet } from '../core/facets.js';
 import type {
-  ClassificationConfidence,
   ElementInterpretation,
   HarnessStats,
   Interpretation,
 } from '../core/interpretation.js';
 import type { ObservedElement, ObservedSnapshot } from '../core/observed.js';
 import type { ResolvedSnapshot } from '../core/resolved.js';
+import { CORE_FACET_MAPPINGS, type FacetMappings } from './mappings.js';
 
 /**
  * Deterministic, local, LLM-free semantic classification (design doc §6, §21).
@@ -16,107 +16,34 @@ import type { ResolvedSnapshot } from '../core/resolved.js';
  * classification is imperfect, and an element the table does not know gets
  * `unknown` confidence rather than a guessed facet.
  *
- * The mapping is data-driven: adding a facet or changing a mapping is a table
- * edit plus a `CLASSIFIER_VERSION` bump. Interpretations are recomputed rather
- * than persisted, so a mapping change does not invalidate stored data.
+ * The mapping is data-driven and now adapter-owned (roadmap M9 #91): the runtime
+ * registry merges each adapter's contribution over `CORE_FACET_MAPPINGS`, so an
+ * adapter introduces a kind without editing this module. Changing a mapping, a
+ * contributed mapping included, is a `CLASSIFIER_VERSION` bump.
  */
 
 export const CLASSIFIER_ID = 'pfl-native';
 export const CLASSIFIER_VERSION = '4';
 
-interface FacetMapping {
-  facets: readonly HarnessFacet[];
-  confidence: ClassificationConfidence;
-  reason: string;
-}
-
-/**
- * Native kind -> facets. Facets are additive; an unknown kind is recorded as
- * unclassified, never guessed. `runtime-provided-instructions` is mapped but its
- * contents are opaque, so its confidence is `unknown`.
- */
-const FACETS_BY_KIND: Record<string, FacetMapping> = {
-  instructions: { facets: ['instructions'], confidence: 'high', reason: 'defines agent behavior' },
-  'fallback-instructions': {
-    facets: ['instructions'],
-    confidence: 'medium',
-    reason: 'highest-precedence instruction file (replaces AGENTS.md in its directory)',
-  },
-  rules: { facets: ['instructions'], confidence: 'medium', reason: 'instruction-like rule' },
-  skills: {
-    facets: ['knowledge', 'actions'],
-    confidence: 'medium',
-    reason: 'consultable capability the agent can invoke',
-  },
-  commands: { facets: ['actions'], confidence: 'high', reason: 'invokable command' },
-  subagents: { facets: ['delegation'], confidence: 'high', reason: 'delegates work to a subagent' },
-  plugin: {
-    facets: ['knowledge', 'actions', 'delegation'],
-    confidence: 'medium',
-    reason: 'supplies skills, commands, agents, or hooks',
-  },
-  hooks: {
-    facets: ['controls'],
-    confidence: 'high',
-    reason: 'event pipeline that shapes trajectory',
-  },
-  permissions: { facets: ['controls'], confidence: 'high', reason: 'constrains tool use' },
-  'approval-policy': { facets: ['controls'], confidence: 'high', reason: 'constrains approval' },
-  'approval-sandbox': {
-    facets: ['controls'],
-    confidence: 'high',
-    reason: 'constrains approval and sandboxing',
-  },
-  'shell-environment': {
-    facets: ['controls'],
-    confidence: 'medium',
-    reason: 'shapes the environment the agent sees',
-  },
-  'project-configuration': {
-    facets: ['controls'],
-    confidence: 'medium',
-    reason: 'project trust and approval configuration',
-  },
-  'output-style': { facets: ['instructions'], confidence: 'medium', reason: 'shapes output style' },
-  'mcp-configuration': {
-    facets: ['actions'],
-    confidence: 'medium',
-    reason: 'provides external capabilities',
-  },
-  memory: { facets: ['memory'], confidence: 'high', reason: 'persistent carried-forward state' },
-  'model-configuration': {
-    facets: ['controls'],
-    confidence: 'medium',
-    reason: 'selects the model and reasoning behavior',
-  },
-  'compaction-controls': {
-    facets: ['controls'],
-    confidence: 'medium',
-    reason: 'controls context and compaction',
-  },
-  'runtime-provided-instructions': {
-    facets: ['instructions'],
-    confidence: 'unknown',
-    reason: 'runtime-provided layer; contents are opaque',
-  },
-};
-
 /**
  * Native kinds deliberately left without a facet mapping, so a kind the table
- * does not know is recorded as unclassified rather than guessed. Empty while
- * every kind an adapter declares has a deterministic mapping; a kind added
- * without a row must be named here or the kind-coverage test fails.
+ * does not know is recorded as unclassified rather than guessed. A kind added
+ * without a mapping must be named here or the kind-coverage test fails.
  */
 export const UNCLASSIFIED_KINDS: ReadonlySet<string> = new Set<string>();
 
-/** Whether `kind` has a deterministic facet mapping in `FACETS_BY_KIND`. */
-export function classifiedKind(kind: string): boolean {
-  return Object.hasOwn(FACETS_BY_KIND, kind);
+/** Whether `kind` has a deterministic facet mapping in `mappings`. */
+export function classifiedKind(
+  kind: string,
+  mappings: FacetMappings = CORE_FACET_MAPPINGS,
+): boolean {
+  return Object.hasOwn(mappings, kind);
 }
 
 export function classify(
   observed: ObservedSnapshot,
   resolved: ResolvedSnapshot,
+  mappings: FacetMappings = CORE_FACET_MAPPINGS,
 ): Pick<Interpretation, 'classifier' | 'elements' | 'stats'> {
   const observedById = new Map<string, ObservedElement>(
     observed.elements.map((element) => [element.id, element]),
@@ -131,7 +58,9 @@ export function classify(
   ]);
 
   const elements: ElementInterpretation[] = [...ids]
-    .map((id) => classifyElement(id as ElementInterpretation['elementId'], observedById.get(id)))
+    .map((id) =>
+      classifyElement(id as ElementInterpretation['elementId'], observedById.get(id), mappings),
+    )
     .sort((a, b) => (a.elementId < b.elementId ? -1 : a.elementId > b.elementId ? 1 : 0));
 
   return {
@@ -144,6 +73,7 @@ export function classify(
 function classifyElement(
   elementId: ElementInterpretation['elementId'],
   observed: ObservedElement | undefined,
+  mappings: FacetMappings,
 ): ElementInterpretation {
   if (observed === undefined) {
     return {
@@ -153,7 +83,7 @@ function classifyElement(
       reason: 'no matching observed element for this resolved id',
     };
   }
-  const mapping = FACETS_BY_KIND[observed.native.kind];
+  const mapping = mappings[observed.native.kind];
   if (mapping === undefined) {
     return {
       elementId,

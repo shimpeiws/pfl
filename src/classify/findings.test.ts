@@ -244,3 +244,31 @@ describe('deriveFindings', () => {
     expect(messages).not.toMatch(/\b(good|bad|better|worse|recommended|roi)\b/i);
   });
 });
+
+describe('adapter-declared finding kinds (roadmap M9 #91)', () => {
+  it('fires broad-tool-access for a kind the adapter declares as permissions', () => {
+    const pair = makePair('guardrails', 'config/guardrails.json', {
+      metadata: { allowCount: BROAD_TOOL_ACCESS_MIN_ALLOW },
+    });
+    const { observed, resolved } = snapshots([pair]);
+
+    const findings = deriveFindings(observed, resolved, {
+      instruction: ['instructions'],
+      memory: ['memory'],
+      permission: ['guardrails'],
+    });
+
+    expect(findings.map((finding) => finding.rule)).toContain('broad-tool-access');
+  });
+
+  it('does not fire broad-tool-access for a kind not declared as permissions', () => {
+    const pair = makePair('guardrails', 'config/guardrails.json', {
+      metadata: { allowCount: BROAD_TOOL_ACCESS_MIN_ALLOW },
+    });
+    const { observed, resolved } = snapshots([pair]);
+
+    const findings = deriveFindings(observed, resolved);
+
+    expect(findings.map((finding) => finding.rule)).not.toContain('broad-tool-access');
+  });
+});

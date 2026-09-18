@@ -8,6 +8,7 @@ import type { ObservedSnapshot } from '../core/observed.js';
 import type { ResolvedSnapshot } from '../core/resolved.js';
 import { hasAnyUserConsent } from '../discovery/consent.js';
 import { resolveProjectContext } from '../discovery/project-identity.js';
+import { getClassifierContribution } from '../runtime/registry.js';
 import { resolveStoredProjectId } from '../snapshot/project-index.js';
 import { SNAPSHOT_SCHEMA_VERSION } from '../snapshot/serialization.js';
 import {
@@ -100,12 +101,13 @@ function recomputeInterpretation(
   observed: ObservedSnapshot,
   resolved: ResolvedSnapshot,
 ): Interpretation {
+  const { mappings, findingKinds } = getClassifierContribution();
   return {
     schemaVersion: SNAPSHOT_SCHEMA_VERSION,
     interpretationId: generateInterpretationId(),
     resolvedSnapshotId: resolved.snapshotId,
-    ...classify(observed, resolved),
-    findings: deriveFindings(observed, resolved),
+    ...classify(observed, resolved, mappings),
+    findings: deriveFindings(observed, resolved, findingKinds),
   };
 }
 

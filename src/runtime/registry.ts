@@ -1,6 +1,21 @@
+import {
+  CORE_FACET_MAPPINGS,
+  mergeFacetMappings,
+  mergeFindingKinds,
+  type FacetMappings,
+  type FindingKinds,
+} from '../classify/mappings.js';
 import { EXIT_CODES, PflError } from '../cli/exit-codes.js';
 import { runtimeId } from '../core/ids.js';
 import type { ConsentLocationGroup, ConsentRequest, ConsentScope } from '../discovery/consent.js';
+import {
+  FACET_MAPPINGS as CLAUDE_CODE_FACET_MAPPINGS,
+  FINDING_KINDS as CLAUDE_CODE_FINDING_KINDS,
+} from './claude-code/classify.js';
+import {
+  FACET_MAPPINGS as CODEX_FACET_MAPPINGS,
+  FINDING_KINDS as CODEX_FINDING_KINDS,
+} from './codex/classify.js';
 import { ClaudeCodeAdapter } from './claude-code/index.js';
 import {
   CONSENT_GROUPS as CLAUDE_CODE_CONSENT_GROUPS,
@@ -60,6 +75,26 @@ export function getAdapter(id: string): RuntimeAdapter {
 
 export function listRuntimeIds(): string[] {
   return Object.keys(REGISTRY);
+}
+
+/**
+ * The semantic contribution of every registered adapter: its kind-to-facet
+ * mappings and the kinds its findings rules key on, merged over the core table
+ * (roadmap M9 #91). The classifier and findings consume this, so an adapter
+ * introduces a kind without editing `src/classify/`.
+ */
+export function getClassifierContribution(): {
+  mappings: FacetMappings;
+  findingKinds: FindingKinds;
+} {
+  return {
+    mappings: mergeFacetMappings(
+      CORE_FACET_MAPPINGS,
+      CLAUDE_CODE_FACET_MAPPINGS,
+      CODEX_FACET_MAPPINGS,
+    ),
+    findingKinds: mergeFindingKinds(CLAUDE_CODE_FINDING_KINDS, CODEX_FINDING_KINDS),
+  };
 }
 
 /** Human-readable runtime name for rendering (design doc §26); falls back to the id. */
