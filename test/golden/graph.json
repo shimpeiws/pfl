@@ -11,8 +11,8 @@
     }
   ],
   "data": {
-    "observedSnapshotId": "obs_0123456789ab",
-    "resolvedSnapshotId": "res_0123456789ab",
+    "observedSnapshotId": "obs_ID",
+    "resolvedSnapshotId": "res_ID",
     "nodes": [
       {
         "id": "el_0123456789abcdef",
@@ -22,7 +22,9 @@
         "scope": "project",
         "status": "effective",
         "inspectability": "observable",
-        "facets": ["instructions"]
+        "facets": [
+          "instructions"
+        ]
       }
     ],
     "edges": [],

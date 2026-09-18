@@ -18,7 +18,9 @@
         "kind": "instructions",
         "origin": "project",
         "status": "effective",
-        "facets": ["instructions"]
+        "facets": [
+          "instructions"
+        ]
       }
     ],
     "interpretation": {

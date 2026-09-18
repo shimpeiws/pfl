@@ -15,9 +15,9 @@
     "keep": 20,
     "retained": [
       {
-        "observedId": "obs_0123456789ab",
-        "resolvedId": "res_0123456789ab",
-        "interpretationId": "int_0123456789ab"
+        "observedId": "obs_ID",
+        "resolvedId": "res_ID",
+        "interpretationId": "int_ID"
       }
     ],
     "reclaimed": [],

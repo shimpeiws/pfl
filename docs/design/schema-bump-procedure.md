@@ -42,16 +42,18 @@ Two things are explicitly **not** shape changes and do not bump:
    version from the supported list in the same change: keeping it is what lets a
    new binary read the history it is supposed to adopt.
 3. **Keep the reader permissive for older versions.** A narrowed validator would
-   reject an artifact an older reader accepted. Where validation differs by
-   version, thread the parsed `schemaVersion` into the validator rather than
-   using the current version's set for all of them.
+   reject an artifact an older reader accepted. The validators are version-
+   independent today; the first time one must differ by version, thread the
+   parsed `schemaVersion` into it rather than applying the current version's set
+   to all of them.
 4. **Add a read-compatibility fixture**: a stored artifact at the previous
    version, under `test/fixtures/schema/`, read by the current binary in
-   `test/integration/schema-freeze.test.ts`. A bump is proven not to break
-   reading, not assumed.
+   `test/golden/freeze.test.ts` (the `legacy-*` fixture). A bump is proven not to
+   break reading, not assumed.
 5. **Refresh the golden files** under `test/golden/` for the representative
-   stored snapshot and for each command's `--json` document. A shape change is
-   visible in review only if the goldens move with it.
+   stored snapshot (the canonical fixture bytes) and for each command's `--json`
+   document, including `inspect`. A shape change is visible in review only if the
+   goldens move with it.
 6. **Write the change down**: update this document's history and, when the
    change is a compatibility event, an ADR.
 

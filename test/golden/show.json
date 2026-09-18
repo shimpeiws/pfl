@@ -42,7 +42,9 @@
     "interpretation": {
       "confidence": "high",
       "elementId": "el_0123456789abcdef",
-      "facets": ["instructions"],
+      "facets": [
+        "instructions"
+      ],
       "reason": "defines agent behavior"
     },
     "relations": [],

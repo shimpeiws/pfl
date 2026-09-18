@@ -8,11 +8,13 @@ import { EXIT_CODES, PflError } from '../../src/cli/exit-codes.js';
 import { runDiff } from '../../src/cli/diff.js';
 import { runGc } from '../../src/cli/gc.js';
 import { runGraph } from '../../src/cli/graph.js';
+import { runInspect } from '../../src/cli/inspect.js';
 import { runList } from '../../src/cli/list.js';
 import { runReport } from '../../src/cli/report.js';
 import { runShow } from '../../src/cli/show.js';
 import { runSnapshots } from '../../src/cli/snapshots.js';
 import { resolveProjectContext } from '../../src/discovery/project-identity.js';
+import { projectIndexPath, readProjectIndex } from '../../src/snapshot/project-index.js';
 import { serializeSnapshot } from '../../src/snapshot/serialization.js';
 import {
   interpretationsDir,
@@ -22,6 +24,7 @@ import {
   snapshotsDir,
 } from '../../src/snapshot/store.js';
 import type { Logger } from '../../src/util/logger.js';
+import { materialize } from '../fixtures/materialize.js';
 
 /**
  * The schema-freeze golden files (roadmap M8 #88). A representative stored
@@ -74,14 +77,23 @@ beforeAll(async () => {
   );
 });
 
-function normalize(envelope: Envelope): unknown {
-  // Replace the values that legitimately vary between runs: the package version
-  // and the temp project's id, root, and display name.
+function normalize(envelope: Envelope, extra: ReadonlyArray<readonly [string, string]> = []): unknown {
+  // Replace the values that legitimately vary between runs: the package version,
+  // random snapshot ids, and the temp project's id, root, and display name.
   let text = JSON.stringify(envelope);
-  text = text.split(projectId).join('PROJECT_ID');
-  text = text.split(projectRoot).join('PROJECT_ROOT');
-  text = text.split(basename(projectRoot)).join('PROJECT_NAME');
-  text = text.replace(/"pflVersion":"[^"]*"/, '"pflVersion":"VERSION"');
+  for (const [from, to] of [
+    [projectId, 'PROJECT_ID'],
+    [projectRoot, 'PROJECT_ROOT'],
+    [basename(projectRoot), 'PROJECT_NAME'],
+    ...extra,
+  ] as ReadonlyArray<readonly [string, string]>) {
+    if (from !== '') text = text.split(from).join(to);
+  }
+  text = text
+    .replace(/"pflVersion":"[^"]*"/g, '"pflVersion":"VERSION"')
+    .replace(/obs_[0-9a-f]{12}/g, 'obs_ID')
+    .replace(/res_[0-9a-f]{12}/g, 'res_ID')
+    .replace(/int_[0-9a-f]{12}/g, 'int_ID');
   return JSON.parse(text) as unknown;
 }
 
@@ -144,7 +156,7 @@ describe('frozen CLI documents', () => {
 });
 
 describe('read compatibility', () => {
-  it('reads a schema-1 artifact written by the previous version', async () => {
+  it('reads an older artifact shape that omits optional fields', async () => {
     const legacyHome = await mkdtemp(join(tmpdir(), 'pfl-golden-legacy-'));
     try {
       await mkdir(observationsDir('proj', legacyHome), { recursive: true });
@@ -163,18 +175,67 @@ describe('read compatibility', () => {
       await rm(legacyHome, { recursive: true, force: true });
     }
   });
+
+  it('reads the project index schema fixture', async () => {
+    const indexHome = await mkdtemp(join(tmpdir(), 'pfl-golden-index-'));
+    try {
+      await mkdir(join(indexHome, '.pfl'), { recursive: true });
+      await writeFile(
+        projectIndexPath(indexHome),
+        await readFile(join(FIXTURES, 'index.json')),
+      );
+
+      const index = await readProjectIndex(indexHome);
+
+      expect(index).toEqual({
+        indexVersion: '1',
+        projects: { '/repo': 'path-0123456789abcdef' },
+      });
+    } finally {
+      await rm(indexHome, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('inspect golden', () => {
+  it('captures the inspect document from a fixture harness', async () => {
+    const m = await materialize('claude');
+    try {
+      const outcome = await runInspect(
+        m.projectRoot,
+        {
+          runtime: 'claude-code',
+          home: m.home,
+          pathValue: '',
+          interactive: false,
+          allowScopes: ['claude-code:user', 'claude-code:install'],
+        },
+        silent,
+      );
+      const inspectProjectId = (await resolveProjectContext(m.projectRoot)).id;
+      const value = normalize(buildDocument('inspect', outcome, { home: m.home }), [
+        [m.home, 'FIXTURE_HOME'],
+        [m.projectRoot, 'FIXTURE_ROOT'],
+        [m.base, 'FIXTURE_BASE'],
+        // The runtime encodes the project root with `/` as `-` in its own
+        // layout, so the encoded base is replaced too.
+        [m.base.replace(/\//g, '-'), 'FIXTURE_BASE_ENCODED'],
+        [inspectProjectId, 'FIXTURE_PROJECT'],
+      ]);
+      await golden('inspect', value);
+    } finally {
+      await rm(m.base, { recursive: true, force: true });
+    }
+  });
 });
 
 describe('stored snapshot golden', () => {
-  it('round-trips the representative snapshot through canonical serialization', async () => {
+  it('serializes each fixture back to the exact canonical bytes', async () => {
     for (const name of ['observed', 'resolved', 'interpretation']) {
       const text = await readFile(join(FIXTURES, `${name}.json`), 'utf8');
-      const parsed = JSON.parse(text) as never;
-      // Canonical form is part of the contract (ADR 0001): serializing, parsing,
-      // and serializing again is stable, independent of the file's own
-      // formatting (the repo's formatter pretty-prints the fixture).
-      const once = serializeSnapshot(parsed);
-      expect(serializeSnapshot(JSON.parse(once) as never), name).toBe(once);
+      // The fixture is the golden: canonical form is part of the contract
+      // (ADR 0001), so the writer must reproduce the file byte for byte.
+      expect(serializeSnapshot(JSON.parse(text) as never), name).toBe(text);
     }
   });
 });
