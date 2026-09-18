@@ -1,6 +1,7 @@
 import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { assembleObservedSnapshot } from '../../discovery/assemble.js';
+import { duplicateNameGroups } from '../../discovery/duplicate-names.js';
 import { frontmatterMetadata, readFrontmatter } from '../../discovery/frontmatter.js';
 import { filterToAllowlist } from '../../discovery/metadata.js';
 import { buildObservedElement } from '../../discovery/observed-element.js';
@@ -67,6 +68,82 @@ const USER_PREFIX = '~/.codex';
 const builders = createElementBuilders<CodexRecordedKind>(RUNTIME_ID);
 const { symlinkElement, unreadableElement, skippedElement, skippedNonRegularElement } = builders;
 
+/** The kinds that form a named catalog, where a cross-scope collision is possible. */
+const CATALOG_KINDS: ReadonlySet<string> = new Set(['skills']);
+
+/** The catalog name an element contributes, when it is a named catalog entry. */
+function catalogIdentity(element: ObservedElement): { kind: string; name: string } | null {
+  if (element.status !== 'observed') return null;
+  const kind = element.native.kind;
+  if (!CATALOG_KINDS.has(kind)) return null;
+  const path = element.source.path;
+  if (path === undefined) return null;
+
+  if (path.endsWith('/SKILL.md')) {
+    const segments = path.split('/');
+    return { kind, name: segments[segments.length - 2] as string };
+  }
+  const name = basename(path);
+  const dot = name.lastIndexOf('.');
+  return { kind, name: dot > 0 ? name.slice(0, dot) : name };
+}
+
+/**
+ * Emits one diagnostic per catalog name defined more than once. Codex resolves
+ * duplicate skill names deterministically, so the diagnostic records the fact
+ * without asserting a winner. Mixed plugin + non-plugin groups are split so
+ * non-plugin collisions are still reported.
+ */
+function detectDuplicateNames(
+  elements: readonly ObservedElement[],
+  diagnostics: Diagnostic[],
+): void {
+  const groups = duplicateNameGroups(elements, catalogIdentity);
+  for (const { kind, name, entries, pluginOnly, hasPlugin } of groups) {
+    // Mixed plugin + non-plugin: only suppress for skills (where plugin
+    // namespacing is verified). Codex currently only has skills as a catalog
+    // kind, so this guard is always true here.
+    if (hasPlugin && !pluginOnly && kind === 'skills') {
+      const nonPluginEntries = entries.filter((e) => e.origin !== 'plugin');
+      const pluginEntries = entries.filter((e) => e.origin === 'plugin');
+
+      if (nonPluginEntries.length > 1) {
+        const joined = nonPluginEntries.map((e) => e.path).join(', ');
+        diagnostics.push({
+          severity: 'warning',
+          code: 'duplicate-element-name',
+          message: `${kind} name "${name}" is defined more than once (${joined})`,
+          ...(nonPluginEntries[0] !== undefined ? { path: nonPluginEntries[0].path } : {}),
+        });
+      }
+      if (pluginEntries.length > 1) {
+        const joined = pluginEntries.map((e) => e.path).join(', ');
+        diagnostics.push({
+          severity: 'warning',
+          code: 'duplicate-element-name',
+          message: `plugin ${kind} name "${name}" is defined more than once (${joined}); this may be one plugin installed at more than one path`,
+          ...(pluginEntries[0] !== undefined ? { path: pluginEntries[0].path } : {}),
+        });
+      }
+      continue;
+    }
+
+    const joined = entries.map((e) => e.path).join(', ');
+    diagnostics.push({
+      severity: 'warning',
+      code: 'duplicate-element-name',
+      ...(pluginOnly
+        ? {
+            message: `plugin ${kind} name "${name}" is defined more than once (${joined}); this may be one plugin installed at more than one path`,
+          }
+        : {
+            message: `${kind} name "${name}" is defined more than once (${joined})`,
+          }),
+      ...(entries[0] !== undefined ? { path: entries[0].path } : {}),
+    });
+  }
+}
+
 export async function discoverCodex(
   project: ProjectContext,
   access: AccessPolicy,
@@ -118,6 +195,8 @@ export async function collectCodexHarness(
     });
   }
   elements.push(builtinLayer(RUNTIME_ID, '(builtin) codex instruction layers'));
+
+  detectDuplicateNames(elements, diagnostics);
 
   return assembleObservedSnapshot({
     project: toObservedProject(project),

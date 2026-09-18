@@ -647,3 +647,60 @@ describe('Codex element kinds (M7 Phase 4)', () => {
     expect(USER_DIR_KIND.rules).toBe('rules');
   });
 });
+
+describe('duplicate catalog names', () => {
+  it('emits a diagnostic when a skill name exists in both project and user scope', async () => {
+    const base = await tempDir('pfl-codex-dup-');
+    const root = join(base, 'project');
+    const home = join(base, 'home');
+    const configDir = userConfigDir(home);
+    await mkdir(join(root, '.codex', 'skills', 'foo'), { recursive: true });
+    await mkdir(join(configDir, 'skills', 'foo'), { recursive: true });
+
+    await writeFile(join(root, '.codex', 'skills', 'foo', 'SKILL.md'), '# Project foo\n');
+    await writeFile(join(configDir, 'skills', 'foo', 'SKILL.md'), '# User foo\n');
+
+    const snapshot = await collectCodexHarness(
+      { id: 'proj', displayName: 'owner/repo', root, remote: 'github.com/owner/repo' },
+      CONSENTED,
+      home,
+    );
+
+    const duplicate = snapshot.diagnostics.find(
+      (d) => d.code === 'duplicate-element-name' && d.message.includes('"foo"'),
+    );
+    expect(duplicate).toBeDefined();
+    expect(duplicate?.message).toContain('.codex/skills/foo/SKILL.md');
+    expect(duplicate?.message).toContain('~/.codex/skills/foo/SKILL.md');
+    expect(duplicate?.message).not.toContain('plugin');
+    expect(duplicate?.message).not.toContain('not deterministic');
+  });
+
+  it('does not count a skipped symlink as a competing definition', async () => {
+    const base = await tempDir('pfl-codex-dup-sym-');
+    const root = join(base, 'project');
+    const home = join(base, 'home');
+    const configDir = userConfigDir(home);
+    const outside = join(base, 'outside');
+    await mkdir(join(root, '.codex', 'skills', 'foo'), { recursive: true });
+    await mkdir(join(configDir, 'skills', 'foo'), { recursive: true });
+    await mkdir(outside, { recursive: true });
+
+    await writeFile(join(root, '.codex', 'skills', 'foo', 'SKILL.md'), '# Project foo\n');
+    await symlink(
+      join('..', '..', 'outside', 'foo-skill'),
+      join(configDir, 'skills', 'foo', 'SKILL.md'),
+    );
+
+    const snapshot = await collectCodexHarness(
+      { id: 'proj', displayName: 'owner/repo', root, remote: 'github.com/owner/repo' },
+      CONSENTED,
+      home,
+    );
+
+    const duplicate = snapshot.diagnostics.find(
+      (d) => d.code === 'duplicate-element-name' && d.message.includes('"foo"'),
+    );
+    expect(duplicate).toBeUndefined();
+  });
+});

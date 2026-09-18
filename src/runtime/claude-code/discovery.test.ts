@@ -728,3 +728,233 @@ describe('collectClaudeCodeHarness symlinked settings (S1)', () => {
     expect(paths.has('.claude/settings.json#permissions')).toBe(false);
   });
 });
+
+describe('duplicate catalog names', () => {
+  it('emits a diagnostic when a skill name exists in both project and user scope', async () => {
+    const base = await tempDir('pfl-claude-dup-');
+    const root = join(base, 'project');
+    const home = join(base, 'home');
+    await mkdir(join(root, '.claude', 'skills', 'foo'), { recursive: true });
+    await mkdir(join(userConfigDir(home), 'skills', 'foo'), { recursive: true });
+
+    await writeFile(join(root, '.claude', 'skills', 'foo', 'SKILL.md'), '# Project foo\n');
+    await writeFile(join(userConfigDir(home), 'skills', 'foo', 'SKILL.md'), '# User foo\n');
+
+    const snapshot = await collectClaudeCodeHarness(
+      { id: 'proj', displayName: 'owner/repo', root, remote: 'github.com/owner/repo' },
+      CONSENTED,
+      home,
+    );
+
+    const duplicate = snapshot.diagnostics.find(
+      (d) => d.code === 'duplicate-element-name' && d.message.includes('"foo"'),
+    );
+    expect(duplicate).toBeDefined();
+    expect(duplicate?.message).toContain('.claude/skills/foo/SKILL.md');
+    expect(duplicate?.message).toContain('~/.claude/skills/foo/SKILL.md');
+    expect(duplicate?.message).not.toContain('plugin');
+    expect(duplicate?.message).not.toContain('not deterministic');
+  });
+
+  it('does not emit a diagnostic when user and plugin share a skill name (namespaced)', async () => {
+    const base = await tempDir('pfl-claude-dup-ns-');
+    const root = join(base, 'project');
+    const home = join(base, 'home');
+    await mkdir(userConfigDir(home), { recursive: true });
+    await mkdir(join(userConfigDir(home), 'skills', 'foo'), { recursive: true });
+    await mkdir(join(userConfigDir(home), 'plugins', 'market', 'plug', 'skills', 'foo'), {
+      recursive: true,
+    });
+
+    await writeFile(join(userConfigDir(home), 'skills', 'foo', 'SKILL.md'), '# User foo\n');
+    await writeFile(
+      join(userConfigDir(home), 'plugins', 'market', 'plug', 'skills', 'foo', 'SKILL.md'),
+      '# Plugin foo\n',
+    );
+
+    const snapshot = await collectClaudeCodeHarness(
+      { id: 'proj', displayName: 'owner/repo', root, remote: 'github.com/owner/repo' },
+      CONSENTED,
+      home,
+    );
+
+    const duplicate = snapshot.diagnostics.find(
+      (d) => d.code === 'duplicate-element-name' && d.message.includes('"foo"'),
+    );
+    expect(duplicate).toBeUndefined();
+  });
+
+  it('emits a non-plugin diagnostic even when a plugin shares the same name', async () => {
+    const base = await tempDir('pfl-claude-dup-mixed-');
+    const root = join(base, 'project');
+    const home = join(base, 'home');
+    await mkdir(join(root, '.claude', 'skills', 'foo'), { recursive: true });
+    await mkdir(join(userConfigDir(home), 'skills', 'foo'), { recursive: true });
+    await mkdir(join(userConfigDir(home), 'plugins', 'market', 'plug', 'skills', 'foo'), {
+      recursive: true,
+    });
+
+    await writeFile(join(root, '.claude', 'skills', 'foo', 'SKILL.md'), '# Project foo\n');
+    await writeFile(join(userConfigDir(home), 'skills', 'foo', 'SKILL.md'), '# User foo\n');
+    await writeFile(
+      join(userConfigDir(home), 'plugins', 'market', 'plug', 'skills', 'foo', 'SKILL.md'),
+      '# Plugin foo\n',
+    );
+
+    const snapshot = await collectClaudeCodeHarness(
+      { id: 'proj', displayName: 'owner/repo', root, remote: 'github.com/owner/repo' },
+      CONSENTED,
+      home,
+    );
+
+    const nonPluginDuplicate = snapshot.diagnostics.find(
+      (d) =>
+        d.code === 'duplicate-element-name' &&
+        d.message.includes('"foo"') &&
+        !d.message.includes('plugin'),
+    );
+    expect(nonPluginDuplicate).toBeDefined();
+    expect(nonPluginDuplicate?.message).toContain('.claude/skills/foo/SKILL.md');
+    expect(nonPluginDuplicate?.message).toContain('~/.claude/skills/foo/SKILL.md');
+  });
+
+  it('emits a plugin-only diagnostic when two plugin paths share a skill name', async () => {
+    const base = await tempDir('pfl-claude-dup-plug-');
+    const root = join(base, 'project');
+    const home = join(base, 'home');
+    await mkdir(userConfigDir(home), { recursive: true });
+    await mkdir(join(userConfigDir(home), 'plugins', 'cache', 'plug', 'skills', 'x'), {
+      recursive: true,
+    });
+    await mkdir(join(userConfigDir(home), 'plugins', 'market', 'plug', 'skills', 'x'), {
+      recursive: true,
+    });
+
+    await writeFile(
+      join(userConfigDir(home), 'plugins', 'cache', 'plug', 'skills', 'x', 'SKILL.md'),
+      '# Cache skill\n',
+    );
+    await writeFile(
+      join(userConfigDir(home), 'plugins', 'market', 'plug', 'skills', 'x', 'SKILL.md'),
+      '# Market skill\n',
+    );
+
+    const snapshot = await collectClaudeCodeHarness(
+      { id: 'proj', displayName: 'owner/repo', root, remote: 'github.com/owner/repo' },
+      CONSENTED,
+      home,
+    );
+
+    const duplicate = snapshot.diagnostics.find(
+      (d) => d.code === 'duplicate-element-name' && d.message.includes('"x"'),
+    );
+    expect(duplicate).toBeDefined();
+    expect(duplicate?.message).toContain('plugin');
+    expect(duplicate?.message).toContain('one plugin installed at more than one path');
+  });
+
+  it('does not count a skipped symlink as a competing definition', async () => {
+    const base = await tempDir('pfl-claude-dup-sym-');
+    const root = join(base, 'project');
+    const home = join(base, 'home');
+    const outside = join(base, 'outside');
+    await mkdir(join(root, '.claude', 'skills', 'foo'), { recursive: true });
+    await mkdir(join(userConfigDir(home), 'skills', 'foo'), { recursive: true });
+    await mkdir(outside, { recursive: true });
+
+    await writeFile(join(root, '.claude', 'skills', 'foo', 'SKILL.md'), '# Project foo\n');
+    await symlink(
+      join('..', '..', 'outside', 'foo-skill'),
+      join(userConfigDir(home), 'skills', 'foo', 'SKILL.md'),
+    );
+
+    const snapshot = await collectClaudeCodeHarness(
+      { id: 'proj', displayName: 'owner/repo', root, remote: 'github.com/owner/repo' },
+      CONSENTED,
+      home,
+    );
+
+    const duplicate = snapshot.diagnostics.find(
+      (d) => d.code === 'duplicate-element-name' && d.message.includes('"foo"'),
+    );
+    expect(duplicate).toBeUndefined();
+  });
+
+  it('detects duplicate command names across scopes', async () => {
+    const base = await tempDir('pfl-claude-dup-cmd-');
+    const root = join(base, 'project');
+    const home = join(base, 'home');
+    await mkdir(join(root, '.claude', 'commands'), { recursive: true });
+    await mkdir(join(userConfigDir(home), 'commands'), { recursive: true });
+
+    await writeFile(join(root, '.claude', 'commands', 'deploy.md'), '# Project deploy\n');
+    await writeFile(join(userConfigDir(home), 'commands', 'deploy.md'), '# User deploy\n');
+
+    const snapshot = await collectClaudeCodeHarness(
+      { id: 'proj', displayName: 'owner/repo', root, remote: 'github.com/owner/repo' },
+      CONSENTED,
+      home,
+    );
+
+    const duplicate = snapshot.diagnostics.find(
+      (d) => d.code === 'duplicate-element-name' && d.message.includes('"deploy"'),
+    );
+    expect(duplicate).toBeDefined();
+    expect(duplicate?.message).toContain('commands');
+  });
+
+  it('detects duplicate subagent names across scopes', async () => {
+    const base = await tempDir('pfl-claude-dup-agent-');
+    const root = join(base, 'project');
+    const home = join(base, 'home');
+    await mkdir(join(root, '.claude', 'agents'), { recursive: true });
+    await mkdir(join(userConfigDir(home), 'agents'), { recursive: true });
+
+    await writeFile(join(root, '.claude', 'agents', 'reviewer.md'), '# Project reviewer\n');
+    await writeFile(join(userConfigDir(home), 'agents', 'reviewer.md'), '# User reviewer\n');
+
+    const snapshot = await collectClaudeCodeHarness(
+      { id: 'proj', displayName: 'owner/repo', root, remote: 'github.com/owner/repo' },
+      CONSENTED,
+      home,
+    );
+
+    const duplicate = snapshot.diagnostics.find(
+      (d) => d.code === 'duplicate-element-name' && d.message.includes('"reviewer"'),
+    );
+    expect(duplicate).toBeDefined();
+    expect(duplicate?.message).toContain('subagents');
+  });
+
+  it('does not suppress mixed group for subagents (namespacing unverified)', async () => {
+    const base = await tempDir('pfl-claude-dup-agent-mix-');
+    const root = join(base, 'project');
+    const home = join(base, 'home');
+    await mkdir(join(root, '.claude', 'agents'), { recursive: true });
+    await mkdir(join(userConfigDir(home), 'agents'), { recursive: true });
+    await mkdir(join(userConfigDir(home), 'plugins', 'market', 'plug', 'agents'), {
+      recursive: true,
+    });
+
+    await writeFile(join(root, '.claude', 'agents', 'reviewer.md'), '# Project reviewer\n');
+    await writeFile(join(userConfigDir(home), 'agents', 'reviewer.md'), '# User reviewer\n');
+    await writeFile(
+      join(userConfigDir(home), 'plugins', 'market', 'plug', 'agents', 'reviewer.md'),
+      '# Plugin reviewer\n',
+    );
+
+    const snapshot = await collectClaudeCodeHarness(
+      { id: 'proj', displayName: 'owner/repo', root, remote: 'github.com/owner/repo' },
+      CONSENTED,
+      home,
+    );
+
+    const nonPluginDuplicate = snapshot.diagnostics.find(
+      (d) =>
+        d.code === 'duplicate-element-name' &&
+        d.message.includes('"reviewer"') &&
+        !d.message.includes('plugin'),
+    );
+    expect(nonPluginDuplicate).toBeDefined();
+  });
+});
