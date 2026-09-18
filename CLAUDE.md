@@ -42,8 +42,13 @@ v1.0's OpenCode milestone (**M9**) is complete: the shared adapter scaffold was
 extracted, the semantic layer (facet mappings and finding kinds) opened to
 adapters, adapter registration unified, and the OpenCode adapter added end to
 end. Its read paths join the M6 inventory and the choke-point test runs over the
-extended inventory. M10 (release preparation) remains; it carries the items M6
-deferred plus the OpenCode model reconciliation (#144). See
+extended inventory.
+
+v1.0's release-preparation milestone (**M10**) is complete: the governance files,
+platform declaration, and stability guarantees are published; CI runs on macOS
+and Linux with coverage; the release workflow exercises a release candidate with
+a dry-run publish; and the OpenCode model was reconciled with the installed
+1.18.31 (adapter aligned as #149–#151). See
 `docs/design/pfl-roadmap-v1.0.md`.
 
 ## Commands

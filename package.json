@@ -1,6 +1,6 @@
 {
   "name": "@shimpeiws/pfl",
-  "version": "1.0.0-rc.1",
+  "version": "1.0.0",
   "description": "Pre-Flight Listen for coding-agent harnesses: static inspection of Claude Code, Codex, and OpenCode harness configuration.",
   "keywords": [
     "agent",
