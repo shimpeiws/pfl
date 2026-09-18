@@ -489,7 +489,7 @@ OpenCode model therefore has a
 | Commands               | `command(s)/<name>.md`                                                           | [installed: measured] (§0 step 10; 1.18.31 only) |
 | Skills                 | `skill(s)/<name>/SKILL.md`                                                       | [installed: measured] (§0 step 10 on 1.18.31; the 1.18.30 same-name record's `global` winner shows the user-scope copy loaded) |
 | Plugins (local)        | `plugin(s)/*.ts`, `plugin(s)/*.js` (auto-discovered; no config entry needed)     | [installed: self-described]            |
-| Modes (legacy)         | `mode(s)/`                                                                       | [installed: self-described] |
+| Modes (legacy)         | `mode(s)/`                                                                      | [installed: self-described]; §12 corrected: a project `mode/<name>.md` loads as a primary agent |
 | Tools                  | `tool(s)/`                                                                       | [installed: self-described] |
 | Themes (UI)            | `theme(s)/`                                                                      | [installed: self-described] |
 | Cross-runtime skills   | `~/.claude/skills/<name>/SKILL.md`, `~/.agents/skills/<name>/SKILL.md`           | [installed: self-described]            |
@@ -643,7 +643,7 @@ and their contents are not digested:
 | Surface | Declared target | `pfl` treatment |
 | ------- | --------------- | --------------- |
 | `instructions` array (§4.1, §4.2) | path, glob, absolute path, or URL | Recorded as an `instructions` element carrying the declaring layer's `origin` and `inspectability: 'opaque'`. The target is **not** opened, whatever it names: an in-project path, a `../` escape, an absolute path and a URL all get the same treatment. |
-| `references` (§6, §7) | local directory, glob, or Git repository | Recorded as a `references` element, `inspectability: 'opaque'`. Nothing under the directory is walked and no repository is fetched. |
+| `references` (§6, §7) | an object keyed by alias: `{ path }` or `{ repository, branch }`, or a string shorthand (§12) | Recorded as a `references` element, `inspectability: 'opaque'`. Nothing under the directory is walked and no repository is fetched. |
 
 Consequences, stated plainly:
 
@@ -823,7 +823,7 @@ controls` (`src/core/facets.ts:6`). Mapping the OpenCode kinds found:
 | project config scalars (`share`, `snapshot`, `autoupdate`, `default_agent`, `subagent_depth`, `watcher`, `username`) | `project-configuration` (existing) | `controls` |
 | local/npm plugins                      | `plugin` (existing)                                                              | `knowledge`, `actions`, `delegation`, `controls` |
 | custom tools (`tool(s)/`, `tools` key) | `tools` (new kind; M9)                                                           | `actions`                      |
-| `references` (local dirs / git repos)  | `references` (new kind; M9)                                                      | `knowledge`                    |
+| `references` (object keyed by alias, §12)  | `references` (new kind; M9)                                                    | `knowledge`                    |
 | `formatter`, `lsp`                     | `tooling-configuration` (new kind; M9)                                           | `controls`                     |
 | Built-in instruction and skill layer (`customize-opencode`) | `runtime-provided-instructions` (existing)                    | `instructions` (opaque)        |
 | Built-in agents (`build`, `plan`, `general`, `explore`; hidden `compaction`, `title`, `summary`) and built-in tools | **not modelled** as elements | — |
@@ -1043,16 +1043,68 @@ assumption.
    OpenCode actually uses to reach them, and how M9's inventory enumerates them.
    Stated this way so the mandatory security review starts from the full set
    without re-litigating the classification.
-6. **Reconciling this document with 1.18.31.** The header records the drift. The
-   §0 probe has since been re-run on 1.18.31 and the surfaces it reaches
-   re-checked: §0's exercised list names them and marks the ones first measured on
-   1.18.31. Among the re-measured surfaces, §6's collision winner proved
-   non-deterministic, so §6 now records its runs per binary and keeps the runs
-   taken before the subshell fix in Appendix A. What remains undone is the rest of
-   the
-   reconciliation — every **[upstream]** row and every **[installed: measured]**
-   row that §0 does not list as exercised still stands on the source it names,
-   which is 1.18.30 — and §10 makes that the prerequisite M9 inherits.
+6. **Reconciling this document with 1.18.31 — run 2026-09-18 (see §12).** The
+   header records the drift. The §0 probe has since been re-run on 1.18.31 and
+   the surfaces it reaches re-checked: §0's exercised list names them and marks
+   the ones first measured on 1.18.31. Among the re-measured surfaces, §6's
+   collision winner proved non-deterministic, so §6 now records its runs per
+   binary and keeps the runs taken before the subshell fix in Appendix A. The
+   rest of the reconciliation — every `[upstream]` row and every
+   `[installed: measured]` row that §0 does not list as exercised — was run as
+   an extended isolated probe on the installed 1.18.31 on 2026-09-18; §12
+   records the corrections, the confirmations, and the rows that remain
+   self-described because no command exposes them. §10 made this the
+   prerequisite M9 inherited; M9 implemented the pre-reconciliation rows, so
+   §12's adapter consequences are tracked as #149–#151.
+
+## 12. Reconciliation with the installed 1.18.31 (2026-09-18)
+
+§10 made this reconciliation due when the host moved to 1.18.31. It was run on
+2026-09-18 against the installed binary (`opencode --version` → `1.18.31`) with
+an extended isolated probe (`HOME`/`XDG_*`/`TMPDIR` redirected, all
+`OPENCODE_CONFIG*` unset) that exercised the surfaces §0 lists as **not
+exercised**. Everything below is [installed: measured] on 1.18.31 unless a row
+says otherwise. The schema conclusion of §9 is unchanged: the corrections are to
+layout rows, and no row requires a new `NativeOrigin`.
+
+### Corrections and confirmations
+
+| Where | Was | On 1.18.31 |
+| --- | --- | --- |
+| §4 plural element dirs | [upstream] — plural spellings documented, unexercised | **Accepted.** `agents/`, `commands/`, `skills/` load in both scopes; `debug config` lists an `agents/plurmark.md` agent and `debug skill` lists a `skills/plurmark/SKILL.md` skill beside the singular copies |
+| §4.1/§7 `mode(s)/` | legacy; M9 records `unsupported` | **Corrected: a project `.opencode/mode/<name>.md` loads as a primary agent.** The resolved `agent` map lists it with `"mode": "primary"`. The global `~/.config/opencode/mode/` file was **not** observed in the same run, so the global row stays unconfirmed. Adapter follow-up: #149 |
+| §5.2/§7 `references` | local directories or Git repositories, shape unspecified | **Corrected: an object keyed by alias.** `{ "path": … }` or `{ "repository": …, "branch": … }`, plus optional `description`/`hidden`, and a string shorthand; an **array is rejected** as invalid config. Still declared, never opened. Adapter follow-up: #150 |
+| §4/§7 `skills` key | absent | **New surface: `skills = { paths, urls }`.** A skill under `skills.paths` (`./extra-skills/extraskill/SKILL.md`) was loaded. These are declared, never-opened skill sources. Adapter follow-up: #151 |
+| §2/#8 MCP, `.mcp.json` co-present | unexercised | **Confirmed not a source.** With a config `mcp` and a `.mcp.json` present together, the resolved `mcp` key held only the config file's servers |
+| §4.1/§4.2 cross-runtime skills | [installed: self-described] | **Accepted.** Project `.claude/skills` and `.agents/skills`, and user `~/.claude/skills` and `~/.agents/skills`, all load |
+| §4.2 `AGENTS.md` walk, `CLAUDE.md` fallback | [installed: self-described] | **Not re-observed.** No `debug` subcommand exposes loaded instruction files, so this stays self-described rather than measured |
+| §6 `permission` | allow/ask/deny, pattern objects | Pattern objects are valid for most keys (`bash: { "git *": "allow", "*": "ask" }`); a fixed set (`webfetch`, `websearch`, `todowrite`, `question`, `doom_loop`) accepts only a flat action — measured by invalid-config rejection |
+| §2 config shapes | — | `command.<name>` requires `template`; `lsp.<name>` requires `command`; `agent` `mode` is `primary|subagent|all`; a project `.opencode/opencode.json` overrides a project-root `opencode.jsonc`; invalid config (including an unknown top-level key) is rejected, re-confirmed |
+| §5.3 execution context | `OPENCODE_CONFIG*` | The built-in skill adds `OPENCODE_DISABLE_PROJECT_CONFIG`, `OPENCODE_DISABLE_DEFAULT_PLUGINS`, `OPENCODE_PURE`, `OPENCODE_DISABLE_EXTERNAL_SKILLS`, `OPENCODE_DISABLE_CLAUDE_CODE_SKILLS`; all execution context, not reads |
+
+### What did not change
+
+- **Verified versions.** The set stays `1.18.0`, `1.18.30`, `1.18.31`
+  (`src/runtime/opencode/detect.ts`). This host confirms 1.18.31; the other two
+  remain the prior evidence §0 records.
+- **Opaque encoding.** The remote organizational-defaults layer and the macOS
+  MDM plist remain `unknown`/`managed` with `inspectability: 'opaque'`; neither
+  was observable on this host. The built-in layer stays one opaque
+  `runtime-provided-instructions` element, now with its `customize-opencode`
+  body captured as evidence of the compiled-in layer.
+- **Declared targets are not reads.** §12's `references` and `skills.paths`
+  corrections refine *shapes*; both remain declarations `pfl` records and never
+  opens, and neither enters the #94 read-path inventory.
+
+### Adapter consequence
+
+The M9 adapter was implemented against this document as it stood before this
+pass, so three surfaces are now known to be under- or mis-modelled:
+`mode(s)/` recorded `unsupported` though the runtime loads it as primary agents
+(#149); `references` read as an array so its real object form is recorded
+`unsupported` (#150); and the `skills` key recorded as an unknown key rather than
+as declared sources (#151). These are adapter changes with their own tests and
+reviews; this reconciliation changes no `src/` file.
 
 ## Appendix A — 1.18.31 runs excluded from §6's count
 
