@@ -10,11 +10,12 @@ disagree, the design doc is right.
 
 ## Status
 
-v0.1. Static inspection is implemented end to end for `claude-code` and `codex`:
-discovery, four-dimension resolution, the deterministic facet classifier and
-descriptive findings, immutable snapshot storage, and rendering (`inspect`,
-`report`, `list`, `show`, `graph`, `diff`, `snapshots`). M4b (inferred graph) and
-M5 (Analyzer integration) remain deferred; see `docs/design/pfl-design-v0.1.md`.
+v0.1. Static inspection is implemented end to end for `claude-code`, `codex`,
+and `opencode`: discovery, four-dimension resolution, the deterministic facet
+classifier and descriptive findings, immutable snapshot storage, and rendering
+(`inspect`, `report`, `list`, `show`, `graph`, `diff`, `snapshots`). M4b
+(inferred graph) and M5 (Analyzer integration) remain deferred; see
+`docs/design/pfl-design-v0.1.md`.
 
 v1.0's security-hardening milestone (**M6**) is complete: reads outside the
 project are consent-gated and fail closed, symlinks and hardlinks are never
@@ -30,8 +31,19 @@ Claude Code and Codex adapters reach their real discovery surfaces (managed
 scope, `.mcp.json`, plugins, hooks, the `CLAUDE.md`/`AGENTS.md` trees,
 project-scoped skills, and the full `config.toml` section surface); and kind
 assignments, dead kinds, version handling, and the classification and findings
-gaps are settled. M8 (interfaces and schema freeze), M9 (OpenCode adapter), and
-M10 (release preparation) remain; M8 and M10 carry the items M6 deferred. See
+gaps are settled.
+
+v1.0's interface-and-schema milestone (**M8**) is complete: stored artifacts and
+the command documents are frozen, interpretations are persisted, the version
+knobs and root index/gc are in place, and consent is split into scopes with a
+headless grant path and a single choke point.
+
+v1.0's OpenCode milestone (**M9**) is complete: the shared adapter scaffold was
+extracted, the semantic layer (facet mappings and finding kinds) opened to
+adapters, adapter registration unified, and the OpenCode adapter added end to
+end. Its read paths join the M6 inventory and the choke-point test runs over the
+extended inventory. M10 (release preparation) remains; it carries the items M6
+deferred plus the OpenCode model reconciliation (#144). See
 `docs/design/pfl-roadmap-v1.0.md`.
 
 ## Commands
