@@ -34,6 +34,7 @@
       },
       "id": "el_0fc92802d8f84176",
       "resolution": {
+        "reason": "accumulates with the other layers",
         "strategy": "accumulate"
       },
       "status": "effective"

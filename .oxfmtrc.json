@@ -12,6 +12,6 @@
     "pnpm-lock.yaml",
     "docs/design/**/*.md",
     "test/fixtures/schema",
-    "test/golden"
+    "test/golden/*.json"
   ]
 }

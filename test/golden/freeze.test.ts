@@ -11,6 +11,7 @@ import type { ObservedElement } from '../../src/core/observed.js';
 import type { ResolvedElement } from '../../src/core/resolved.js';
 import { assembleObservedSnapshot } from '../../src/discovery/assemble.js';
 import { assembleResolvedSnapshot } from '../../src/resolution/assemble.js';
+import { resolveElement } from '../../src/resolution/resolver.js';
 import { EXIT_CODES, PflError } from '../../src/cli/exit-codes.js';
 import { runDiff } from '../../src/cli/diff.js';
 import { runGc } from '../../src/cli/gc.js';
@@ -83,13 +84,14 @@ function buildObserved() {
 
 function buildResolved() {
   const observed = buildObserved();
-  const element: ResolvedElement = {
+  // Build the element through the real resolver, so its `status` and
+  // `resolution.reason` are the producer's output and are frozen too.
+  const element: ResolvedElement = resolveElement({
     id: ELEMENT_ID,
-    status: 'effective',
     applicability: { type: 'project' },
+    strategy: 'accumulate',
     activation: 'always',
-    resolution: { strategy: 'accumulate' },
-  };
+  });
   return assembleResolvedSnapshot({
     observed,
     elements: [element],
@@ -256,10 +258,7 @@ describe('read compatibility', () => {
     const indexHome = await mkdtemp(join(tmpdir(), 'pfl-golden-index-'));
     try {
       await mkdir(join(indexHome, '.pfl'), { recursive: true });
-      await writeFile(
-        projectIndexPath(indexHome),
-        await readFile(join(FIXTURES, 'index.json')),
-      );
+      await writeFile(projectIndexPath(indexHome), await readFile(join(FIXTURES, 'index.json')));
 
       const index = await readProjectIndex(indexHome);
 
@@ -303,7 +302,6 @@ describe('inspect golden', () => {
           [canonicalBase, 'FIXTURE_CANON_BASE'],
           [m.projectRoot, 'FIXTURE_ROOT'],
           [m.base, 'FIXTURE_BASE'],
-          [m.home, 'FIXTURE_HOME'],
           [inspectProjectId, 'FIXTURE_PROJECT'],
         ],
         true,
