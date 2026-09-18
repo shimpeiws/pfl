@@ -54,11 +54,11 @@
     "versionNotes": [],
     "interpretation": {
       "a": {
-        "classifierVersion": "4",
+        "classifierVersion": "5",
         "origin": "stored"
       },
       "b": {
-        "classifierVersion": "4",
+        "classifierVersion": "5",
         "origin": "stored"
       }
     }

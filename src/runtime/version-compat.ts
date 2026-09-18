@@ -73,3 +73,55 @@ export function versionPosition(version: string | null, range: VersionRange): Ve
 export function isWithinRange(version: string | null, range: VersionRange): boolean {
   return versionPosition(version, range) === 'within';
 }
+
+/**
+ * A **discrete** set of verified versions, for a runtime whose verified evidence
+ * names exact versions rather than a floor and ceiling (OpenCode: 1.18.0,
+ * 1.18.30, 1.18.31 — model doc §0). A `VersionRange` is continuous, so encoding
+ * a set as a range would claim every version between the members was verified.
+ * Membership is by normalized `major.minor.patch`.
+ */
+export interface VersionSet {
+  /** Normalized versions; order does not matter. */
+  versions: readonly string[];
+}
+
+/** Whether `version` is one of the verified versions, normalized. */
+export function isVersionInSet(version: string | null, set: VersionSet): boolean {
+  if (version === null) return false;
+  const parsed = parseVersion(version);
+  if (parsed === null) return false;
+  const normalized = formatVersion(parsed);
+  return set.versions.some((candidate) => {
+    const member = parseVersion(candidate);
+    return member !== null && formatVersion(member) === normalized;
+  });
+}
+
+/**
+ * Where a version sits relative to a discrete verified set: `within` when it is
+ * a member, `below` below the lowest member, `above` above the highest, and
+ * `unknown` when it falls inside the numeric span without being a verified
+ * member. The last case is deliberately not `within`: a version between two
+ * verified members is not itself verified (design doc §17, model doc §0).
+ */
+export function versionSetPosition(version: string | null, set: VersionSet): VersionPosition {
+  const parsed = version === null ? null : parseVersion(version);
+  if (parsed === null) return 'unknown';
+  if (isVersionInSet(version, set)) return 'within';
+
+  const members = set.versions
+    .map((candidate) => parseVersion(candidate))
+    .filter((candidate): candidate is ParsedVersion => candidate !== null);
+  if (members.length === 0) return 'unknown';
+
+  let lowest = members[0] as ParsedVersion;
+  let highest = members[0] as ParsedVersion;
+  for (const member of members) {
+    if (compareVersions(member, lowest) < 0) lowest = member;
+    if (compareVersions(member, highest) > 0) highest = member;
+  }
+  if (compareVersions(parsed, lowest) < 0) return 'below';
+  if (compareVersions(parsed, highest) > 0) return 'above';
+  return 'unknown';
+}

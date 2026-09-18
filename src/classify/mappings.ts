@@ -20,9 +20,14 @@ export interface FacetMapping {
 export type FacetMappings = Record<string, FacetMapping>;
 
 /**
- * Kinds two runtimes spell the same way, plus the shared opaque builtin layer.
- * `runtime-provided-instructions` is mapped but its contents are opaque, so its
- * confidence is `unknown`.
+ * Kinds more than one runtime spells the same way, plus the shared opaque
+ * builtin layer. `runtime-provided-instructions` is mapped but its contents are
+ * opaque, so its confidence is `unknown`.
+ *
+ * A kind that only one adapter emits stays in that adapter's contribution;
+ * promoting it here is what makes the registry merge deterministic, because two
+ * adapters contributing the same spelling would otherwise shadow each other
+ * silently under `Object.assign`.
  */
 export const CORE_FACET_MAPPINGS: FacetMappings = {
   instructions: { facets: ['instructions'], confidence: 'high', reason: 'defines agent behavior' },
@@ -49,6 +54,32 @@ export const CORE_FACET_MAPPINGS: FacetMappings = {
     reason: 'provides external capabilities',
   },
   memory: { facets: ['memory'], confidence: 'high', reason: 'persistent carried-forward state' },
+  commands: { facets: ['actions'], confidence: 'high', reason: 'invokable command' },
+  subagents: {
+    facets: ['delegation'],
+    confidence: 'high',
+    reason: 'delegates work to a subagent',
+  },
+  'model-configuration': {
+    facets: ['controls'],
+    confidence: 'medium',
+    reason: 'selects the model and model-related behavior',
+  },
+  'compaction-controls': {
+    facets: ['controls'],
+    confidence: 'medium',
+    reason: 'controls context and compaction',
+  },
+  'shell-environment': {
+    facets: ['controls'],
+    confidence: 'medium',
+    reason: 'shapes the environment the agent sees',
+  },
+  'project-configuration': {
+    facets: ['controls'],
+    confidence: 'medium',
+    reason: 'project-level runtime configuration',
+  },
   'runtime-provided-instructions': {
     facets: ['instructions'],
     confidence: 'unknown',

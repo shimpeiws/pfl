@@ -1,6 +1,11 @@
 import type { FacetMappings, FindingKinds } from '../../classify/mappings.js';
 
-/** The Codex kinds the core table does not carry (roadmap M9 #91). */
+/**
+ * The Codex kinds the core table does not carry (roadmap M9 #91).
+ * `model-configuration`, `compaction-controls`, `shell-environment`, and
+ * `project-configuration` moved to the core table once OpenCode spelled them
+ * too; only Codex's own `fallback-instructions` and `approval-sandbox` remain.
+ */
 export const FACET_MAPPINGS: FacetMappings = {
   'fallback-instructions': {
     facets: ['instructions'],
@@ -11,26 +16,6 @@ export const FACET_MAPPINGS: FacetMappings = {
     facets: ['controls'],
     confidence: 'high',
     reason: 'constrains approval and sandboxing',
-  },
-  'shell-environment': {
-    facets: ['controls'],
-    confidence: 'medium',
-    reason: 'shapes the environment the agent sees',
-  },
-  'project-configuration': {
-    facets: ['controls'],
-    confidence: 'medium',
-    reason: 'project trust and approval configuration',
-  },
-  'model-configuration': {
-    facets: ['controls'],
-    confidence: 'medium',
-    reason: 'selects the model and reasoning behavior',
-  },
-  'compaction-controls': {
-    facets: ['controls'],
-    confidence: 'medium',
-    reason: 'controls context and compaction',
   },
 };
 

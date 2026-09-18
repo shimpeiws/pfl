@@ -26,8 +26,12 @@ export interface ExternalInstall {
 export interface ExternalInstallSpec {
   /** Binary name as it appears in a bin directory (`claude`, `codex`). */
   binary: string;
-  /** npm package name under `<prefix>/lib/node_modules` (`@scope/name`). */
-  npmPackage: string;
+  /**
+   * npm package name under `<prefix>/lib/node_modules` (`@scope/name`). Omitted
+   * for a runtime whose published npm package name is not verified, so detection
+   * does not guess one and read a manifest that may not exist.
+   */
+  npmPackage?: string;
   /** Homebrew formula names under `<prefix>/Cellar`. */
   homebrewFormulae: readonly string[];
   /**
@@ -79,8 +83,10 @@ export async function readExternalInstall(
 
   const versions: VersionSource[] = [];
   for (const prefix of prefixes) {
-    const npmVersion = await readNpmVersion(prefix, spec.npmPackage);
-    if (npmVersion !== null) versions.push({ label: NPM_LABEL, version: npmVersion });
+    if (spec.npmPackage !== undefined) {
+      const npmVersion = await readNpmVersion(prefix, spec.npmPackage);
+      if (npmVersion !== null) versions.push({ label: NPM_LABEL, version: npmVersion });
+    }
     const homebrewVersion = await readHomebrewVersion(prefix, spec.homebrewFormulae);
     if (homebrewVersion !== null) {
       versions.push({ label: HOMEBREW_LABEL, version: homebrewVersion });

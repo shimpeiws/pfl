@@ -11,6 +11,7 @@ import type { ObservedElement, ObservedSnapshot } from '../core/observed.js';
 import type { ResolvedElement, ResolvedSnapshot, ResolvedStatus } from '../core/resolved.js';
 import { KNOWN_ELEMENT_KINDS as CLAUDE_CODE_KINDS } from '../runtime/claude-code/paths.js';
 import { KNOWN_ELEMENT_KINDS as CODEX_KINDS } from '../runtime/codex/paths.js';
+import { KNOWN_ELEMENT_KINDS as OPENCODE_KINDS } from '../runtime/opencode/paths.js';
 import { getClassifierContribution } from '../runtime/registry.js';
 import {
   CLASSIFIER_ID,
@@ -22,6 +23,7 @@ import {
 import { CORE_FACET_MAPPINGS, mergeFacetMappings } from './mappings.js';
 import { FACET_MAPPINGS as CLAUDE_MAPPINGS } from '../runtime/claude-code/classify.js';
 import { FACET_MAPPINGS as CODEX_MAPPINGS } from '../runtime/codex/classify.js';
+import { FACET_MAPPINGS as OPENCODE_MAPPINGS } from '../runtime/opencode/classify.js';
 
 const rid = runtimeId('claude-code');
 
@@ -128,6 +130,20 @@ describe('classify', () => {
 
     expect(element?.facets).toEqual(['instructions']);
     expect(element?.confidence).toBe('unknown');
+  });
+
+  it('downgrades a declared-but-opaque instruction to unknown confidence', () => {
+    const declared = makePair('instructions', 'opencode.json#instructions.0');
+    declared.observed = { ...declared.observed, inspectability: 'opaque' };
+    const { observed, resolved } = snapshots([declared.observed], [declared.resolved]);
+
+    const result = classify(observed, resolved, CONTRIBUTION.mappings);
+    const element = result.elements[0];
+
+    // The kind maps to `instructions`, but the target was never opened.
+    expect(element?.facets).toEqual(['instructions']);
+    expect(element?.confidence).toBe('unknown');
+    expect(element?.reason).toContain('opaque');
   });
 
   it('does not guess a facet for an unknown kind', () => {
@@ -260,7 +276,7 @@ describe('classify', () => {
 });
 
 describe('classifier kind coverage', () => {
-  const adapterKinds: readonly string[] = [...CLAUDE_CODE_KINDS, ...CODEX_KINDS];
+  const adapterKinds: readonly string[] = [...CLAUDE_CODE_KINDS, ...CODEX_KINDS, ...OPENCODE_KINDS];
 
   it('classifies or explicitly records every kind an adapter declares', () => {
     const uncovered = adapterKinds.filter(
@@ -310,11 +326,15 @@ describe('mapping tables (roadmap M9 #91)', () => {
     const core = Object.keys(CORE_FACET_MAPPINGS);
     const claude = Object.keys(CLAUDE_MAPPINGS);
     const codex = Object.keys(CODEX_MAPPINGS);
+    const opencode = Object.keys(OPENCODE_MAPPINGS);
 
     // A duplicate kind would shadow another table silently under Object.assign.
     expect(core.filter((kind) => claude.includes(kind))).toEqual([]);
     expect(core.filter((kind) => codex.includes(kind))).toEqual([]);
+    expect(core.filter((kind) => opencode.includes(kind))).toEqual([]);
     expect(claude.filter((kind) => codex.includes(kind))).toEqual([]);
+    expect(claude.filter((kind) => opencode.includes(kind))).toEqual([]);
+    expect(codex.filter((kind) => opencode.includes(kind))).toEqual([]);
   });
 
   it('declares every finding role kind in the merged mappings', () => {
