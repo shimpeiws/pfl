@@ -23,12 +23,12 @@ from the pre-reconciliation rows, and this change aligns the adapter:
 
 ## Trust-boundary check
 
-- **No new filesystem read.** The walk already opened a `mode(s)/` `.md` file
-  (its `selectFile` matched) and computed a digest; the pre-change
-  `unsupported: true` early-return discarded that digest. The file is not read a
-  second time — the already-computed digest and size are now persisted, and
-  `pushWalkedEntry`'s own `entry.digest` is the only source. So the change keeps
-  a fact the walk already produced.
+- **No new filesystem read.** The shared walk computes a digest for every
+  regular file it reads, independent of `extractFrontmatter` (that flag only
+  gates the optional metadata callback). A `mode(s)/` `.md` file was already read
+  and digested before this change; the pre-change `unsupported: true` early-return
+  discarded the digest, and the change now keeps it. The file is not read a
+  second time.
 - **One added bounded parse.** `mode(s)/` moved from `extractFrontmatter: false`
   to `true`, so a frontmatter parse now runs on those files. It is bounded by the
   same walk ceilings as every other element file (`MAX_FILE_BYTES` at the read,
@@ -70,7 +70,7 @@ which the `security-invariants` test pins.
 | 2   | High     | Adding `skills` to the modelled keys removed the visibility a malformed `skills` shape had as an unknown key                                                    | Fixed: unknown sub-keys and non-array `paths`/`urls` are recorded `unsupported`                                                             |
 | 3   | Low      | A `mode(s)/` element now persists a digest (and adds a frontmatter parse) it did not before                                                                     | Disclosed above: the file was already read and the digest computed; only the parse is new, and it is bounded                                |
 | 4   | Low      | Two long aliases sharing a truncated prefix could collide on `source.path`                                                                                      | Fixed: the fragment includes the entry index (`references.<i>.<alias>`)                                                                     |
-| 5   | Low      | Declaration arrays could be large                                                                                                                               | Already capped at `MAX_CONFIG_ITEMS` with a truncation diagnostic                                                                           |
+| 5   | Low      | Declaration arrays and the `skills` sub-key loop could be large                                                                                                 | Capped: `paths`/`urls` list entries and the sub-key loop both iterate `MAX_CONFIG_ITEMS` with a truncation diagnostic                       |
 
 ## Verification
 

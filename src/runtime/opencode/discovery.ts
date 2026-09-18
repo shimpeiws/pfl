@@ -846,15 +846,16 @@ function recordSkillSources(
     elements.push(unsupportedConfigKey(withFragment(displayPath, 'skills'), origin, scope));
     return;
   }
-  for (const [key, list] of Object.entries(value)) {
+  for (const [index, [key, list]] of cappedEntries(value, displayPath, diagnostics).entries()) {
     // Any sub-key the adapter does not model — including a `paths`/`urls` that
     // is not an array — is recorded rather than dropped, so adding `skills` to
     // the modelled keys does not remove the visibility the unknown-key sweep
-    // used to give (best-effort invariant).
+    // used to give (best-effort invariant). The index keeps an arbitrary
+    // sub-key's fragment unique after truncation.
     if (key !== 'paths' && key !== 'urls') {
       elements.push(
         unsupportedConfigKey(
-          withFragment(displayPath, capMetadataString(`skills.${key}`)),
+          withFragment(displayPath, capMetadataString(`skills.${index}.${key}`)),
           origin,
           scope,
         ),
@@ -1352,7 +1353,9 @@ function pluginIdentity(entry: unknown): { name?: string; kind?: string } {
         : undefined;
   if (raw === undefined) return {};
   if (BARE_PACKAGE_SPECIFIER.test(raw)) return { name: raw };
-  return { kind: referenceStringKind(raw) };
+  // A non-bare specifier is a relative/absolute path or a `file://` URL — never
+  // a repository — so the path-only classifier is used.
+  return { kind: referencePathKind(raw) };
 }
 
 function capMetadataString(value: string): string {

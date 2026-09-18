@@ -113,7 +113,7 @@ async function makeFixture(): Promise<Fixture> {
       '  "shell": "/bin/zsh",',
       '  "formatter": { "prettier": {} },',
       '  "lsp": { "typescript": {} },',
-      '  "plugin": ["opencode-plugin-foo", ["@scope/bar", { "x": 1 }]],',
+      '  "plugin": ["opencode-plugin-foo", ["@scope/bar", { "x": 1 }], "./local-plugin.ts"],',
       '  "tools": { "myTool": true },',
       `  "instructions": ["../shared/AGENTS.md", "https://example.com/p?token=${SECRET_SENTINEL}", "docs/*.md"],`,
       '  "references": {',
@@ -305,7 +305,9 @@ describe('collectOpencodeHarness config', () => {
     });
     expect(byPath(elements, '.opencode/opencode.jsonc#plugin').metadata).toMatchObject({
       pluginNames: ['opencode-plugin-foo', '@scope/bar'],
-      pluginCount: 2,
+      // A relative-path specifier is persisted as its kind, not a name.
+      pluginTargetKinds: ['path'],
+      pluginCount: 3,
     });
     expect(byPath(elements, '.opencode/opencode.jsonc#tools').metadata['toolNames']).toEqual([
       'myTool',
@@ -448,7 +450,7 @@ describe('collectOpencodeHarness config', () => {
     expect(byPath(observed.elements, 'opencode.json#skills.paths')).toMatchObject({
       status: 'unsupported',
     });
-    expect(byPath(observed.elements, 'opencode.json#skills.weird')).toMatchObject({
+    expect(byPath(observed.elements, 'opencode.json#skills.1.weird')).toMatchObject({
       status: 'unsupported',
     });
   });
