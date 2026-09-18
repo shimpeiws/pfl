@@ -44,6 +44,7 @@ import {
   USER_INSTRUCTION_FILE,
   userConfigDir,
   type CodexElementKind,
+  UNKNOWN_ELEMENT_KIND,
   type CodexRecordedKind,
 } from './paths.js';
 import { readTomlFacts, type TomlTable } from './toml.js';
@@ -796,7 +797,7 @@ function unsupportedConfigSection(path: string): ObservedElement {
     runtimeId: RUNTIME_ID,
     origin: 'user',
     scope: 'user',
-    kind: 'unknown',
+    kind: UNKNOWN_ELEMENT_KIND,
     path,
     status: 'unsupported',
     reason: 'unsupported-by-adapter',

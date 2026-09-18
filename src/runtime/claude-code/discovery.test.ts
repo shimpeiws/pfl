@@ -11,6 +11,7 @@ import {
   MANAGED_CONFIG_DIR,
   UNKNOWN_ELEMENT_KIND,
   encodeProjectDir,
+  type ClaudeCodeRecordedKind,
   userConfigDir,
 } from './paths.js';
 import { collectClaudeCodeHarness, managedConfigDirFor } from './discovery.js';
@@ -49,6 +50,12 @@ describe('element kind boundary', () => {
     }
   });
 });
+
+// A typo'd kind must not compile: if the union widened back to `string` this
+// directive would be unused, which is itself a compile error (roadmap #131).
+// @ts-expect-error
+const typoKind: ClaudeCodeRecordedKind = 'skils';
+void typoKind;
 
 const CONSENTED = { user: true, install: true, grantedScopes: ['claude-code:user'] };
 const DENIED = { user: false, install: false, grantedScopes: [] };

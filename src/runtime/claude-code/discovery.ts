@@ -44,6 +44,7 @@ import {
   encodeProjectDir,
   userConfigDir,
   type ClaudeCodeElementKind,
+  UNKNOWN_ELEMENT_KIND,
   type ClaudeCodeRecordedKind,
 } from './paths.js';
 import { redactClaudeCode } from './redact.js';
@@ -817,7 +818,7 @@ function unsupportedElement(origin: NativeOrigin, scope: string, path: string): 
     runtimeId: RUNTIME_ID,
     origin,
     scope,
-    kind: 'unknown',
+    kind: UNKNOWN_ELEMENT_KIND,
     path,
     status: 'unsupported',
     reason: 'unsupported-by-adapter',

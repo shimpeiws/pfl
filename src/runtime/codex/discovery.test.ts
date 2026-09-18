@@ -12,6 +12,7 @@ import {
   UNKNOWN_ELEMENT_KIND,
   USER_DIR_KIND,
   userConfigDir,
+  type CodexRecordedKind,
 } from './paths.js';
 import { resolveCodex } from './resolve.js';
 
@@ -46,6 +47,12 @@ describe('element kind boundary', () => {
     }
   });
 });
+
+// A typo'd kind must not compile: if the union widened back to `string` this
+// directive would be unused, which is itself a compile error (roadmap #131).
+// @ts-expect-error
+const typoKind: CodexRecordedKind = 'skils';
+void typoKind;
 
 const CONSENTED = { user: true, install: true, grantedScopes: ['codex:user'] };
 const DENIED = { user: false, install: false, grantedScopes: [] };

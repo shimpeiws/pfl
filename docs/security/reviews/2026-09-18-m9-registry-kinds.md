@@ -1,10 +1,12 @@
 # Security review — M9 registry unification and kind typing (#92, #131)
 
 - Date: 2026-09-18
-- Reviewer: pending the adversarial round
+- Reviewer: independent adversarial review (Claude Code CLI; the codex reviewer
+  was rate-limited) plus maintainer disposition.
 - Trigger: `src/runtime/claude-code/paths.ts` and `src/runtime/codex/paths.ts`
   changed (both are trust-boundary trigger paths).
-- Result: pending
+- Result: no trust-boundary impact; review findings were test-coverage and
+  documentation gaps, all remediated
 
 ## What changed
 
@@ -32,7 +34,20 @@ site is now a compile error rather than a silently different `ElementId`.
 
 ## Findings and disposition
 
-To be completed after the adversarial review.
+| #   | Severity | Finding                                                                                                                                                      | Disposition                                                                                                                                     |
+| --- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Medium   | The registry doc claimed an incomplete _registration_ is a compile error; it is an incomplete _entry_ that is, while a missing entry surfaces at runtime     | Fixed: the doc says "entry", and notes that `registry.test.ts` guards the key set                                                               |
+| 2   | Medium   | No test falsified the kind tightening; the positive suite only proves valid code compiles                                                                    | Fixed: a `@ts-expect-error` case in each adapter asserts a typo'd kind does not compile, and would itself fail if the union widened to `string` |
+| 3   | Low      | `unsupportedElement` hardcoded the `'unknown'` literal while the new `UNKNOWN_ELEMENT_KIND` constant was otherwise unused — a second source of truth         | Fixed: it references the constant                                                                                                               |
+| 4   | Low      | The codex path module lacked the "shared boundary still takes `string`" caveat the Claude one carries                                                        | Fixed                                                                                                                                           |
+| 5   | Info     | The claim "a typo at a known-kind call site is a compile error" holds for the builder helpers; `grep "kind: string"` finds none in production `src/runtime/` | Confirmed, no action                                                                                                                            |
+
+The review also confirmed there is no fourth parallel record keyed by runtime id
+outside the registry, and that the fallback (`settings`/`config`) and `unknown`
+classification behavior is unchanged (a pre-existing, separately tracked concern
+for #91).
+
+No finding was accepted as a risk.
 
 ## Verification
 

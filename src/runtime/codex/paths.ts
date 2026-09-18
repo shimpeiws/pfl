@@ -123,7 +123,8 @@ export type CodexElementKind = (typeof KNOWN_ELEMENT_KINDS)[number];
  * The kind `config.toml` falls back to when it cannot be read or parsed: a
  * deliberate best-effort value, not a known kind. It stays out of
  * `KNOWN_ELEMENT_KINDS` so the classifier's kind-coverage check does not demand
- * a facet mapping for it (roadmap M9 #131).
+ * a facet mapping for it (roadmap M9 #131). The shared observed-element boundary
+ * still takes a `string`, which is the separate design #131 leaves open.
  */
 export const FALLBACK_ELEMENT_KINDS = ['config'] as const;
 export type CodexFallbackKind = (typeof FALLBACK_ELEMENT_KINDS)[number];

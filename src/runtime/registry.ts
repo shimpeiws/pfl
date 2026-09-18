@@ -22,10 +22,13 @@ import type { RuntimeAdapter } from './types.js';
  * display name, and its per-scope consent groups together (roadmap M9 #92).
  * Previously these were three parallel records keyed by the same string with no
  * link between them, so forgetting one surfaced at runtime when a user ran the
- * command. One record makes an incomplete entry — a missing field — a compile
- * error. To add a runtime: create its adapter, export its `RUNTIME_NAME` and
- * `CONSENT_GROUPS`, and add a single entry below. The registry stays internal and
- * is not in `package.json` `exports` (the CLI-and-schema-only contract).
+ * command. One record makes an incomplete **entry** — a missing field — a compile
+ * error. It does not make a **missing entry** a compile error on its own; that is
+ * guarded by `registry.test.ts`, which asserts `listRuntimeIds()` against the
+ * registered set. To add a runtime: create its adapter, export its `RUNTIME_NAME`
+ * and `CONSENT_GROUPS`, add a single entry below, and extend that assertion. The
+ * registry stays internal and is not in `package.json` `exports` (the
+ * CLI-and-schema-only contract).
  */
 interface RuntimeRegistration {
   create: () => RuntimeAdapter;
