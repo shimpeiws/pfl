@@ -6,7 +6,7 @@ import type {
 } from '../core/interpretation.js';
 import type { ObservedElement, ObservedSnapshot } from '../core/observed.js';
 import type { ResolvedSnapshot } from '../core/resolved.js';
-import { CORE_FACET_MAPPINGS, type FacetMappings } from './mappings.js';
+import type { FacetMappings } from './mappings.js';
 
 /**
  * Deterministic, local, LLM-free semantic classification (design doc §6, §21).
@@ -33,17 +33,14 @@ export const CLASSIFIER_VERSION = '4';
 export const UNCLASSIFIED_KINDS: ReadonlySet<string> = new Set<string>();
 
 /** Whether `kind` has a deterministic facet mapping in `mappings`. */
-export function classifiedKind(
-  kind: string,
-  mappings: FacetMappings = CORE_FACET_MAPPINGS,
-): boolean {
+export function classifiedKind(kind: string, mappings: FacetMappings): boolean {
   return Object.hasOwn(mappings, kind);
 }
 
 export function classify(
   observed: ObservedSnapshot,
   resolved: ResolvedSnapshot,
-  mappings: FacetMappings = CORE_FACET_MAPPINGS,
+  mappings: FacetMappings,
 ): Pick<Interpretation, 'classifier' | 'elements' | 'stats'> {
   const observedById = new Map<string, ObservedElement>(
     observed.elements.map((element) => [element.id, element]),

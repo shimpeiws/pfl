@@ -3,7 +3,7 @@ import type { ElementId } from '../core/ids.js';
 import type { Finding } from '../core/interpretation.js';
 import type { ObservedElement, ObservedSnapshot } from '../core/observed.js';
 import type { ResolvedSnapshot } from '../core/resolved.js';
-import { CORE_FINDING_KINDS, type FindingKinds } from './mappings.js';
+import type { FindingKinds } from './mappings.js';
 
 /**
  * Descriptive findings (design doc §22). A finding states an observation about
@@ -24,7 +24,7 @@ export const BROAD_TOOL_ACCESS_MIN_ALLOW = 10;
 export function deriveFindings(
   observed: ObservedSnapshot,
   resolved: ResolvedSnapshot,
-  kinds: FindingKinds = CORE_FINDING_KINDS,
+  kinds: FindingKinds,
 ): Finding[] {
   const observedById = new Map<string, ObservedElement>(
     observed.elements.map((element) => [element.id, element]),

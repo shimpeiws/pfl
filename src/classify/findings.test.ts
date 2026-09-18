@@ -23,6 +23,10 @@ import {
   CONDITIONAL_HEAVY_MIN_COUNT,
   deriveFindings,
 } from './findings.js';
+import { getClassifierContribution } from '../runtime/registry.js';
+
+// Findings rules take the kinds an adapter declares (roadmap M9 #91).
+const KIND_ROLES = getClassifierContribution().findingKinds;
 
 const rid = runtimeId('claude-code');
 
@@ -97,7 +101,7 @@ describe('deriveFindings', () => {
     });
 
     const { observed, resolved } = snapshots([shadowed]);
-    const findings = deriveFindings(observed, resolved);
+    const findings = deriveFindings(observed, resolved, KIND_ROLES);
 
     expect(rules(findings)).toContain('shadowed-element');
     expect(findings.find((f) => f.rule === 'shadowed-element')?.elementIds).toEqual([
@@ -110,7 +114,7 @@ describe('deriveFindings', () => {
     const user = makePair('permissions', '~/.claude/settings.json#permissions', { origin: 'user' });
 
     const { observed, resolved } = snapshots([project, user]);
-    const findings = deriveFindings(observed, resolved);
+    const findings = deriveFindings(observed, resolved, KIND_ROLES);
 
     expect(rules(findings)).toContain('conflicting-scope');
   });
@@ -122,7 +126,7 @@ describe('deriveFindings', () => {
     });
 
     const { observed, resolved } = snapshots([opaque]);
-    const findings = deriveFindings(observed, resolved);
+    const findings = deriveFindings(observed, resolved, KIND_ROLES);
 
     expect(rules(findings)).toContain('opaque-runtime-layer');
   });
@@ -136,12 +140,12 @@ describe('deriveFindings', () => {
     });
 
     const { observed, resolved } = snapshots([wide]);
-    expect(rules(deriveFindings(observed, resolved))).toContain('broad-tool-access');
+    expect(rules(deriveFindings(observed, resolved, KIND_ROLES))).toContain('broad-tool-access');
 
     const narrowSnapshots = snapshots([narrow]);
-    expect(rules(deriveFindings(narrowSnapshots.observed, narrowSnapshots.resolved))).not.toContain(
-      'broad-tool-access',
-    );
+    expect(
+      rules(deriveFindings(narrowSnapshots.observed, narrowSnapshots.resolved, KIND_ROLES)),
+    ).not.toContain('broad-tool-access');
   });
 
   it('reports conditional-heavy only past the count and ratio thresholds', () => {
@@ -152,18 +156,18 @@ describe('deriveFindings', () => {
       makePair('skills', `.claude/skills/e${i}/SKILL.md`),
     );
     const heavySnapshots = snapshots([...heavy, ...lightEffective]);
-    expect(rules(deriveFindings(heavySnapshots.observed, heavySnapshots.resolved))).toContain(
-      'conditional-heavy',
-    );
+    expect(
+      rules(deriveFindings(heavySnapshots.observed, heavySnapshots.resolved, KIND_ROLES)),
+    ).toContain('conditional-heavy');
 
     // Below the absolute count, even at a high ratio.
     const few = Array.from({ length: CONDITIONAL_HEAVY_MIN_COUNT - 1 }, (_, i) =>
       makePair('skills', `.claude/skills/f${i}/SKILL.md`, { resolvedStatus: 'conditional' }),
     );
     const fewSnapshots = snapshots(few);
-    expect(rules(deriveFindings(fewSnapshots.observed, fewSnapshots.resolved))).not.toContain(
-      'conditional-heavy',
-    );
+    expect(
+      rules(deriveFindings(fewSnapshots.observed, fewSnapshots.resolved, KIND_ROLES)),
+    ).not.toContain('conditional-heavy');
   });
 
   it('reports memory, subtree instructions, all descriptively', () => {
@@ -173,7 +177,7 @@ describe('deriveFindings', () => {
     });
 
     const { observed, resolved } = snapshots([memory, subtree]);
-    const findings = deriveFindings(observed, resolved);
+    const findings = deriveFindings(observed, resolved, KIND_ROLES);
 
     expect(rules(findings)).toContain('memory-enabled');
     expect(rules(findings)).toContain('subtree-specific-instruction');
@@ -186,7 +190,9 @@ describe('deriveFindings', () => {
 
     const { observed, resolved } = snapshots([skill]);
 
-    expect(rules(deriveFindings(observed, resolved))).not.toContain('broad-tool-access');
+    expect(rules(deriveFindings(observed, resolved, KIND_ROLES))).not.toContain(
+      'broad-tool-access',
+    );
   });
 
   it('does not relabel an opaque non-instruction layer or a subtree skill', () => {
@@ -199,7 +205,7 @@ describe('deriveFindings', () => {
     });
 
     const { observed, resolved } = snapshots([opaqueUnknown, subtreeSkill]);
-    const found = rules(deriveFindings(observed, resolved));
+    const found = rules(deriveFindings(observed, resolved, KIND_ROLES));
 
     expect(found).not.toContain('opaque-runtime-layer');
     expect(found).not.toContain('subtree-specific-instruction');
@@ -217,8 +223,8 @@ describe('deriveFindings', () => {
     const forward = snapshots([a, b, c]);
     const reversed = snapshots([c, b, a]);
 
-    expect(deriveFindings(forward.observed, forward.resolved)).toEqual(
-      deriveFindings(reversed.observed, reversed.resolved),
+    expect(deriveFindings(forward.observed, forward.resolved, KIND_ROLES)).toEqual(
+      deriveFindings(reversed.observed, reversed.resolved, KIND_ROLES),
     );
   });
 
@@ -237,7 +243,7 @@ describe('deriveFindings', () => {
     ];
 
     const { observed, resolved } = snapshots(pairs);
-    const messages = deriveFindings(observed, resolved)
+    const messages = deriveFindings(observed, resolved, KIND_ROLES)
       .map((finding) => finding.message)
       .join('\n');
 
@@ -267,7 +273,7 @@ describe('adapter-declared finding kinds (roadmap M9 #91)', () => {
     });
     const { observed, resolved } = snapshots([pair]);
 
-    const findings = deriveFindings(observed, resolved);
+    const findings = deriveFindings(observed, resolved, KIND_ROLES);
 
     expect(findings.map((finding) => finding.rule)).not.toContain('broad-tool-access');
   });

@@ -1,4 +1,4 @@
-import type { FacetMappings } from '../../classify/mappings.js';
+import type { FacetMappings, FindingKinds } from '../../classify/mappings.js';
 
 /** The Codex kinds the core table does not carry (roadmap M9 #91). */
 export const FACET_MAPPINGS: FacetMappings = {
@@ -35,7 +35,7 @@ export const FACET_MAPPINGS: FacetMappings = {
 };
 
 /** The kinds the findings rules key on, declared by the adapter (roadmap M9 #91). */
-export const FINDING_KINDS = {
+export const FINDING_KINDS: Partial<FindingKinds> = {
   instruction: ['instructions'],
   memory: ['memory'],
   permission: ['permissions'],

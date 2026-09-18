@@ -20,6 +20,8 @@ import {
   UNCLASSIFIED_KINDS,
 } from './classifier.js';
 import { CORE_FACET_MAPPINGS, mergeFacetMappings } from './mappings.js';
+import { FACET_MAPPINGS as CLAUDE_MAPPINGS } from '../runtime/claude-code/classify.js';
+import { FACET_MAPPINGS as CODEX_MAPPINGS } from '../runtime/codex/classify.js';
 
 const rid = runtimeId('claude-code');
 
@@ -300,5 +302,26 @@ describe('adapter contribution (roadmap M9 #91)', () => {
     const element = classify(observed, resolved, CONTRIBUTION.mappings).elements[0];
     expect(element).toMatchObject({ facets: [], confidence: 'unknown' });
     expect(element?.reason).toContain('mystery-kind');
+  });
+});
+
+describe('mapping tables (roadmap M9 #91)', () => {
+  it('keeps the core and adapter mapping keys pairwise disjoint', () => {
+    const core = Object.keys(CORE_FACET_MAPPINGS);
+    const claude = Object.keys(CLAUDE_MAPPINGS);
+    const codex = Object.keys(CODEX_MAPPINGS);
+
+    // A duplicate kind would shadow another table silently under Object.assign.
+    expect(core.filter((kind) => claude.includes(kind))).toEqual([]);
+    expect(core.filter((kind) => codex.includes(kind))).toEqual([]);
+    expect(claude.filter((kind) => codex.includes(kind))).toEqual([]);
+  });
+
+  it('declares every finding role kind in the merged mappings', () => {
+    const mapped = new Set(Object.keys(CONTRIBUTION.mappings));
+    const roles = CONTRIBUTION.findingKinds;
+    for (const kind of [...roles.instruction, ...roles.memory, ...roles.permission]) {
+      expect(mapped.has(kind), kind).toBe(true);
+    }
   });
 });

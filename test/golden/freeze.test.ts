@@ -12,6 +12,7 @@ import type { ResolvedElement } from '../../src/core/resolved.js';
 import { assembleObservedSnapshot } from '../../src/discovery/assemble.js';
 import { assembleResolvedSnapshot } from '../../src/resolution/assemble.js';
 import { resolveElement } from '../../src/resolution/resolver.js';
+import { getClassifierContribution } from '../../src/runtime/registry.js';
 import { EXIT_CODES, PflError } from '../../src/cli/exit-codes.js';
 import { runDiff } from '../../src/cli/diff.js';
 import { runGc } from '../../src/cli/gc.js';
@@ -103,12 +104,13 @@ function buildResolved() {
 function buildInterpretation() {
   const observed = buildObserved();
   const resolved = buildResolved();
+  const { mappings, findingKinds } = getClassifierContribution();
   return {
     schemaVersion: '1',
     interpretationId: 'int_0123456789ab',
     resolvedSnapshotId: resolved.snapshotId,
-    ...classify(observed, resolved),
-    findings: deriveFindings(observed, resolved),
+    ...classify(observed, resolved, mappings),
+    findings: deriveFindings(observed, resolved, findingKinds),
   };
 }
 

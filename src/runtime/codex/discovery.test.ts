@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { deriveFindings } from '../../classify/findings.js';
+import { getClassifierContribution } from '../registry.js';
 import type { ObservedElement } from '../../core/observed.js';
 import { MAX_ANCESTOR_DIRS, MAX_PARSE_BYTES } from '../../limits.js';
 import { collectCodexHarness, type AssertKindsNarrow } from './discovery.js';
@@ -240,9 +241,11 @@ describe('collectCodexHarness', () => {
     const observed = await collectCodexHarness(project, CONSENTED, home);
     const resolved = await resolveCodex(observed);
     const nested = byPath(observed.elements).get('docs/AGENTS.md');
-    const finding = deriveFindings(observed, resolved).find(
-      (entry) => entry.rule === 'subtree-specific-instruction',
-    );
+    const finding = deriveFindings(
+      observed,
+      resolved,
+      getClassifierContribution().findingKinds,
+    ).find((entry) => entry.rule === 'subtree-specific-instruction');
 
     // The finding is emitted from the adapter's real `directory-subtree`
     // applicability, not a synthetic resolved element.
@@ -469,9 +472,11 @@ describe('collectCodexHarness', () => {
     const observed = await collectCodexHarness(project, CONSENTED, home);
     const resolved = await resolveCodex(observed);
     const permissions = byPath(observed.elements).get('~/.codex/rules/default.rules#permissions');
-    const finding = deriveFindings(observed, resolved).find(
-      (entry) => entry.rule === 'broad-tool-access',
-    );
+    const finding = deriveFindings(
+      observed,
+      resolved,
+      getClassifierContribution().findingKinds,
+    ).find((entry) => entry.rule === 'broad-tool-access');
 
     expect(permissions).toBeDefined();
     expect(finding?.elementIds).toContain(permissions?.id);

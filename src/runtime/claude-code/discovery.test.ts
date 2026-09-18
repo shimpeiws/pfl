@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { deriveFindings } from '../../classify/findings.js';
+import { getClassifierContribution } from '../registry.js';
 import type { ObservedElement } from '../../core/observed.js';
 import { MAX_ANCESTOR_DIRS } from '../../limits.js';
 import {
@@ -312,9 +313,11 @@ describe('collectClaudeCodeHarness', () => {
     const observed = await collect(fixture);
     const resolved = await resolveClaudeCode(observed);
     const nested = byPath(observed.elements).get('docs/CLAUDE.md');
-    const finding = deriveFindings(observed, resolved).find(
-      (entry) => entry.rule === 'subtree-specific-instruction',
-    );
+    const finding = deriveFindings(
+      observed,
+      resolved,
+      getClassifierContribution().findingKinds,
+    ).find((entry) => entry.rule === 'subtree-specific-instruction');
 
     // The finding is emitted from the adapter's real `directory-subtree`
     // applicability, not a synthetic resolved element.

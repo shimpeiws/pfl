@@ -50,6 +50,10 @@ interface RuntimeRegistration {
   runtimeName: string;
   /** Consent locations per scope, owned by the adapter (design doc §24). */
   consentGroups: Record<ConsentScope, readonly ConsentLocationGroup[]>;
+  /** The adapter's kind-to-facet contribution (roadmap M9 #91). */
+  facetMappings: FacetMappings;
+  /** The kinds the adapter's findings rules key on (roadmap M9 #91). */
+  findingKinds: Partial<FindingKinds>;
 }
 
 const REGISTRY: Record<string, RuntimeRegistration> = {
@@ -57,11 +61,15 @@ const REGISTRY: Record<string, RuntimeRegistration> = {
     create: () => new ClaudeCodeAdapter(),
     runtimeName: CLAUDE_CODE_RUNTIME_NAME,
     consentGroups: CLAUDE_CODE_CONSENT_GROUPS,
+    facetMappings: CLAUDE_CODE_FACET_MAPPINGS,
+    findingKinds: CLAUDE_CODE_FINDING_KINDS,
   },
   codex: {
     create: () => new CodexAdapter(),
     runtimeName: CODEX_RUNTIME_NAME,
     consentGroups: CODEX_CONSENT_GROUPS,
+    facetMappings: CODEX_FACET_MAPPINGS,
+    findingKinds: CODEX_FINDING_KINDS,
   },
 };
 
@@ -87,13 +95,13 @@ export function getClassifierContribution(): {
   mappings: FacetMappings;
   findingKinds: FindingKinds;
 } {
+  const registrations = Object.values(REGISTRY);
   return {
     mappings: mergeFacetMappings(
       CORE_FACET_MAPPINGS,
-      CLAUDE_CODE_FACET_MAPPINGS,
-      CODEX_FACET_MAPPINGS,
+      ...registrations.map((entry) => entry.facetMappings),
     ),
-    findingKinds: mergeFindingKinds(CLAUDE_CODE_FINDING_KINDS, CODEX_FINDING_KINDS),
+    findingKinds: mergeFindingKinds(...registrations.map((entry) => entry.findingKinds)),
   };
 }
 
