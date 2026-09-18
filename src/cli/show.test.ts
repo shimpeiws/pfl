@@ -44,6 +44,7 @@ function pair(
     origin?: NativeOrigin;
     status?: ResolvedStatus;
     inspectability?: ObservedElement['inspectability'];
+    omitPath?: boolean;
   } = {},
 ): Pair {
   const origin = options.origin ?? (path.startsWith('~/') ? 'user' : 'project');
@@ -52,7 +53,7 @@ function pair(
     observed: {
       id,
       native: { kind, origin, scope: origin },
-      source: { path },
+      source: options.omitPath === true ? {} : { path },
       inspectability: options.inspectability ?? 'observable',
       metadata: {},
       status: 'observed',
@@ -144,8 +145,32 @@ describe('runShow', () => {
     expect(output).toContain(`Element ${loser.observed.id}`);
     expect(output).toContain('status          shadowed');
     expect(output).toContain('resolution      accumulate — test');
-    expect(output).toContain(`shadows: ${winner.observed.id} -> ${loser.observed.id}`);
+    expect(output).toContain(
+      'shadows: .claude/settings.json#permissions -> ~/.claude/settings.json#permissions',
+    );
     expect(output).toContain('shadowed by a higher-precedence layer');
+  });
+
+  it('falls back to the element id for a relation endpoint without a path', async () => {
+    const projectRoot = await tempDir('pfl-show-project-');
+    const home = await tempDir('pfl-show-home-');
+    const opaque = pair('runtime-provided-instructions', '(builtin) layers', {
+      origin: 'builtin',
+      inspectability: 'opaque',
+      omitPath: true,
+    });
+    const instructions = pair('instructions', 'CLAUDE.md');
+    await seed(
+      projectRoot,
+      home,
+      [opaque, instructions],
+      [{ type: 'accumulates-with', from: instructions.observed.id, to: opaque.observed.id }],
+    );
+    const { lines, logger } = fakeLogger();
+
+    await runShow(projectRoot, instructions.observed.id, { home }, logger);
+
+    expect(lines.join('\n')).toContain(`accumulates-with: CLAUDE.md -> ${opaque.observed.id}`);
   });
 
   it('shows an opaque element as opaque without summarizing it', async () => {
