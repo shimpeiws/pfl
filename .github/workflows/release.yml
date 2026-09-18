@@ -34,11 +34,16 @@ jobs:
           required="11.5.1"
           have="$(npm --version)"
           node -e '
-            const parse = (value) => value.split("-")[0].split(".").map(Number);
+            const parse = (value) => {
+              const parts = value.split("-")[0].split(".").map(Number);
+              return parts.length >= 3 && parts.every((n) => !Number.isNaN(n)) ? parts : null;
+            };
             const compare = (a, b) => (a[0] - b[0]) || (a[1] - b[1]) || (a[2] - b[2]);
-            if (compare(parse(process.argv[1]), parse(process.argv[2])) < 0) {
+            const have = parse(process.argv[1]);
+            const need = parse(process.argv[2]);
+            if (have === null || need === null || compare(have, need) < 0) {
               console.error(
-                `::error::npm ${process.argv[1]} is older than ${process.argv[2]}, which trusted publishing (OIDC) requires.`,
+                `::error::npm ${process.argv[1]} is older than ${process.argv[2]} or unparseable; trusted publishing (OIDC) requires >= ${process.argv[2]}.`,
               );
               process.exit(1);
             }

@@ -82,8 +82,9 @@ Decision:
 to `false` (fail closed): pre-consent it examines only `.git` at the project
 root, and a `.git` file is never followed. `runInspect` resolves consent first
 and passes `access.allowOutsideProject`; the runtime-agnostic read commands pass
-`hasAnyUserConsent(home)`, a provisional approximation M8's scope taxonomy
-replaces (recorded as accepted risk A3).
+`hasAnyUserConsent(home)`, a provisional approximation M8 narrowed but did not
+remove — a command run from a subdirectory still needs the gated ancestor walk
+to find the repository root (accepted risk A3).
 
 Two consequences of the gated ancestor search are accepted and stated rather
 than discovered later. Pre-consent, a run from a subdirectory treats the

@@ -222,15 +222,16 @@ The OpenCode adapter (#93) reads only the default on-disk layout; the
 `OPENCODE_CONFIG`, `OPENCODE_CONFIG_DIR`, and `OPENCODE_CONFIG_CONTENT`
 redirectors are execution context and are **not** read (a `default-layout-only`
 diagnostic records the limit). `.mcp.json` is deliberately **not** an MCP
-source. Declared `instructions`/`references` targets and non-package `plugin`
-specifiers are recorded as opaque declarations and **never opened**.
+source. Declared `instructions`/`references` targets, `skills.paths`/`skills.urls`
+entries, and non-package `plugin` specifiers are recorded as opaque declarations
+and **never opened**.
 
 | Location       | Read                                                                                    | Guard                                                                                                                    | Classification                                     |
 | -------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------- |
 | `detect.ts`    | bin dirs, `PATH` entries, Homebrew `Cellar` version dirs                                | `readExternalInstall` (see `runtime/external-install.ts`); consent-gated; npm is not read (package name unverified)      | install-scope                                      |
 | `discovery.ts` | walk `<root>/**` for `AGENTS.md` / `CLAUDE.md` (fallback), `.git`/`node_modules` pruned | walk guards; the candidate name is re-checked per entry (a symlink bypasses `selectFile`); `.opencode/` excluded by path | project-implicit                                   |
 | `discovery.ts` | `readFile` `<root>/opencode.json[c]`, `<root>/.opencode/opencode.json[c]`               | `readTextFileGuarded` + scope base; JSONC comments/trailing commas stripped by a bounded scanner                         | project-implicit                                   |
-| `discovery.ts` | walk `<root>/.opencode/<element-dirs>/**`                                               | walk guards; per-dir extension/skill filter; legacy `mode(s)/` recorded `unsupported`                                    | project-implicit                                   |
+| `discovery.ts` | walk `<root>/.opencode/<element-dirs>/**`                                               | walk guards; per-dir extension/skill filter; `mode(s)/` classified as agents (primary default) with frontmatter parsed   | project-implicit                                   |
 | `discovery.ts` | walk `<root>/.claude/skills/**`, `<root>/.agents/skills/**`                             | walk guards                                                                                                              | project-implicit (`claude-compat`/`agents-compat`) |
 | `discovery.ts` | `readFile` user `AGENTS.md`, else `~/.claude/CLAUDE.md` fallback                        | `inspectFileTarget(configDir, …)`; consent-gated                                                                         | user-scope (`claude-compat` fallback)              |
 | `discovery.ts` | `readFile` `~/.config/opencode/opencode.json[c]`                                        | `readTextFileGuarded` + scope base                                                                                       | user-scope                                         |

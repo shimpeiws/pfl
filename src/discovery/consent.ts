@@ -105,7 +105,11 @@ export function hasConsent(store: ConsentStore, runtimeId: RuntimeId, scope: str
  * Whether any runtime has been granted its user scope. Read commands are
  * runtime-agnostic (a project id is shared across runtimes), so they use this
  * to decide whether out-of-project Git metadata may be read (roadmap S5). M8's
- * scope taxonomy replaces this approximation.
+ * scope split (#81) and root index (#86) narrowed the approximation — a linked
+ * worktree resolves the same root with or without the grant — but did not
+ * remove it: a command run from a subdirectory still needs the gated ancestor
+ * walk to find the repository root, so the runtime cannot be known first
+ * (accepted risk A3).
  */
 export async function hasAnyUserConsent(home: string = homedir()): Promise<boolean> {
   const store = await loadConsentStore(home);

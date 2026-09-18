@@ -56,11 +56,16 @@ from the pre-reconciliation rows, and this change aligns the adapter:
 ## Note on the #94 inventory
 
 The #94 read-path inventory lists OpenCode's element-directory walk generically
-(`walk <root>/.opencode/<element-dirs>/**`), which already covers `mode(s)/`;
-no inventory row is added or changed. The walk's `unsupported` branch is no
-longer passed by any OpenCode call (`kindForEntry` no longer returns `unknown`);
-OpenCode's `unsupported` elements now come from config-key/declaration shapes,
-which the `security-invariants` test pins.
+(`walk <root>/.opencode/<element-dirs>/**`), whose **Read** column already covers
+`mode(s)/`; no row is added or removed. Its **Guard** column and its declaration
+sentence did need amending, which the v1.0 release-candidate audit caught and
+this change applies: `mode(s)/` is classified as agents (primary default) with
+frontmatter parsed, and `skills.paths`/`skills.urls` join `instructions`,
+`references`, and non-package `plugin` specifiers as declared, never-opened
+targets. The walk's `unsupported` branch is no longer passed by any OpenCode
+call (`kindForEntry` no longer returns `unknown`); OpenCode's `unsupported`
+elements now come from config-key/declaration shapes, which the
+`security-invariants` test pins.
 
 ## Findings
 

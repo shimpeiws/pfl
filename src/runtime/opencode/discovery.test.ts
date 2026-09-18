@@ -124,11 +124,12 @@ async function makeFixture(): Promise<Fixture> {
       '    "refrepo": { "repository": "org/repo", "branch": "main" },',
       '    "repshort": "owner/repo",',
       '    "refgit": "github.com/org/repo.git",',
-      '    "refbad": { "branch": "main" }',
+      '    "refbad": { "branch": "main" },',
+      `    "refsecret": { "path": "/abs/${SECRET_SENTINEL}" }`,
       '  },',
       '  "skills": {',
       '    "paths": ["./extra-skills"],',
-      '    "urls": ["https://example.com/skills/"]',
+      `    "urls": ["https://example.com/skills/", "https://example.com/p?token=${SECRET_SENTINEL}"]`,
       '  },',
       '  "agent": {',
       '    "primary-agent": { "mode": "primary" },',
@@ -172,6 +173,12 @@ async function makeFixture(): Promise<Fixture> {
   await writeFile(
     join(root, '.opencode', 'mode', 'submode.md'),
     ['---', 'description: "a subagent in mode/"', 'mode: subagent', '---', 'body', ''].join('\n'),
+  );
+  // Unterminated frontmatter: malformed, so no mode is read and the directory
+  // default (primary) applies.
+  await writeFile(
+    join(root, '.opencode', 'mode', 'malformed.md'),
+    ['---', 'mode: subagent', 'not terminated'].join('\n'),
   );
   await writeFile(
     join(root, '.claude', 'skills', 'compat', 'SKILL.md'),
@@ -369,6 +376,34 @@ describe('collectOpencodeHarness config', () => {
     expect(unknown.length).toBe(256);
   });
 
+  it('caps the skills and references declaration producers', async () => {
+    const fixture = await makeFixture();
+    const paths = Array.from({ length: 300 }, (_, index) => `p${index}`);
+    const references: Record<string, unknown> = {};
+    for (let index = 0; index < 300; index += 1) references[`r${index}`] = { path: `p${index}` };
+    await writeFile(
+      join(fixture.root, 'opencode.json'),
+      JSON.stringify({ skills: { paths }, references }),
+    );
+
+    const observed = await collect(fixture, CONSENTED);
+
+    expect(
+      observed.elements.filter((element) =>
+        element.source.path?.startsWith('opencode.json#skills.paths.'),
+      ),
+    ).toHaveLength(256);
+    expect(
+      observed.elements.filter((element) =>
+        element.source.path?.startsWith('opencode.json#references.'),
+      ),
+    ).toHaveLength(256);
+    // Both producers emit their own truncation diagnostic.
+    expect(
+      observed.diagnostics.filter((entry) => entry.code === 'config-items-truncated').length,
+    ).toBeGreaterThanOrEqual(2);
+  });
+
   it('records declared instructions, references, and skills opaquely, never persisting the target', async () => {
     const fixture = await makeFixture();
     const observed = await collect(fixture, CONSENTED);
@@ -477,6 +512,8 @@ describe('collectOpencodeHarness element directories', () => {
     expect(byPath(observed.elements, '.opencode/mode/legacy.md').native.kind).toBe('agents');
     expect(byPath(observed.elements, '.opencode/mode/submode.md').native.kind).toBe('subagents');
     expect(byPath(observed.elements, '.opencode/mode/allmode.md').native.kind).toBe('subagents');
+    // A malformed block does not change the kind; the directory default applies.
+    expect(byPath(observed.elements, '.opencode/mode/malformed.md').native.kind).toBe('agents');
   });
 
   it('records cross-runtime skills with their compat scope', async () => {
