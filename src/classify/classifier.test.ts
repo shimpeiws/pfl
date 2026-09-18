@@ -11,6 +11,7 @@ import type { ObservedElement, ObservedSnapshot } from '../core/observed.js';
 import type { ResolvedElement, ResolvedSnapshot, ResolvedStatus } from '../core/resolved.js';
 import { KNOWN_ELEMENT_KINDS as CLAUDE_CODE_KINDS } from '../runtime/claude-code/paths.js';
 import { KNOWN_ELEMENT_KINDS as CODEX_KINDS } from '../runtime/codex/paths.js';
+import { getClassifierContribution } from '../runtime/registry.js';
 import {
   CLASSIFIER_ID,
   CLASSIFIER_VERSION,
@@ -18,6 +19,9 @@ import {
   classifiedKind,
   UNCLASSIFIED_KINDS,
 } from './classifier.js';
+import { CORE_FACET_MAPPINGS, mergeFacetMappings } from './mappings.js';
+import { FACET_MAPPINGS as CLAUDE_MAPPINGS } from '../runtime/claude-code/classify.js';
+import { FACET_MAPPINGS as CODEX_MAPPINGS } from '../runtime/codex/classify.js';
 
 const rid = runtimeId('claude-code');
 
@@ -77,6 +81,10 @@ function facetsOf(kind: string, path: string, result: ReturnType<typeof classify
   return element.facets;
 }
 
+// The classifier's table is adapter-owned (roadmap M9 #91), so the test uses
+// the registry's merged contribution.
+const CONTRIBUTION = getClassifierContribution();
+
 describe('classify', () => {
   it('maps native kinds to the six facets with a reason', () => {
     const pairs = [
@@ -92,7 +100,7 @@ describe('classify', () => {
       pairs.map((p) => p.resolved),
     );
 
-    const result = classify(observed, resolved);
+    const result = classify(observed, resolved, CONTRIBUTION.mappings);
     const byId = new Map(result.elements.map((e) => [e.elementId, e]));
 
     const expectFacets = (kind: string, path: string, facets: HarnessFacet[]) =>
@@ -115,7 +123,7 @@ describe('classify', () => {
     const opaque = makePair('runtime-provided-instructions', '(builtin) layers');
     const { observed, resolved } = snapshots([opaque.observed], [opaque.resolved]);
 
-    const result = classify(observed, resolved);
+    const result = classify(observed, resolved, CONTRIBUTION.mappings);
     const element = result.elements[0];
 
     expect(element?.facets).toEqual(['instructions']);
@@ -126,7 +134,7 @@ describe('classify', () => {
     const unknown = makePair('mystery-kind', '.claude/mystery');
     const { observed, resolved } = snapshots([unknown.observed], [unknown.resolved]);
 
-    const result = classify(observed, resolved);
+    const result = classify(observed, resolved, CONTRIBUTION.mappings);
 
     expect(result.elements[0]).toMatchObject({ facets: [], confidence: 'unknown' });
     expect(result.elements[0]?.reason).toContain('mystery-kind');
@@ -142,7 +150,7 @@ describe('classify', () => {
       all.map((pair) => pair.resolved),
     );
 
-    const result = classify(observed, resolved);
+    const result = classify(observed, resolved, CONTRIBUTION.mappings);
     const byId = new Map(result.elements.map((element) => [element.elementId, element]));
 
     expect(byId.get(model.observed.id)).toMatchObject({
@@ -164,7 +172,7 @@ describe('classify', () => {
       all.map((pair) => pair.resolved),
     );
 
-    const result = classify(observed, resolved);
+    const result = classify(observed, resolved, CONTRIBUTION.mappings);
     const byId = new Map(result.elements.map((element) => [element.elementId, element]));
 
     expect(byId.get(fallback.observed.id)).toMatchObject({
@@ -188,7 +196,7 @@ describe('classify', () => {
       all.map((p) => p.resolved),
     );
 
-    const { stats } = classify(observed, resolved);
+    const { stats } = classify(observed, resolved, CONTRIBUTION.mappings);
 
     expect(stats).toMatchObject({
       observed: 4,
@@ -207,7 +215,7 @@ describe('classify', () => {
     const only = makePair('instructions', 'orphan.md');
     const { observed, resolved } = snapshots([only.observed], []);
 
-    const result = classify(observed, resolved);
+    const result = classify(observed, resolved, CONTRIBUTION.mappings);
 
     expect(result.elements.map((element) => element.elementId)).toEqual([only.observed.id]);
     expect(result.elements[0]?.facets).toEqual(['instructions']);
@@ -219,8 +227,8 @@ describe('classify', () => {
     const forward = snapshots([a.observed, b.observed], [a.resolved, b.resolved]);
     const reversed = snapshots([b.observed, a.observed], [b.resolved, a.resolved]);
 
-    const first = classify(forward.observed, forward.resolved);
-    const second = classify(reversed.observed, reversed.resolved);
+    const first = classify(forward.observed, forward.resolved, CONTRIBUTION.mappings);
+    const second = classify(reversed.observed, reversed.resolved, CONTRIBUTION.mappings);
 
     expect(first).toEqual(second);
     expect(first.classifier).toEqual({ id: CLASSIFIER_ID, version: CLASSIFIER_VERSION });
@@ -236,7 +244,7 @@ describe('classify', () => {
       pairs.map((p) => p.resolved),
     );
 
-    const result = classify(observed, resolved);
+    const result = classify(observed, resolved, CONTRIBUTION.mappings);
 
     expect(facetsOf('commands', '.claude/commands/x.md', result)).toEqual(['actions']);
   });
@@ -256,18 +264,64 @@ describe('classifier kind coverage', () => {
 
   it('classifies or explicitly records every kind an adapter declares', () => {
     const uncovered = adapterKinds.filter(
-      (kind) => !classifiedKind(kind) && !UNCLASSIFIED_KINDS.has(kind),
+      (kind) => !classifiedKind(kind, CONTRIBUTION.mappings) && !UNCLASSIFIED_KINDS.has(kind),
     );
 
     expect(uncovered).toEqual([]);
     // The sets are disjoint: a mapped kind is never also declared unclassified.
     for (const kind of UNCLASSIFIED_KINDS) {
-      expect(classifiedKind(kind)).toBe(false);
+      expect(classifiedKind(kind, CONTRIBUTION.mappings)).toBe(false);
       expect(adapterKinds).toContain(kind);
     }
     // `classifiedKind` must consult own keys only: an unknown kind and an
     // inherited `Object` key both report false.
-    expect(classifiedKind('mystery-kind')).toBe(false);
-    expect(classifiedKind('constructor')).toBe(false);
+    expect(classifiedKind('mystery-kind', CONTRIBUTION.mappings)).toBe(false);
+    expect(classifiedKind('constructor', CONTRIBUTION.mappings)).toBe(false);
+  });
+});
+
+describe('adapter contribution (roadmap M9 #91)', () => {
+  it('classifies a kind an adapter introduces without editing the classifier', () => {
+    const contributed = mergeFacetMappings(CORE_FACET_MAPPINGS, {
+      'contributed-kind': {
+        facets: ['knowledge'],
+        confidence: 'medium',
+        reason: 'contributed by an adapter',
+      },
+    });
+    const pair = makePair('contributed-kind', 'x/y');
+    const { observed, resolved } = snapshots([pair.observed], [pair.resolved]);
+
+    expect(classify(observed, resolved, contributed).elements[0]?.facets).toEqual(['knowledge']);
+  });
+
+  it('records a kind with no mapping as unclassified rather than guessing', () => {
+    const pair = makePair('mystery-kind', 'x/y');
+    const { observed, resolved } = snapshots([pair.observed], [pair.resolved]);
+
+    const element = classify(observed, resolved, CONTRIBUTION.mappings).elements[0];
+    expect(element).toMatchObject({ facets: [], confidence: 'unknown' });
+    expect(element?.reason).toContain('mystery-kind');
+  });
+});
+
+describe('mapping tables (roadmap M9 #91)', () => {
+  it('keeps the core and adapter mapping keys pairwise disjoint', () => {
+    const core = Object.keys(CORE_FACET_MAPPINGS);
+    const claude = Object.keys(CLAUDE_MAPPINGS);
+    const codex = Object.keys(CODEX_MAPPINGS);
+
+    // A duplicate kind would shadow another table silently under Object.assign.
+    expect(core.filter((kind) => claude.includes(kind))).toEqual([]);
+    expect(core.filter((kind) => codex.includes(kind))).toEqual([]);
+    expect(claude.filter((kind) => codex.includes(kind))).toEqual([]);
+  });
+
+  it('declares every finding role kind in the merged mappings', () => {
+    const mapped = new Set(Object.keys(CONTRIBUTION.mappings));
+    const roles = CONTRIBUTION.findingKinds;
+    for (const kind of [...roles.instruction, ...roles.memory, ...roles.permission]) {
+      expect(mapped.has(kind), kind).toBe(true);
+    }
   });
 });
