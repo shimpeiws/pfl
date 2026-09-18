@@ -59,18 +59,23 @@ const EXPECTED: Record<FixtureRuntime, readonly string[]> = {
   // Codex: `AGENTS.override.md` produces `overrides` and `shadows`;
   // accumulating instruction layers produce `accumulates-with`.
   codex: ['accumulates-with', 'overrides', 'shadows'],
+  // OpenCode: accumulating instruction layers produce `accumulates-with`; the
+  // adapter models no cross-source override or shadow relation.
+  opencode: ['accumulates-with'],
 };
+
+const RUNTIMES = ['claude', 'codex', 'opencode'] as const;
 
 describe('relation producers', () => {
   it('produces exactly the expected relation types per runtime', async () => {
-    for (const runtime of ['claude', 'codex'] as const) {
+    for (const runtime of RUNTIMES) {
       expect([...(await relationTypesFor(runtime))].sort()).toEqual([...EXPECTED[runtime]].sort());
     }
   });
 
   it('covers every declared relation type across the shipped fixtures', async () => {
     const produced = new Set<string>();
-    for (const runtime of ['claude', 'codex'] as const) {
+    for (const runtime of RUNTIMES) {
       for (const type of await relationTypesFor(runtime)) produced.add(type);
     }
 

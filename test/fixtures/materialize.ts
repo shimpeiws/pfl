@@ -25,11 +25,12 @@ import { fileURLToPath } from 'node:url';
 
 const fixturesRoot = dirname(fileURLToPath(import.meta.url));
 
-export type FixtureRuntime = 'claude' | 'codex';
+export type FixtureRuntime = 'claude' | 'codex' | 'opencode';
 
 export const RUNTIME_IDS: Record<FixtureRuntime, string> = {
   claude: 'claude-code',
   codex: 'codex',
+  opencode: 'opencode',
 };
 
 /** Sentinel strings so a leak of raw content into a persisted artifact is greppable. */
@@ -59,6 +60,24 @@ export const SENTINELS = [
   'SENTINEL_CODEX_MEMORY',
   'SENTINEL_CODEX_HOOKS',
   'SENTINEL_CODEX_RULE',
+  'SENTINEL_OPENCODE_PROJECT',
+  'SENTINEL_OPENCODE_NESTED',
+  'SENTINEL_OPENCODE_SUPPRESSED',
+  'SENTINEL_OPENCODE_SKILL',
+  'SENTINEL_OPENCODE_COMMAND',
+  'SENTINEL_OPENCODE_AGENT',
+  'SENTINEL_OPENCODE_MODE',
+  'SENTINEL_OPENCODE_COMPAT',
+  'SENTINEL_OPENCODE_AGENTS_COMPAT',
+  'SENTINEL_OPENCODE_USER',
+  'SENTINEL_OPENCODE_USER_SKILL',
+  'SENTINEL_OPENCODE_USER_COMPAT',
+  'SENTINEL_OPENCODE_USER_AGENTS_COMPAT',
+  'SENTINEL_OPENCODE_BROKEN',
+  'SENTINEL_OPENCODE_PARENT',
+  'SENTINEL_OPENCODE_SETTINGS',
+  'SENTINEL_OPENCODE_SETTINGS_SYMLINK',
+  'SENTINEL_OPENCODE_MCP',
   'SENTINEL_LEAKED',
 ] as const;
 
@@ -69,6 +88,7 @@ export const SECRETS = [
   'wJalrXUtnFEMIEXAMPLEKEY0123456789',
   'ghp_0123456789abcdefghijklmnopqrstuvwx',
   'MIIEXFILTRATIONEXAMPLEKEYMATERIAL',
+  'sk-ant-OPENCODE-EXFIL-0123456789',
 ] as const;
 
 export interface Materialized {
@@ -116,45 +136,73 @@ export async function materialize(runtime: FixtureRuntime): Promise<Materialized
   const symlinkPath =
     runtime === 'claude'
       ? join(projectRoot, '.claude', 'link')
-      : join(home, '.codex', 'skills', 'link');
+      : runtime === 'codex'
+        ? join(home, '.codex', 'skills', 'link')
+        : // A candidate `.md` command, so the walk records the symlink itself
+          // rather than filtering it out by extension.
+          join(projectRoot, '.opencode', 'command', 'link.md');
   await symlink(outsideDir, symlinkPath);
 
   // S1: a symlink at a settings-read path. For Claude Code this is project scope
-  // (no consent needed) and must never be followed; for Codex it replaces the
-  // committed hooks.json, since the adapter reads the user scope under consent.
+  // (no consent needed) and must never be followed; for Codex and OpenCode it
+  // replaces a committed config file, since the adapter reads the user scope
+  // under consent.
   const settingsSecret =
     runtime === 'claude'
       ? JSON.stringify({
           permissions: { allow: ['Bash(curl SENTINEL_CLAUDE_SETTINGS)'] },
           token: 'sk-ant-settings-symlink-secret',
         })
-      : JSON.stringify({ hooks: { SessionStart: [{ matcher: 'SENTINEL_CODEX_HOOKS' }] } });
+      : runtime === 'codex'
+        ? JSON.stringify({ hooks: { SessionStart: [{ matcher: 'SENTINEL_CODEX_HOOKS' }] } })
+        : // `mcp` server names are persisted, so the sentinel is a tracked marker:
+          // if the symlinked config were ever parsed, this name would reach the
+          // store and the leak assertions would fire, not pass vacuously.
+          JSON.stringify({ mcp: { SENTINEL_OPENCODE_SETTINGS_SYMLINK: {} } });
   await writeFile(join(outsideDir, 'settings-secret.json'), settingsSecret);
 
   const settingsSymlinkPath =
     runtime === 'claude'
       ? join(projectRoot, '.claude', 'settings.local.json')
-      : join(home, '.codex', 'hooks.json');
-  if (runtime === 'codex') await rm(settingsSymlinkPath, { force: true });
+      : runtime === 'codex'
+        ? join(home, '.codex', 'hooks.json')
+        : join(projectRoot, '.opencode', 'opencode.json');
+  if (runtime !== 'claude') await rm(settingsSymlinkPath, { force: true });
   await symlink(join(outsideDir, 'settings-secret.json'), settingsSymlinkPath);
 
   const unreadablePath =
     runtime === 'claude'
       ? join(projectRoot, '.claude', 'skills', 'broken', 'SKILL.md')
-      : join(home, '.codex', 'skills', 'broken.md');
+      : runtime === 'codex'
+        ? join(home, '.codex', 'skills', 'broken.md')
+        : join(home, '.config', 'opencode', 'skill', 'broken', 'SKILL.md');
   await chmod(unreadablePath, 0o000);
 
   return {
     base,
     projectRoot,
     home,
-    userConfigDir: runtime === 'claude' ? join(home, '.claude') : join(home, '.codex'),
+    userConfigDir:
+      runtime === 'claude'
+        ? join(home, '.claude')
+        : runtime === 'codex'
+          ? join(home, '.codex')
+          : join(home, '.config', 'opencode'),
     outsideDir,
     symlinkPath,
-    symlinkRelativePath: runtime === 'claude' ? '.claude/link' : '~/.codex/skills/link',
+    symlinkRelativePath:
+      runtime === 'claude'
+        ? '.claude/link'
+        : runtime === 'codex'
+          ? '~/.codex/skills/link'
+          : '.opencode/command/link.md',
     settingsSymlinkPath,
     settingsSymlinkRelativePath:
-      runtime === 'claude' ? '.claude/settings.local.json' : '~/.codex/hooks.json',
+      runtime === 'claude'
+        ? '.claude/settings.local.json'
+        : runtime === 'codex'
+          ? '~/.codex/hooks.json'
+          : '.opencode/opencode.json',
     unreadablePath,
     runtime,
   };

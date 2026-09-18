@@ -1,0 +1,5 @@
+{
+  "mcpServers": {
+    "notAnOpenCodeSource": { "command": "SENTINEL_OPENCODE_MCP" }
+  }
+}

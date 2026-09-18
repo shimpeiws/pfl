@@ -5,6 +5,7 @@ import type { ObservedSnapshot } from '../../src/core/observed.js';
 import { resolveProjectContext } from '../../src/discovery/project-identity.js';
 import { collectClaudeCodeHarness } from '../../src/runtime/claude-code/discovery.js';
 import { collectCodexHarness } from '../../src/runtime/codex/discovery.js';
+import { collectOpencodeHarness } from '../../src/runtime/opencode/discovery.js';
 import type { AccessPolicy, ProjectContext } from '../../src/runtime/types.js';
 import { materialize, type FixtureRuntime, type Materialized } from '../fixtures/materialize.js';
 
@@ -45,49 +46,64 @@ function collect(
   m: Materialized,
   access: AccessPolicy,
 ) {
-  return runtime === 'claude'
-    ? collectClaudeCodeHarness(project, access, m.home, join(m.home, 'managed'), '')
-    : collectCodexHarness(project, access, m.home, '');
+  if (runtime === 'claude') {
+    return collectClaudeCodeHarness(project, access, m.home, join(m.home, 'managed'), '');
+  }
+  if (runtime === 'codex') return collectCodexHarness(project, access, m.home, '');
+  return collectOpencodeHarness(project, access, m.home, join(m.home, 'managed'), '');
 }
 
-describe.each<FixtureRuntime>(['claude', 'codex'])('%s consent choke point', (runtime) => {
-  it('serves nothing out of project without a grant', async () => {
-    const m = await materialize(runtime);
-    materialized.push(m);
-    const project = await resolveProjectContext(m.projectRoot);
+describe.each<FixtureRuntime>(['claude', 'codex', 'opencode'])(
+  '%s consent choke point',
+  (runtime) => {
+    it('serves nothing out of project without a grant', async () => {
+      const m = await materialize(runtime);
+      materialized.push(m);
+      const project = await resolveProjectContext(m.projectRoot);
 
-    const observed = await collect(runtime, project, m, CLOSED);
+      const observed = await collect(runtime, project, m, CLOSED);
 
-    expect(outsideProjectPaths(observed)).toEqual([]);
-    expect(observed.runtime.version).toBeNull();
-    const codes = observed.diagnostics.map((entry) => entry.code);
-    expect(codes).toContain('consent-not-granted:install');
-    expect(codes).toContain('consent-not-granted:user');
-  });
+      expect(outsideProjectPaths(observed)).toEqual([]);
+      expect(observed.runtime.version).toBeNull();
+      const codes = observed.diagnostics.map((entry) => entry.code);
+      expect(codes).toContain('consent-not-granted:install');
+      expect(codes).toContain('consent-not-granted:user');
+    });
 
-  it('serves install metadata without the user harness', async () => {
-    const m = await materialize(runtime);
-    materialized.push(m);
-    const project = await resolveProjectContext(m.projectRoot);
+    it('serves install metadata without the user harness', async () => {
+      const m = await materialize(runtime);
+      materialized.push(m);
+      const project = await resolveProjectContext(m.projectRoot);
 
-    const observed = await collect(runtime, project, m, INSTALL);
+      const observed = await collect(runtime, project, m, INSTALL);
 
-    expect(observed.runtime.version).not.toBeNull();
-    expect(outsideProjectPaths(observed)).toEqual([]);
-    expect(observed.diagnostics.map((entry) => entry.code)).toContain('consent-not-granted:user');
-  });
+      // OpenCode has no installer-managed version source this adapter reads, and
+      // the fixture home has no Homebrew/PATH install, so a hermetic run cannot
+      // resolve a version. The invariant under test is scope separation, not that
+      // every runtime has a detectable fixture install.
+      if (runtime === 'opencode') expect(observed.runtime.version).toBeNull();
+      else expect(observed.runtime.version).not.toBeNull();
+      expect(outsideProjectPaths(observed)).toEqual([]);
+      // The grant took effect (no install-scope denial) and the user scope is
+      // still closed. This is the discriminating assertion for every runtime,
+      // including one whose version cannot be resolved from a fixture.
+      const codes = observed.diagnostics.map((entry) => entry.code);
+      expect(codes).not.toContain('consent-not-granted:install');
+      expect(codes).toContain('consent-not-granted:user');
+    });
 
-  it('serves the user harness without install metadata', async () => {
-    const m = await materialize(runtime);
-    materialized.push(m);
-    const project = await resolveProjectContext(m.projectRoot);
+    it('serves the user harness without install metadata', async () => {
+      const m = await materialize(runtime);
+      materialized.push(m);
+      const project = await resolveProjectContext(m.projectRoot);
 
-    const observed = await collect(runtime, project, m, USER);
+      const observed = await collect(runtime, project, m, USER);
 
-    expect(outsideProjectPaths(observed).length).toBeGreaterThan(0);
-    expect(observed.runtime.version).toBeNull();
-    expect(observed.diagnostics.map((entry) => entry.code)).toContain(
-      'consent-not-granted:install',
-    );
-  });
-});
+      expect(outsideProjectPaths(observed).length).toBeGreaterThan(0);
+      expect(observed.runtime.version).toBeNull();
+      const codes = observed.diagnostics.map((entry) => entry.code);
+      expect(codes).not.toContain('consent-not-granted:user');
+      expect(codes).toContain('consent-not-granted:install');
+    });
+  },
+);

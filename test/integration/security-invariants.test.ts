@@ -54,140 +54,166 @@ async function latestObserved(m: Materialized) {
   };
 }
 
-describe.each<FixtureRuntime>(['claude', 'codex'])('%s harness invariants', (runtime) => {
-  it('is read-only: a full inspect changes nothing under the project, the user scope, or outside', async () => {
-    const m = await materialize(runtime);
-    materialized.push(m);
-    await grantConsent(m.home, runtime);
-    // The store under `~/.pfl` is the one thing a run may write; everything else
-    // (project, the whole home except `.pfl`, and the out-of-project fixture)
-    // must be untouched.
-    const beforeProject = await fingerprintTree(m.projectRoot);
-    const beforeHome = await fingerprintTree(m.home, { exclude: ['.pfl'] });
-    const beforeOutside = await fingerprintTree(m.outsideDir);
-    // Positive controls: each fingerprint actually covers entries, so an empty
-    // comparison cannot pass vacuously.
-    expect(beforeProject.size).toBeGreaterThan(0);
-    expect(beforeHome.size).toBeGreaterThan(0);
-    expect(beforeOutside.size).toBeGreaterThan(0);
+describe.each<FixtureRuntime>(['claude', 'codex', 'opencode'])(
+  '%s harness invariants',
+  (runtime) => {
+    it('is read-only: a full inspect changes nothing under the project, the user scope, or outside', async () => {
+      const m = await materialize(runtime);
+      materialized.push(m);
+      await grantConsent(m.home, runtime);
+      // The store under `~/.pfl` is the one thing a run may write; everything else
+      // (project, the whole home except `.pfl`, and the out-of-project fixture)
+      // must be untouched.
+      const beforeProject = await fingerprintTree(m.projectRoot);
+      const beforeHome = await fingerprintTree(m.home, { exclude: ['.pfl'] });
+      const beforeOutside = await fingerprintTree(m.outsideDir);
+      // Positive controls: each fingerprint actually covers entries, so an empty
+      // comparison cannot pass vacuously.
+      expect(beforeProject.size).toBeGreaterThan(0);
+      expect(beforeHome.size).toBeGreaterThan(0);
+      expect(beforeOutside.size).toBeGreaterThan(0);
 
-    await runInspect(
-      m.projectRoot,
-      { runtime: RUNTIME_IDS[runtime], home: m.home, pathValue: '', interactive: false },
-      silent,
-    );
+      await runInspect(
+        m.projectRoot,
+        { runtime: RUNTIME_IDS[runtime], home: m.home, pathValue: '', interactive: false },
+        silent,
+      );
 
-    expect(await fingerprintTree(m.projectRoot)).toEqual(beforeProject);
-    expect(await fingerprintTree(m.home, { exclude: ['.pfl'] })).toEqual(beforeHome);
-    expect(await fingerprintTree(m.outsideDir)).toEqual(beforeOutside);
-  });
+      expect(await fingerprintTree(m.projectRoot)).toEqual(beforeProject);
+      expect(await fingerprintTree(m.home, { exclude: ['.pfl'] })).toEqual(beforeHome);
+      expect(await fingerprintTree(m.outsideDir)).toEqual(beforeOutside);
+    });
 
-  it('never follows the symlink and records it once as skipped', async () => {
-    const m = await inspect(runtime);
-    const { observed } = await latestObserved(m);
+    it('never follows the symlink and records it once as skipped', async () => {
+      const m = await inspect(runtime);
+      const { observed } = await latestObserved(m);
 
-    const links = observed.elements.filter(
-      (element) => element.source.path === m.symlinkRelativePath,
-    );
-    expect(links).toHaveLength(1);
-    expect(links[0]).toMatchObject({ status: 'skipped', reason: 'symlink-not-followed' });
-    expect(
-      observed.elements.some((element) => (element.source.path ?? '').includes('leaked')),
-    ).toBe(false);
-  });
+      const links = observed.elements.filter(
+        (element) => element.source.path === m.symlinkRelativePath,
+      );
+      expect(links).toHaveLength(1);
+      expect(links[0]).toMatchObject({ status: 'skipped', reason: 'symlink-not-followed' });
+      expect(
+        observed.elements.some((element) => (element.source.path ?? '').includes('leaked')),
+      ).toBe(false);
+    });
 
-  it('never follows a symlinked settings file and records it once as skipped', async () => {
-    const m = await inspect(runtime);
-    const { observed } = await latestObserved(m);
+    it('never follows a symlinked settings file and records it once as skipped', async () => {
+      const m = await inspect(runtime);
+      const { observed } = await latestObserved(m);
 
-    const links = observed.elements.filter(
-      (element) => element.source.path === m.settingsSymlinkRelativePath,
-    );
-    expect(links).toHaveLength(1);
-    expect(links[0]).toMatchObject({ status: 'skipped', reason: 'symlink-not-followed' });
-    // The old unguarded read parsed the symlink target into a config element.
-    expect(
-      observed.elements.some((element) =>
-        (element.source.path ?? '').startsWith(`${m.settingsSymlinkRelativePath}#`),
-      ),
-    ).toBe(false);
-  });
+      const links = observed.elements.filter(
+        (element) => element.source.path === m.settingsSymlinkRelativePath,
+      );
+      expect(links).toHaveLength(1);
+      expect(links[0]).toMatchObject({ status: 'skipped', reason: 'symlink-not-followed' });
+      // The old unguarded read parsed the symlink target into a config element.
+      expect(
+        observed.elements.some((element) =>
+          (element.source.path ?? '').startsWith(`${m.settingsSymlinkRelativePath}#`),
+        ),
+      ).toBe(false);
+    });
 
-  it('records unsupported and unreadable entries and reports partial completeness', async () => {
-    const m = await inspect(runtime);
-    const { observed } = await latestObserved(m);
+    it('does not treat .mcp.json as an OpenCode MCP source', async () => {
+      if (runtime !== 'opencode') return;
+      const m = await inspect(runtime);
+      const { observed } = await latestObserved(m);
 
-    expect(observed.completeness).toBe('partial');
-    expect(observed.elements.some((element) => element.status === 'unreadable')).toBe(true);
-    expect(observed.diagnostics.some((diagnostic) => diagnostic.code === 'unreadable-file')).toBe(
-      true,
-    );
-    // Only the Claude fixture carries an unknown file inside a known area; the
-    // Codex discovery areas are leaves, so nothing is unsupported there.
-    if (runtime === 'claude') {
-      expect(observed.elements.some((element) => element.status === 'unsupported')).toBe(true);
-    }
-  });
+      // The project `.mcp.json` is a Claude Code source, not an OpenCode one.
+      expect(
+        observed.elements.some((element) => (element.source.path ?? '').includes('.mcp.json')),
+      ).toBe(false);
+    });
 
-  it('persists no raw content and no secrets', async () => {
-    const m = await inspect(runtime);
-    const artifacts = await readStoreArtifacts(m.home);
+    it('records unsupported and unreadable entries and reports partial completeness', async () => {
+      const m = await inspect(runtime);
+      const { observed } = await latestObserved(m);
 
-    // Positive control: a negative assertion over an empty store proves nothing,
-    // and the artifact bodies (not only the pointer) must have been read.
-    expect(artifacts.length).toBeGreaterThan(0);
-    expect(artifacts).toContain('"schemaVersion"');
-    for (const sentinel of SENTINELS) {
-      expect(artifacts).not.toContain(sentinel);
-    }
-    for (const secret of SECRETS) {
-      expect(artifacts).not.toContain(secret);
-    }
-  });
+      expect(observed.completeness).toBe('partial');
+      expect(observed.elements.some((element) => element.status === 'unreadable')).toBe(true);
+      expect(observed.diagnostics.some((diagnostic) => diagnostic.code === 'unreadable-file')).toBe(
+        true,
+      );
+      // Only the Claude and OpenCode fixtures carry an item the adapter cannot
+      // classify inside a known area (a Claude unknown file, an OpenCode legacy
+      // `mode/` file); the Codex discovery areas are leaves. The OpenCode case is
+      // pinned to its path so deleting the fixture file cannot leave it green.
+      if (runtime === 'opencode') {
+        expect(
+          observed.elements
+            .filter((element) => element.status === 'unsupported')
+            .map((element) => element.source.path),
+        ).toContain('.opencode/mode/legacy.md');
+      } else if (runtime === 'claude') {
+        expect(observed.elements.some((element) => element.status === 'unsupported')).toBe(true);
+      }
+    });
 
-  it('stores interpretation text that carries no path or raw content', async () => {
-    const m = await inspect(runtime);
-    const projectId = (await resolveProjectContext(m.projectRoot)).id;
-    const pointer = await readLatestPointer(projectId, m.home);
-    if (pointer === null) throw new Error('expected a latest pointer after inspect');
-    const interpretation = await readInterpretationForResolved(projectId, pointer.resolved, m.home);
-    if (interpretation === null) throw new Error('expected a stored interpretation');
+    it('persists no raw content and no secrets', async () => {
+      const m = await inspect(runtime);
+      const artifacts = await readStoreArtifacts(m.home);
 
-    // Reasons and finding messages are templates over counts, enums, and
-    // structural key names; none may carry a path or captured content. A
-    // positive control keeps the check from passing over an empty set.
-    const texts = [
-      ...interpretation.elements.map((element) => element.reason),
-      ...interpretation.findings.map((finding) => finding.message),
-    ];
-    expect(texts.length).toBeGreaterThan(0);
-    for (const text of texts) {
-      expect(text).not.toContain('/');
-      expect(text).not.toContain('~');
-      for (const sentinel of SENTINELS) expect(text).not.toContain(sentinel);
-      for (const secret of SECRETS) expect(text).not.toContain(secret);
-    }
-  });
+      // Positive control: a negative assertion over an empty store proves nothing,
+      // and the artifact bodies (not only the pointer) must have been read.
+      expect(artifacts.length).toBeGreaterThan(0);
+      expect(artifacts).toContain('"schemaVersion"');
+      for (const sentinel of SENTINELS) {
+        expect(artifacts).not.toContain(sentinel);
+      }
+      for (const secret of SECRETS) {
+        expect(artifacts).not.toContain(secret);
+      }
+    });
 
-  it('keeps snapshots immutable across repeated runs', async () => {
-    const m = await inspect(runtime);
-    const projectId = (await resolveProjectContext(m.projectRoot)).id;
-    const pointer = await readLatestPointer(projectId, m.home);
-    if (pointer === null) throw new Error('expected a latest pointer after inspect');
-    const firstPath = join(observationsDir(projectId, m.home), `${pointer.observed}.json`);
-    const firstBytes = await readFile(firstPath, 'utf8');
+    it('stores interpretation text that carries no path or raw content', async () => {
+      const m = await inspect(runtime);
+      const projectId = (await resolveProjectContext(m.projectRoot)).id;
+      const pointer = await readLatestPointer(projectId, m.home);
+      if (pointer === null) throw new Error('expected a latest pointer after inspect');
+      const interpretation = await readInterpretationForResolved(
+        projectId,
+        pointer.resolved,
+        m.home,
+      );
+      if (interpretation === null) throw new Error('expected a stored interpretation');
 
-    await runInspect(
-      m.projectRoot,
-      { runtime: RUNTIME_IDS[runtime], home: m.home, pathValue: '', interactive: false },
-      silent,
-    );
+      // Reasons and finding messages are templates over counts, enums, and
+      // structural key names; none may carry a path or captured content. A
+      // positive control keeps the check from passing over an empty set.
+      const texts = [
+        ...interpretation.elements.map((element) => element.reason),
+        ...interpretation.findings.map((finding) => finding.message),
+      ];
+      expect(texts.length).toBeGreaterThan(0);
+      for (const text of texts) {
+        expect(text).not.toContain('/');
+        expect(text).not.toContain('~');
+        for (const sentinel of SENTINELS) expect(text).not.toContain(sentinel);
+        for (const secret of SECRETS) expect(text).not.toContain(secret);
+      }
+    });
 
-    expect(await readFile(firstPath, 'utf8')).toBe(firstBytes);
-    const files = await readdir(observationsDir(projectId, m.home));
-    expect(files).toHaveLength(2);
-  });
-});
+    it('keeps snapshots immutable across repeated runs', async () => {
+      const m = await inspect(runtime);
+      const projectId = (await resolveProjectContext(m.projectRoot)).id;
+      const pointer = await readLatestPointer(projectId, m.home);
+      if (pointer === null) throw new Error('expected a latest pointer after inspect');
+      const firstPath = join(observationsDir(projectId, m.home), `${pointer.observed}.json`);
+      const firstBytes = await readFile(firstPath, 'utf8');
+
+      await runInspect(
+        m.projectRoot,
+        { runtime: RUNTIME_IDS[runtime], home: m.home, pathValue: '', interactive: false },
+        silent,
+      );
+
+      expect(await readFile(firstPath, 'utf8')).toBe(firstBytes);
+      const files = await readdir(observationsDir(projectId, m.home));
+      expect(files).toHaveLength(2);
+    });
+  },
+);
 
 describe('no-execution guard', () => {
   // A text scan is a tripwire, not a proof: obfuscation (globalThis['ev'+'al'])
