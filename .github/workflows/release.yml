@@ -25,8 +25,25 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # Trusted publishing (OIDC) needs npm >= 11.5.1 and a recent CLI.
-      - run: npm install -g npm@latest
+      # Trusted publishing (OIDC) needs npm >= 11.5.1. Assert the runner's npm
+      # instead of pinning or force-upgrading it: a stale runner then fails here
+      # with a clear message rather than deep in the publish step, and the
+      # workflow keeps using the npm the runner ships.
+      - name: Assert the runner npm supports trusted publishing
+        run: |
+          required="11.5.1"
+          have="$(npm --version)"
+          node -e '
+            const parse = (value) => value.split("-")[0].split(".").map(Number);
+            const compare = (a, b) => (a[0] - b[0]) || (a[1] - b[1]) || (a[2] - b[2]);
+            if (compare(parse(process.argv[1]), parse(process.argv[2])) < 0) {
+              console.error(
+                `npm ${process.argv[1]} is older than ${process.argv[2]}, which trusted publishing (OIDC) requires.`,
+              );
+              process.exit(1);
+            }
+          ' "$have" "$required"
+          echo "npm $have supports trusted publishing"
 
       - run: pnpm run check
       - run: pnpm run format
@@ -58,8 +75,17 @@ jobs:
           ./node_modules/.bin/pfl --help >/dev/null
           ./node_modules/.bin/pfl --version
 
+      # A release-candidate tag exercises the whole workflow without publishing:
+      # the gate, tag/version agreement, tarball inspection, and smoke test all
+      # run, and only the publish is a dry run. This is the first of the two
+      # stages the v1.0 release plan requires.
+      - name: Publish (dry run for a release candidate)
+        if: contains(github.ref_name, '-rc')
+        run: npm publish --dry-run --access public
+
       # Trusted publishing (npm OIDC): no token. Provenance is requested
       # explicitly, since it is not always attached automatically.
       # Requires the trusted publisher configured on npmjs.com (see the README).
       - name: Publish
+        if: ${{ !contains(github.ref_name, '-rc') }}
         run: npm publish --provenance --access public
