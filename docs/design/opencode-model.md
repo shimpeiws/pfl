@@ -1072,9 +1072,9 @@ layout rows, and no row requires a new `NativeOrigin`.
 | Where | Was | On 1.18.31 |
 | --- | --- | --- |
 | §4 plural element dirs | [upstream] — plural spellings documented, unexercised | **Accepted.** `agents/`, `commands/`, `skills/` load in both scopes; `debug config` lists an `agents/plurmark.md` agent and `debug skill` lists a `skills/plurmark/SKILL.md` skill beside the singular copies |
-| §4.1/§7 `mode(s)/` | legacy; M9 records `unsupported` | **Corrected: a project `.opencode/mode/<name>.md` loads as a primary agent.** The resolved `agent` map lists it with `"mode": "primary"`. The global `~/.config/opencode/mode/` file was **not** observed in the same run, so the global row stays unconfirmed. Adapter follow-up: #149 |
-| §5.2/§7 `references` | local directories or Git repositories, shape unspecified | **Corrected: an object keyed by alias.** `{ "path": … }` or `{ "repository": …, "branch": … }`, plus optional `description`/`hidden`, and a string shorthand; an **array is rejected** as invalid config. Still declared, never opened. Adapter follow-up: #150 |
-| §4/§7 `skills` key | absent | **New surface: `skills = { paths, urls }`.** A skill under `skills.paths` (`./extra-skills/extraskill/SKILL.md`) was loaded. These are declared, never-opened skill sources. Adapter follow-up: #151 |
+| §4.1/§7 `mode(s)/` | legacy; M9 records `unsupported` | **Corrected: a project `.opencode/mode/<name>.md` loads as a primary agent.** The resolved `agent` map lists it with `"mode": "primary"`. The global `~/.config/opencode/mode/` file was **not** observed in the same run, so the global row stays unconfirmed. Adapter aligned (#149) |
+| §5.2/§7 `references` | local directories or Git repositories, shape unspecified | **Corrected: an object keyed by alias.** `{ "path": … }` or `{ "repository": …, "branch": … }`, plus optional `description`/`hidden`, and a string shorthand; an **array is rejected** as invalid config. Still declared, never opened. Adapter aligned (#150) |
+| §4/§7 `skills` key | absent | **New surface: `skills = { paths, urls }`.** A skill under `skills.paths` (`./extra-skills/extraskill/SKILL.md`) was loaded. These are declared, never-opened skill sources. Adapter aligned (#151) |
 | §2/#8 MCP, `.mcp.json` co-present | unexercised | **Confirmed not a source.** With a config `mcp` and a `.mcp.json` present together, the resolved `mcp` key held only the config file's servers |
 | §4.1/§4.2 cross-runtime skills | [installed: self-described] | **Accepted.** Project `.claude/skills` and `.agents/skills`, and user `~/.claude/skills` and `~/.agents/skills`, all load |
 | §4.2 `AGENTS.md` walk, `CLAUDE.md` fallback | [installed: self-described] | **Not re-observed.** No `debug` subcommand exposes loaded instruction files, so this stays self-described rather than measured |
@@ -1096,15 +1096,16 @@ layout rows, and no row requires a new `NativeOrigin`.
   corrections refine *shapes*; both remain declarations `pfl` records and never
   opens, and neither enters the #94 read-path inventory.
 
-### Adapter consequence
+### Adapter alignment
 
-The M9 adapter was implemented against this document as it stood before this
-pass, so three surfaces are now known to be under- or mis-modelled:
-`mode(s)/` recorded `unsupported` though the runtime loads it as primary agents
-(#149); `references` read as an array so its real object form is recorded
-`unsupported` (#150); and the `skills` key recorded as an unknown key rather than
-as declared sources (#151). These are adapter changes with their own tests and
-reviews; this reconciliation changes no `src/` file.
+The reconciliation corrected three surfaces the M9 adapter had implemented
+against the pre-reconciliation rows, and the adapter was updated to match in the
+same change: `mode(s)/` files are now recorded as agents rather than
+`unsupported` (#149); `references` is read in its object form, one opaque
+declaration per alias (#150); and the `skills` key's `paths`/`urls` are recorded
+as declared, never-opened sources (#151). None of the three opens a target; the
+`mode(s)/` files were already read as files, and the two declaration forms are
+recorded with a derived kind only.
 
 ## Appendix A — 1.18.31 runs excluded from §6's count
 

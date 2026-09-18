@@ -109,10 +109,17 @@ export const MANAGED_CONFIG_DIR = '/Library/Application Support/opencode';
 export interface ElementDirSpec {
   /** Directory names accepted for this surface. */
   dirs: readonly string[];
-  /** The harness kind an item in this directory maps to; `unknown` for legacy `mode(s)/`. */
-  kind: OpenCodeElementKind | 'unknown';
+  /** The harness kind an item in this directory maps to. */
+  kind: OpenCodeElementKind;
   /** Whether frontmatter metadata is extracted from each file. */
   extractFrontmatter: boolean;
+  /**
+   * For an agent-like directory (`kind: 'subagents'`), the mode applied when a
+   * file declares none. `agent(s)/` defaults to `subagent`; the legacy
+   * `mode(s)/` directory defaults to `primary` (measured on 1.18.31: a
+   * `mode/<name>.md` file loads as a primary agent).
+   */
+  defaultAgentMode?: 'primary' | 'subagent';
   /** Regular-file filter: only matching files are read and recorded. */
   selectFile: (relativePath: string) => boolean;
 }
@@ -133,6 +140,7 @@ export const ELEMENT_DIRS: readonly ElementDirSpec[] = [
     dirs: ['agent', 'agents'],
     kind: 'subagents',
     extractFrontmatter: true,
+    defaultAgentMode: 'subagent',
     selectFile: (relativePath) => hasExtension(relativePath, ['.md']),
   },
   {
@@ -159,12 +167,15 @@ export const ELEMENT_DIRS: readonly ElementDirSpec[] = [
     extractFrontmatter: false,
     selectFile: () => true,
   },
-  // Legacy `mode(s)/`: recorded as unsupported, never classified as agents
-  // (model doc §4.1, §7).
+  // Legacy `mode(s)/`: measured on 1.18.31 as loading each `<name>.md` as a
+  // **primary** agent (the resolved `agent` map lists it with
+  // `"mode": "primary"`), so it is agent-like with a primary default rather
+  // than an unsupported directory (model doc §12; #149).
   {
     dirs: ['mode', 'modes'],
-    kind: 'unknown',
-    extractFrontmatter: false,
+    kind: 'subagents',
+    extractFrontmatter: true,
+    defaultAgentMode: 'primary',
     selectFile: (relativePath) => hasExtension(relativePath, ['.md']),
   },
 ];
