@@ -5,7 +5,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { deriveFindings } from '../../classify/findings.js';
 import type { ObservedElement } from '../../core/observed.js';
 import { MAX_ANCESTOR_DIRS, MAX_PARSE_BYTES } from '../../limits.js';
-import { collectCodexHarness } from './discovery.js';
+import { collectCodexHarness, type AssertKindsNarrow } from './discovery.js';
 import {
   FALLBACK_ELEMENT_KINDS,
   KNOWN_ELEMENT_KINDS,
@@ -53,6 +53,11 @@ describe('element kind boundary', () => {
 // @ts-expect-error
 const typoKind: CodexRecordedKind = 'skils';
 void typoKind;
+
+// Pins the helper signatures, not only the union: if a builder helper's `kind`
+// is retyped to `string`, `AssertKindsNarrow` becomes `never` and this fails.
+const helpersNarrow: AssertKindsNarrow = true;
+void helpersNarrow;
 
 const CONSENTED = { user: true, install: true, grantedScopes: ['codex:user'] };
 const DENIED = { user: false, install: false, grantedScopes: [] };

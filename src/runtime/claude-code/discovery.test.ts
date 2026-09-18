@@ -14,7 +14,11 @@ import {
   type ClaudeCodeRecordedKind,
   userConfigDir,
 } from './paths.js';
-import { collectClaudeCodeHarness, managedConfigDirFor } from './discovery.js';
+import {
+  collectClaudeCodeHarness,
+  managedConfigDirFor,
+  type AssertKindsNarrow,
+} from './discovery.js';
 import { resolveClaudeCode } from './resolve.js';
 
 const originalPath = process.env['PATH'];
@@ -56,6 +60,11 @@ describe('element kind boundary', () => {
 // @ts-expect-error
 const typoKind: ClaudeCodeRecordedKind = 'skils';
 void typoKind;
+
+// Pins the helper signatures, not only the union: if a builder helper's `kind`
+// is retyped to `string`, `AssertKindsNarrow` becomes `never` and this fails.
+const helpersNarrow: AssertKindsNarrow = true;
+void helpersNarrow;
 
 const CONSENTED = { user: true, install: true, grantedScopes: ['claude-code:user'] };
 const DENIED = { user: false, install: false, grantedScopes: [] };

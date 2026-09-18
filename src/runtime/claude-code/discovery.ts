@@ -923,6 +923,20 @@ function skippedNonRegularElement(
   return skippedElement(origin, scope, kind, path, 'non-regular-file-not-opened');
 }
 
+/**
+ * Compile-time guard (roadmap M9 #131). If any builder helper's `kind` widens
+ * back to `string`, this becomes `never`, and the assertion in the test fails.
+ * The `@ts-expect-error` test pins the kind union; this pins the helpers that
+ * use it, which the union alone does not (a helper could be retyped to `string`
+ * while the union stayed narrow).
+ */
+type KindParams =
+  | Parameters<typeof symlinkElement>[2]
+  | Parameters<typeof unreadableElement>[2]
+  | Parameters<typeof skippedElement>[2]
+  | Parameters<typeof skippedNonRegularElement>[2];
+export type AssertKindsNarrow = string extends KindParams ? never : true;
+
 function reasonForWalkSkip(skipReason: 'hardlink-not-followed' | 'file-too-large'): ObservedReason {
   return skipReason === 'hardlink-not-followed' ? 'hardlink-not-followed' : 'limit-exceeded';
 }

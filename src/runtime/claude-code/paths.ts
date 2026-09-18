@@ -112,7 +112,7 @@ export type ClaudeCodeElementKind = (typeof KNOWN_ELEMENT_KINDS)[number];
 /**
  * The kind a settings file falls back to when it cannot be read or parsed: a
  * deliberate best-effort value, not a known kind. It stays out of
- * `KNOWN_ELEMENT_KINDS` so the classifier's kind-coverage check does not demand
+ * `KNOWN_ELEMENT_KINDS` so the classifier kind-coverage test does not demand
  * a facet mapping for it (roadmap M9 #131). The shared observed-element boundary
  * still takes a `string`, which is the separate design #131 leaves open.
  */

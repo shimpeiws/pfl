@@ -34,18 +34,30 @@ site is now a compile error rather than a silently different `ElementId`.
 
 ## Findings and disposition
 
-| #   | Severity | Finding                                                                                                                                                      | Disposition                                                                                                                                     |
-| --- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| 1   | Medium   | The registry doc claimed an incomplete _registration_ is a compile error; it is an incomplete _entry_ that is, while a missing entry surfaces at runtime     | Fixed: the doc says "entry", and notes that `registry.test.ts` guards the key set                                                               |
-| 2   | Medium   | No test falsified the kind tightening; the positive suite only proves valid code compiles                                                                    | Fixed: a `@ts-expect-error` case in each adapter asserts a typo'd kind does not compile, and would itself fail if the union widened to `string` |
-| 3   | Low      | `unsupportedElement` hardcoded the `'unknown'` literal while the new `UNKNOWN_ELEMENT_KIND` constant was otherwise unused — a second source of truth         | Fixed: it references the constant                                                                                                               |
-| 4   | Low      | The codex path module lacked the "shared boundary still takes `string`" caveat the Claude one carries                                                        | Fixed                                                                                                                                           |
-| 5   | Info     | The claim "a typo at a known-kind call site is a compile error" holds for the builder helpers; `grep "kind: string"` finds none in production `src/runtime/` | Confirmed, no action                                                                                                                            |
+| #   | Severity | Finding                                                                                                                                                      | Disposition                                                                                                                                                                                                            |
+| --- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Medium   | The registry doc claimed an incomplete _registration_ is a compile error; it is an incomplete _entry_ that is, while a missing entry surfaces at runtime     | Fixed: the doc says "entry", and notes that `registry.test.ts` guards the key set                                                                                                                                      |
+| 2   | Medium   | No test falsified the kind tightening; the positive suite only proves valid code compiles, and a union test alone does not pin the builder signatures        | Fixed: a `@ts-expect-error` case per adapter pins the union, and an exported `AssertKindsNarrow` type pins the helper signatures (verified by temporarily widening a helper to `string`, which fails `typecheck:test`) |
+| 3   | Low      | `unsupportedElement` hardcoded the `'unknown'` literal while the new `UNKNOWN_ELEMENT_KIND` constant was otherwise unused — a second source of truth         | Fixed: it references the constant                                                                                                                                                                                      |
+| 4   | Low      | The codex path module lacked the "shared boundary still takes `string`" caveat the Claude one carries                                                        | Fixed                                                                                                                                                                                                                  |
+| 5   | Info     | The claim "a typo at a known-kind call site is a compile error" holds for the builder helpers; `grep "kind: string"` finds none in production `src/runtime/` | Confirmed, no action                                                                                                                                                                                                   |
 
 The review also confirmed there is no fourth parallel record keyed by runtime id
 outside the registry, and that the fallback (`settings`/`config`) and `unknown`
 classification behavior is unchanged (a pre-existing, separately tracked concern
 for #91).
+
+### Dismissed (checked and fine)
+
+- **"The type guard may not run in CI."** `ci.yml` runs `pnpm run
+typecheck:test`, so the `@ts-expect-error` and `AssertKindsNarrow` assertions
+  are enforced on every pull request.
+- **"`KNOWN_ELEMENT_KINDS` may not drive the classifier."** `classifier.test.ts`
+  imports both adapters' `KNOWN_ELEMENT_KINDS` and asserts coverage, so the path
+  modules' comment is accurate; it now says "test" rather than "check".
+- **"The registry guard may be a tautology."** `registry.test.ts` asserts
+  `listRuntimeIds()` against the literal `['claude-code', 'codex']`, not a value
+  derived from the registry, so adding a runtime without an entry fails it.
 
 No finding was accepted as a risk.
 
