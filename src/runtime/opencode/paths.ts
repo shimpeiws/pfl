@@ -109,7 +109,7 @@ export const MANAGED_CONFIG_DIR = '/Library/Application Support/opencode';
 export interface ElementDirSpec {
   /** Directory names accepted for this surface. */
   dirs: readonly string[];
-  /** The harness kind an item in this directory maps to; `unknown` for legacy `mode(s)/`. */
+  /** The harness kind an item in this directory maps to. */
   kind: OpenCodeElementKind;
   /** Whether frontmatter metadata is extracted from each file. */
   extractFrontmatter: boolean;

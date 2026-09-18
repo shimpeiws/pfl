@@ -118,8 +118,13 @@ async function makeFixture(): Promise<Fixture> {
       `  "instructions": ["../shared/AGENTS.md", "https://example.com/p?token=${SECRET_SENTINEL}", "docs/*.md"],`,
       '  "references": {',
       '    "refpath": { "path": "../refs" },',
+      '    "refrel": { "path": "vendor/refs" },',
+      '    "refabs": { "path": "/abs/refs" },',
+      '    "refglob": { "path": "docs/*.md" },',
       '    "refrepo": { "repository": "org/repo", "branch": "main" },',
-      '    "repshort": "owner/repo"',
+      '    "repshort": "owner/repo",',
+      '    "refgit": "github.com/org/repo.git",',
+      '    "refbad": { "branch": "main" }',
       '  },',
       '  "skills": {',
       '    "paths": ["./extra-skills"],',
@@ -147,6 +152,8 @@ async function makeFixture(): Promise<Fixture> {
     join(root, '.opencode', 'agent', 'primary.md'),
     ['---', 'description: "a primary agent"', 'mode: primary', '---', 'body', ''].join('\n'),
   );
+  // An agent file with no frontmatter falls to the conservative subagent default.
+  await writeFile(join(root, '.opencode', 'agent', 'bare.md'), 'no frontmatter here\n');
   await writeFile(
     join(root, '.opencode', 'command', 'deploy.md'),
     ['---', 'description: "deploy"', '---', 'body', ''].join('\n'),
@@ -158,6 +165,14 @@ async function makeFixture(): Promise<Fixture> {
   await writeFile(join(root, '.opencode', 'plugins', 'local.ts'), 'export default {}\n');
   await writeFile(join(root, '.opencode', 'tool', 'mytool.ts'), 'export default {}\n');
   await writeFile(join(root, '.opencode', 'mode', 'legacy.md'), '# legacy mode\n');
+  await writeFile(
+    join(root, '.opencode', 'mode', 'allmode.md'),
+    ['---', 'description: "an all-mode agent"', 'mode: all', '---', 'body', ''].join('\n'),
+  );
+  await writeFile(
+    join(root, '.opencode', 'mode', 'submode.md'),
+    ['---', 'description: "a subagent in mode/"', 'mode: subagent', '---', 'body', ''].join('\n'),
+  );
   await writeFile(
     join(root, '.claude', 'skills', 'compat', 'SKILL.md'),
     ['---', 'name: compat', 'description: "claude compat"', '---', 'body', ''].join('\n'),
@@ -370,26 +385,23 @@ describe('collectOpencodeHarness config', () => {
       ],
     ).toBe('glob');
 
-    // `references` is an object keyed by alias (#150): a local `path`, a
-    // `repository`, and the `owner/repo` shorthand.
+    // `references` is an object keyed by alias (#150). The object's own key
+    // decides the family, so `{ path }` is never a repository.
+    const referenceKind = (fragment: string): string =>
+      byPath(observed.elements, `.opencode/opencode.jsonc#${fragment}`).metadata[
+        'declaredTargetKind'
+      ] as string;
+    expect(referenceKind('references.0.refpath')).toBe('path');
+    expect(referenceKind('references.1.refrel')).toBe('path');
+    expect(referenceKind('references.2.refabs')).toBe('absolute-path');
+    expect(referenceKind('references.3.refglob')).toBe('glob');
+    expect(referenceKind('references.4.refrepo')).toBe('repository');
+    expect(referenceKind('references.5.repshort')).toBe('repository');
+    expect(referenceKind('references.6.refgit')).toBe('repository');
+    expect(referenceKind('references.7.refbad')).toBe('other');
     expect(
-      byPath(observed.elements, '.opencode/opencode.jsonc#references.refpath').native.kind,
+      byPath(observed.elements, '.opencode/opencode.jsonc#references.0.refpath').native.kind,
     ).toBe('references');
-    expect(
-      byPath(observed.elements, '.opencode/opencode.jsonc#references.refpath').metadata[
-        'declaredTargetKind'
-      ],
-    ).toBe('path');
-    expect(
-      byPath(observed.elements, '.opencode/opencode.jsonc#references.refrepo').metadata[
-        'declaredTargetKind'
-      ],
-    ).toBe('repository');
-    expect(
-      byPath(observed.elements, '.opencode/opencode.jsonc#references.repshort').metadata[
-        'declaredTargetKind'
-      ],
-    ).toBe('repository');
 
     // `skills` paths/urls are declared sources (#151).
     expect(byPath(observed.elements, '.opencode/opencode.jsonc#skills.paths.0').native.kind).toBe(
@@ -423,6 +435,23 @@ describe('collectOpencodeHarness config', () => {
       status: 'unsupported',
     });
   });
+
+  it('records a malformed skills key visibly instead of dropping it', async () => {
+    const fixture = await makeFixture();
+    await writeFile(
+      join(fixture.root, 'opencode.json'),
+      JSON.stringify({ skills: { paths: './x', weird: [] } }),
+    );
+
+    const observed = await collect(fixture, CONSENTED);
+
+    expect(byPath(observed.elements, 'opencode.json#skills.paths')).toMatchObject({
+      status: 'unsupported',
+    });
+    expect(byPath(observed.elements, 'opencode.json#skills.weird')).toMatchObject({
+      status: 'unsupported',
+    });
+  });
 });
 
 describe('collectOpencodeHarness element directories', () => {
@@ -435,12 +464,17 @@ describe('collectOpencodeHarness element directories', () => {
     expect(byPath(observed.elements, '.opencode/agent/primary.md').metadata['agentMode']).toBe(
       'primary',
     );
+    // No frontmatter → the conservative subagent default.
+    expect(byPath(observed.elements, '.opencode/agent/bare.md').native.kind).toBe('subagents');
     expect(byPath(observed.elements, '.opencode/command/deploy.md').native.kind).toBe('commands');
     expect(byPath(observed.elements, '.opencode/skill/dup/SKILL.md').native.kind).toBe('skills');
     expect(byPath(observed.elements, '.opencode/plugins/local.ts').native.kind).toBe('plugin');
     expect(byPath(observed.elements, '.opencode/tool/mytool.ts').native.kind).toBe('tools');
-    // The legacy `mode(s)/` directory loads as primary agents (#149).
+    // The legacy `mode(s)/` directory loads as primary agents (#149); a
+    // declared mode is honored, and `all` stays in the conservative bucket.
     expect(byPath(observed.elements, '.opencode/mode/legacy.md').native.kind).toBe('agents');
+    expect(byPath(observed.elements, '.opencode/mode/submode.md').native.kind).toBe('subagents');
+    expect(byPath(observed.elements, '.opencode/mode/allmode.md').native.kind).toBe('subagents');
   });
 
   it('records cross-runtime skills with their compat scope', async () => {

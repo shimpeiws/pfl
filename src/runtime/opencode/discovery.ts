@@ -787,7 +787,7 @@ function recordDeclaredTargets(
       elements.push(unsupportedConfigKey(path, origin, scope));
       return;
     }
-    elements.push(declaredElement(kind, path, declaredTargetKind(entry, kind), origin, scope));
+    elements.push(declaredElement(kind, path, referencePathKind(entry), origin, scope));
   });
 }
 
@@ -812,11 +812,13 @@ function recordReferences(
     elements.push(unsupportedConfigKey(withFragment(displayPath, 'references'), origin, scope));
     return;
   }
-  for (const [alias, target] of cappedEntries(value, displayPath, diagnostics)) {
+  for (const [index, [alias, target]] of cappedEntries(value, displayPath, diagnostics).entries()) {
     elements.push(
       declaredElement(
         'references',
-        withFragment(displayPath, capMetadataString(`references.${alias}`)),
+        // The index keeps the path unique even if two long aliases truncate to
+        // the same prefix; the alias is carried for readability.
+        withFragment(displayPath, capMetadataString(`references.${index}.${alias}`)),
         referenceTargetKind(target),
         origin,
         scope,
@@ -844,9 +846,27 @@ function recordSkillSources(
     elements.push(unsupportedConfigKey(withFragment(displayPath, 'skills'), origin, scope));
     return;
   }
-  for (const key of ['paths', 'urls'] as const) {
-    const list = value[key];
-    if (!Array.isArray(list)) continue;
+  for (const [key, list] of Object.entries(value)) {
+    // Any sub-key the adapter does not model — including a `paths`/`urls` that
+    // is not an array — is recorded rather than dropped, so adding `skills` to
+    // the modelled keys does not remove the visibility the unknown-key sweep
+    // used to give (best-effort invariant).
+    if (key !== 'paths' && key !== 'urls') {
+      elements.push(
+        unsupportedConfigKey(
+          withFragment(displayPath, capMetadataString(`skills.${key}`)),
+          origin,
+          scope,
+        ),
+      );
+      continue;
+    }
+    if (!Array.isArray(list)) {
+      elements.push(
+        unsupportedConfigKey(withFragment(displayPath, `skills.${key}`), origin, scope),
+      );
+      continue;
+    }
     if (list.length > MAX_CONFIG_ITEMS) {
       diagnostics.push(truncationDiagnostic(displayPath, `skills.${key} targets`));
     }
@@ -857,7 +877,7 @@ function recordSkillSources(
         return;
       }
       // A `urls` entry is necessarily a URL; a `paths` entry is a path or glob.
-      const kind = key === 'urls' ? 'url' : declaredTargetKind(entry, 'instructions');
+      const kind = key === 'urls' ? 'url' : referencePathKind(entry);
       elements.push(declaredElement('skills', path, kind, origin, scope));
     });
   }
@@ -882,41 +902,42 @@ function declaredElement(
   });
 }
 
-/** A `references` entry's kind, from the string shorthand or the object form. */
+/** A `references` entry's kind. The object form's own key decides the family. */
 function referenceTargetKind(target: unknown): string {
   if (typeof target === 'string') return referenceStringKind(target);
   if (isRecord(target)) {
-    const path = target['path'];
-    if (typeof path === 'string') return referenceStringKind(path);
+    // `{ "path": … }` is explicitly a path, so it is never classified as a
+    // repository: a relative directory such as `docs/refs` is a path, not an
+    // `owner/repo` shorthand.
+    if (typeof target['path'] === 'string') return referencePathKind(target['path']);
     if (typeof target['repository'] === 'string') return 'repository';
   }
   return 'other';
 }
 
+/** A path value's kind: path, glob, absolute path, or URL — never a repository. */
+function referencePathKind(value: string): string {
+  const trimmed = value.trim();
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) return 'url';
+  if (/[*?[]/.test(trimmed)) return 'glob';
+  if (trimmed.startsWith('/')) return 'absolute-path';
+  return 'path';
+}
+
 /**
- * A reference string is a local path, a glob, or a Git repository. The
- * `owner/repo` shorthand (one separator, no leading `.`/`/`/`~`) is a
- * repository; anything else Git-shaped is caught by the `.git` suffix.
+ * A string shorthand is a local path or a Git repository. Git shapes: a `.git`
+ * suffix, an `owner/repo` shorthand (one separator, no leading `.`/`~`), a
+ * host-prefixed `host.tld/owner/repo`, or an scp-like `user@host:path`.
  */
 function referenceStringKind(value: string): string {
   const trimmed = value.trim();
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) return 'url';
   if (/[*?[]/.test(trimmed)) return 'glob';
   if (trimmed.startsWith('/')) return 'absolute-path';
-  // `owner/repo` shorthand: one separator, and no leading `.`/`~` (so a relative
-  // path like `../refs` is a path, not a repository).
-  if (/^[^./~\s][^/\s]*\/[^/\s]+$/.test(trimmed)) return 'repository';
   if (/\.git\/?$/.test(trimmed)) return 'repository';
-  return 'path';
-}
-
-/** Only the target's *kind* is derived from the declaration, never its value. */
-function declaredTargetKind(value: string, kind: 'instructions' | 'references'): string {
-  const trimmed = value.trim();
-  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) return 'url';
-  if (/[*?[]/.test(trimmed)) return 'glob';
-  if (trimmed.startsWith('/')) return 'absolute-path';
-  if (kind === 'references' && /\.git\/?$/.test(trimmed)) return 'repository';
+  if (/^[^@\s]+@[^:\s]+:[^:\s]+$/.test(trimmed)) return 'repository';
+  if (/^[a-z0-9.-]+\.[a-z]{2,}\/[^/\s]+\/[^/\s]+$/i.test(trimmed)) return 'repository';
+  if (/^[^./~\s][^/\s]*\/[^/\s]+$/.test(trimmed)) return 'repository';
   return 'path';
 }
 
@@ -1331,7 +1352,7 @@ function pluginIdentity(entry: unknown): { name?: string; kind?: string } {
         : undefined;
   if (raw === undefined) return {};
   if (BARE_PACKAGE_SPECIFIER.test(raw)) return { name: raw };
-  return { kind: declaredTargetKind(raw, 'references') };
+  return { kind: referenceStringKind(raw) };
 }
 
 function capMetadataString(value: string): string {
