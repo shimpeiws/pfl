@@ -890,7 +890,7 @@ async function collectElementDir(
             // must not change the element's kind, so it falls to the
             // conservative `subagents` default (see `kindForEntry`).
             if (spec.kind === 'subagents' && !read.malformed) {
-              const mode = frontmatterScalar(content, 'mode');
+              const mode = frontmatterMode(content);
               if (mode !== undefined) metadata['agentMode'] = normalizeAgentMode(mode);
             }
             return toSafeMetadata(metadata);
@@ -983,8 +983,11 @@ function normalizeAgentMode(mode: string): string {
   return 'other';
 }
 
-/** Reads one top-level frontmatter scalar value, or undefined. */
-function frontmatterScalar(content: string, key: string): string | undefined {
+/** The `mode:` line of the leading frontmatter block. */
+const FRONTMATTER_MODE = /^mode\s*:\s*(.+?)\s*$/;
+
+/** Reads the top-level frontmatter `mode` value, or undefined. */
+function frontmatterMode(content: string): string | undefined {
   const bounded = content.length > MAX_PARSE_BYTES ? content.slice(0, MAX_PARSE_BYTES) : content;
   // Match the shared reader's BOM handling so the two agree on where the block
   // starts; a divergence would change an element's kind, not just its metadata.
@@ -993,10 +996,9 @@ function frontmatterScalar(content: string, key: string): string | undefined {
   if (!/^---\s*$/.test(lines[0] ?? '')) return undefined;
   const close = lines.findIndex((line, index) => index > 0 && /^(?:---|\.\.\.)\s*$/.test(line));
   const body = close === -1 ? lines.slice(1) : lines.slice(1, close);
-  const pattern = new RegExp(`^${key}\\s*:\\s*(.+?)\\s*$`);
   for (const line of body) {
     if (/^\s/.test(line)) continue;
-    const match = pattern.exec(line);
+    const match = FRONTMATTER_MODE.exec(line);
     if (match?.[1] !== undefined) return match[1].replace(/^["']|["']$/g, '');
   }
   return undefined;
