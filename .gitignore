@@ -22,9 +22,13 @@ graft/
 .claude/helpers/
 .claude/skills/graft/
 .mcp.json
-# ...except the committed Claude adapter fixture, which exercises that exact
-# project file path.
+# ...except the committed fixtures, which exercise those exact project file
+# paths.
 !test/fixtures/**/.mcp.json
 opencode.json
+# ...except the committed OpenCode fixtures, which exercise that config file
+# name at both the project root and the user scope.
+!test/fixtures/**/opencode.json
+!test/fixtures/**/opencode.jsonc
 .ignore
 *.tgz
