@@ -20,7 +20,7 @@ agent and answers three questions:
 It does not execute the target agent, and it does not run discovered tools,
 skills, hooks, or MCP servers. It reconstructs the effective harness from
 files, runtime configuration, scope rules, precedence, and known runtime
-semantics. The first supported runtimes are `claude-code` and `codex`.
+semantics. The supported runtimes are `claude-code`, `codex`, and `opencode`.
 
 `pfl` belongs to the same tool family as [`yuurei`](https://github.com/shimpeiws/yuurei),
 which isolates and executes: `pfl` inspects before execution, `yuurei` runs it
@@ -29,8 +29,8 @@ against outcomes.
 
 ## Status
 
-**v0.1.** `pfl` implements static inspection end to end for `claude-code` and
-`codex`:
+**v0.1.** `pfl` implements static inspection end to end for `claude-code`,
+`codex`, and `opencode`:
 
 - `pfl inspect` discovers a runtime's harness, resolves it, and stores immutable
   observed and resolved snapshots.
@@ -54,6 +54,7 @@ policy, the accepted risks, and the read-path inventory.
 ```sh
 pfl inspect --runtime claude-code
 pfl inspect --runtime codex
+pfl inspect --runtime opencode
 
 pfl report
 pfl report --snapshot <id>
@@ -104,6 +105,17 @@ version feeds the resolved digest and is diff-visible; the classifier version
 feeds no digest but is stored with the interpretation, so a report reproduces
 and names the classifier that produced it. See
 [`docs/design/versions.md`](docs/design/versions.md).
+
+## Stability and platform support
+
+`pfl` supports POSIX only — macOS and Linux — and the package declares that in
+its `os` field, so an install on an unsupported platform fails loudly. From
+v1.0 the package version is [SemVer](https://semver.org/): command and flag
+names, exit codes, and the `--json` envelope are stable within a major version,
+and a stored snapshot is read according to its own `schemaVersion`, never the
+package version. Human-readable output is not a stable contract; scripts should
+use `--json`. See
+[`docs/design/stability.md`](docs/design/stability.md).
 
 ## Exit codes
 
