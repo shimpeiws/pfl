@@ -7,7 +7,7 @@ onward. The package version is not a compatibility signal for the on-disk
 snapshot schema, the resolution semantics, or the classifier; see
 [`docs/design/stability.md`](docs/design/stability.md).
 
-## [Unreleased]
+## [1.0.0-rc.1] - 2026-09-18
 
 ### Added
 
