@@ -126,6 +126,21 @@ describe.each<FixtureRuntime>(['claude', 'codex', 'opencode'])(
       ).toBe(false);
     });
 
+    it('reads the OpenCode fixture config files at every declared scope', async () => {
+      if (runtime !== 'opencode') return;
+      const m = await inspect(runtime);
+      const { observed } = await latestObserved(m);
+      const paths = observed.elements.map((element) => element.source.path ?? '');
+
+      // Positive control for the committed fixture tree: if a config file is
+      // missing (or git-ignored, as `opencode.json` once was), these vanish and the
+      // negative assertions above would pass vacuously. Project root, project
+      // `.opencode/`, and user scope are each represented.
+      expect(paths.some((path) => path.startsWith('opencode.json#'))).toBe(true);
+      expect(paths.some((path) => path.startsWith('.opencode/opencode.jsonc#'))).toBe(true);
+      expect(paths.some((path) => path.startsWith('~/.config/opencode/opencode.json#'))).toBe(true);
+    });
+
     it('records unsupported and unreadable entries and reports partial completeness', async () => {
       const m = await inspect(runtime);
       const { observed } = await latestObserved(m);
