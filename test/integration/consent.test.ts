@@ -28,14 +28,16 @@ afterEach(async () => {
 const USER_SENTINEL: Record<FixtureRuntime, string> = {
   claude: 'SENTINEL_CLAUDE_USER',
   codex: 'SENTINEL_CODEX_USER',
+  opencode: 'SENTINEL_OPENCODE_USER',
 };
 
 const PARENT_SENTINEL: Record<FixtureRuntime, string> = {
   claude: 'SENTINEL_CLAUDE_PARENT',
   codex: 'SENTINEL_CODEX_PARENT',
+  opencode: 'SENTINEL_OPENCODE_PARENT',
 };
 
-describe.each<FixtureRuntime>(['claude', 'codex'])('%s consent boundary', (runtime) => {
+describe.each<FixtureRuntime>(['claude', 'codex', 'opencode'])('%s consent boundary', (runtime) => {
   it('opens nothing outside the project when consent is denied', async () => {
     const m = await materialize(runtime);
     materialized.push(m);

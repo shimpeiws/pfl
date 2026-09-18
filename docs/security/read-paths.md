@@ -7,8 +7,9 @@ acceptance criteria call for: consent wording cannot be derived from the code
 until the set of reads is known, and M8 consumes this inventory to place the
 consent choke point.
 
-- Scope: every read in `src/` (excluding `*.test.ts`), as of M6 Phase 0.
-- Adapters: `claude-code`, `codex`.
+- Scope: every read in `src/` (excluding `*.test.ts`), as of M6 Phase 0 and
+  extended by each later adapter; the named sections record their milestone.
+- Adapters: `claude-code`, `codex`, `opencode`.
 - Each later adapter extends this document as part of its own security review.
 
 ## Classification vocabulary
@@ -214,6 +215,36 @@ entry is skipped rather than traversed. The reads are shared with Claude Code
 through `runtime/external-install.ts`, so they appear once there rather than
 twice here. The consent prompt's "Installation and version metadata" group now
 lists these locations (roadmap S2), and a per-adapter equality test pins it.
+
+### `runtime/opencode`
+
+The OpenCode adapter (#93) reads only the default on-disk layout; the
+`OPENCODE_CONFIG`, `OPENCODE_CONFIG_DIR`, and `OPENCODE_CONFIG_CONTENT`
+redirectors are execution context and are **not** read (a `default-layout-only`
+diagnostic records the limit). `.mcp.json` is deliberately **not** an MCP
+source. Declared `instructions`/`references` targets and non-package `plugin`
+specifiers are recorded as opaque declarations and **never opened**.
+
+| Location       | Read                                                                                    | Guard                                                                                                                    | Classification                                     |
+| -------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------- |
+| `detect.ts`    | bin dirs, `PATH` entries, Homebrew `Cellar` version dirs                                | `readExternalInstall` (see `runtime/external-install.ts`); consent-gated; npm is not read (package name unverified)      | install-scope                                      |
+| `discovery.ts` | walk `<root>/**` for `AGENTS.md` / `CLAUDE.md` (fallback), `.git`/`node_modules` pruned | walk guards; the candidate name is re-checked per entry (a symlink bypasses `selectFile`); `.opencode/` excluded by path | project-implicit                                   |
+| `discovery.ts` | `readFile` `<root>/opencode.json[c]`, `<root>/.opencode/opencode.json[c]`               | `readTextFileGuarded` + scope base; JSONC comments/trailing commas stripped by a bounded scanner                         | project-implicit                                   |
+| `discovery.ts` | walk `<root>/.opencode/<element-dirs>/**`                                               | walk guards; per-dir extension/skill filter; legacy `mode(s)/` recorded `unsupported`                                    | project-implicit                                   |
+| `discovery.ts` | walk `<root>/.claude/skills/**`, `<root>/.agents/skills/**`                             | walk guards                                                                                                              | project-implicit (`claude-compat`/`agents-compat`) |
+| `discovery.ts` | `readFile` user `AGENTS.md`, else `~/.claude/CLAUDE.md` fallback                        | `inspectFileTarget(configDir, …)`; consent-gated                                                                         | user-scope (`claude-compat` fallback)              |
+| `discovery.ts` | `readFile` `~/.config/opencode/opencode.json[c]`                                        | `readTextFileGuarded` + scope base                                                                                       | user-scope                                         |
+| `discovery.ts` | walk `~/.config/opencode/<element-dirs>/**`                                             | walk guards                                                                                                              | user-scope                                         |
+| `discovery.ts` | walk `~/.claude/skills/**`, `~/.agents/skills/**`                                       | walk guards                                                                                                              | user-scope (`claude-compat`/`agents-compat`)       |
+| `discovery.ts` | `readFile` parent-directory `AGENTS.md` / `CLAUDE.md`                                   | `inspectFileTarget(dir, …)`; consent-gated; `MAX_ANCESTOR_DIRS`                                                          | **external-gated**                                 |
+| `discovery.ts` | `readFile` `MANAGED_CONFIG_DIR/opencode.json[c]`                                        | `readTextFileGuarded` (base: injected managed dir); consent-gated                                                        | **external-gated**                                 |
+
+The remote-org and MDM layers are recorded as opaque elements with no read: the
+MDM plist is never parsed and the remote layer is never fetched, so neither
+appears in this inventory. The config-key element capping
+(`MAX_CONFIG_ITEMS`), per-string metadata cap (`MAX_METADATA_STRING`), and the
+provider-agnostic redaction shape rule are recorded in
+`docs/security/reviews/2026-09-18-m9-opencode-adapter.md`.
 
 ### `snapshot/store.ts`
 
