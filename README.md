@@ -157,6 +157,8 @@ Snapshot
   observed   obs_633c7f61defd
   resolved   res_dbc9364a88c4
 
+Store           ~/.pfl/projects/path-1234567890abcdef
+
 Run:
   pfl report
   pfl graph
@@ -301,6 +303,19 @@ files:
 metadata only. It never stores raw instruction or memory content, secrets,
 environment values, or command arguments, and it never writes inside the
 inspected repository.
+
+## Agent skill
+
+`pfl` ships as an installable agent skill, compatible with any agent that
+supports the [Agent Skills spec](https://agentskills.io) (Claude Code, Codex,
+OpenCode, Cursor, and others):
+
+```sh
+npx skills add shimpeiws/pfl
+```
+
+The skill teaches agents how to run `pfl` and interpret its output. See
+[`skills/pfl/SKILL.md`](skills/pfl/SKILL.md).
 
 ## Development
 

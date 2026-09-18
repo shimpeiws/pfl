@@ -65,6 +65,12 @@ pnpm run knip          # unused exports
 Prefer targeted test files over the full suite locally (`pnpm test <path>`).
 Node and pnpm are pinned with mise (`mise install`).
 
+## Agent skill
+
+This repo ships an agent skill at [`skills/pfl/SKILL.md`](skills/pfl/SKILL.md).
+It is discoverable via `npx skills add shimpeiws/pfl`. Agents working inside
+this repo can read it directly at `skills/pfl/SKILL.md`.
+
 ## Invariants
 
 These are guarantees the implementation is expected to uphold. A change that
