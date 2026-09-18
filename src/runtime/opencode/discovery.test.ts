@@ -116,7 +116,15 @@ async function makeFixture(): Promise<Fixture> {
       '  "plugin": ["opencode-plugin-foo", ["@scope/bar", { "x": 1 }]],',
       '  "tools": { "myTool": true },',
       `  "instructions": ["../shared/AGENTS.md", "https://example.com/p?token=${SECRET_SENTINEL}", "docs/*.md"],`,
-      '  "references": ["../refs", "github.com/org/repo.git"],',
+      '  "references": {',
+      '    "refpath": { "path": "../refs" },',
+      '    "refrepo": { "repository": "org/repo", "branch": "main" },',
+      '    "repshort": "owner/repo"',
+      '  },',
+      '  "skills": {',
+      '    "paths": ["./extra-skills"],',
+      '    "urls": ["https://example.com/skills/"]',
+      '  },',
       '  "agent": {',
       '    "primary-agent": { "mode": "primary" },',
       '    "sub-agent": { "mode": "subagent" },',
@@ -344,7 +352,7 @@ describe('collectOpencodeHarness config', () => {
     expect(unknown.length).toBe(256);
   });
 
-  it('records declared instructions and references opaquely, never persisting the target', async () => {
+  it('records declared instructions, references, and skills opaquely, never persisting the target', async () => {
     const fixture = await makeFixture();
     const observed = await collect(fixture, CONSENTED);
 
@@ -361,17 +369,59 @@ describe('collectOpencodeHarness config', () => {
         'declaredTargetKind'
       ],
     ).toBe('glob');
-    expect(byPath(observed.elements, '.opencode/opencode.jsonc#references.0').native.kind).toBe(
-      'references',
-    );
+
+    // `references` is an object keyed by alias (#150): a local `path`, a
+    // `repository`, and the `owner/repo` shorthand.
     expect(
-      byPath(observed.elements, '.opencode/opencode.jsonc#references.1').metadata[
+      byPath(observed.elements, '.opencode/opencode.jsonc#references.refpath').native.kind,
+    ).toBe('references');
+    expect(
+      byPath(observed.elements, '.opencode/opencode.jsonc#references.refpath').metadata[
+        'declaredTargetKind'
+      ],
+    ).toBe('path');
+    expect(
+      byPath(observed.elements, '.opencode/opencode.jsonc#references.refrepo').metadata[
+        'declaredTargetKind'
+      ],
+    ).toBe('repository');
+    expect(
+      byPath(observed.elements, '.opencode/opencode.jsonc#references.repshort').metadata[
         'declaredTargetKind'
       ],
     ).toBe('repository');
 
+    // `skills` paths/urls are declared sources (#151).
+    expect(byPath(observed.elements, '.opencode/opencode.jsonc#skills.paths.0').native.kind).toBe(
+      'skills',
+    );
+    expect(
+      byPath(observed.elements, '.opencode/opencode.jsonc#skills.paths.0').metadata[
+        'declaredTargetKind'
+      ],
+    ).toBe('path');
+    expect(
+      byPath(observed.elements, '.opencode/opencode.jsonc#skills.urls.0').metadata[
+        'declaredTargetKind'
+      ],
+    ).toBe('url');
+
     // The secret-bearing URL never reaches the snapshot.
     expect(JSON.stringify(observed.elements)).not.toContain(SECRET_SENTINEL);
+  });
+
+  it('records an array-form references value as unsupported, not dropped', async () => {
+    const fixture = await makeFixture();
+    await writeFile(
+      join(fixture.root, 'opencode.json'),
+      JSON.stringify({ references: ['../refs'] }),
+    );
+
+    const observed = await collect(fixture, CONSENTED);
+
+    expect(byPath(observed.elements, 'opencode.json#references')).toMatchObject({
+      status: 'unsupported',
+    });
   });
 });
 
@@ -389,9 +439,8 @@ describe('collectOpencodeHarness element directories', () => {
     expect(byPath(observed.elements, '.opencode/skill/dup/SKILL.md').native.kind).toBe('skills');
     expect(byPath(observed.elements, '.opencode/plugins/local.ts').native.kind).toBe('plugin');
     expect(byPath(observed.elements, '.opencode/tool/mytool.ts').native.kind).toBe('tools');
-    expect(byPath(observed.elements, '.opencode/mode/legacy.md')).toMatchObject({
-      status: 'unsupported',
-    });
+    // The legacy `mode(s)/` directory loads as primary agents (#149).
+    expect(byPath(observed.elements, '.opencode/mode/legacy.md').native.kind).toBe('agents');
   });
 
   it('records cross-runtime skills with their compat scope', async () => {

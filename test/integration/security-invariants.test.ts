@@ -151,15 +151,15 @@ describe.each<FixtureRuntime>(['claude', 'codex', 'opencode'])(
         true,
       );
       // Only the Claude and OpenCode fixtures carry an item the adapter cannot
-      // classify inside a known area (a Claude unknown file, an OpenCode legacy
-      // `mode/` file); the Codex discovery areas are leaves. The OpenCode case is
-      // pinned to its path so deleting the fixture file cannot leave it green.
+      // classify inside a known area (a Claude unknown file, an OpenCode unknown
+      // config key); the Codex discovery areas are leaves. The OpenCode case is
+      // pinned to its path so deleting the fixture key cannot leave it green.
       if (runtime === 'opencode') {
         expect(
           observed.elements
             .filter((element) => element.status === 'unsupported')
             .map((element) => element.source.path),
-        ).toContain('.opencode/mode/legacy.md');
+        ).toContain('.opencode/opencode.jsonc#sentinelKey');
       } else if (runtime === 'claude') {
         expect(observed.elements.some((element) => element.status === 'unsupported')).toBe(true);
       }

@@ -109,6 +109,7 @@ const MODELLED_CONFIG_KEYS: ReadonlySet<string> = new Set([
   'tools',
   'instructions',
   'references',
+  'skills',
   'agent',
   'mode',
   'command',
@@ -661,15 +662,8 @@ function recordConfigElements(
     elements,
     diagnostics,
   );
-  recordDeclaredTargets(
-    config['references'],
-    'references',
-    displayPath,
-    origin,
-    scope,
-    elements,
-    diagnostics,
-  );
+  recordReferences(config['references'], displayPath, origin, scope, elements, diagnostics);
+  recordSkillSources(config['skills'], displayPath, origin, scope, elements, diagnostics);
 
   recordInlineAgents(config, displayPath, origin, scope, elements, diagnostics);
   recordInlineCommands(config, displayPath, origin, scope, elements, diagnostics);
@@ -766,14 +760,14 @@ function recordInlineCommands(
 }
 
 /**
- * Records an `instructions` or `references` declaration. The target is never
- * opened and never persisted: only its *kind* (path, glob, URL, repository) is
- * structural enough to store, so a credential-bearing URL cannot reach the
- * snapshot through the declaration (model doc §5.2).
+ * Records the `instructions` array. The target is never opened and never
+ * persisted: only its *kind* (path, glob, URL, absolute path) is structural
+ * enough to store, so a credential-bearing URL cannot reach the snapshot through
+ * the declaration (model doc §5.2).
  */
 function recordDeclaredTargets(
   value: unknown,
-  kind: 'instructions' | 'references',
+  kind: 'instructions',
   displayPath: string,
   origin: NativeOrigin,
   scope: string,
@@ -786,26 +780,134 @@ function recordDeclaredTargets(
     diagnostics.push(truncationDiagnostic(displayPath, `${kind} targets`));
   }
   entries.slice(0, MAX_CONFIG_ITEMS).forEach((entry, index) => {
+    const path = withFragment(displayPath, `${kind}.${index}`);
     if (typeof entry !== 'string') {
       // A non-string declaration is recorded rather than dropped, so a shape the
       // adapter does not model is visible (best-effort invariant).
-      elements.push(
-        unsupportedConfigKey(withFragment(displayPath, `${kind}.${index}`), origin, scope),
-      );
+      elements.push(unsupportedConfigKey(path, origin, scope));
       return;
     }
+    elements.push(declaredElement(kind, path, declaredTargetKind(entry, kind), origin, scope));
+  });
+}
+
+/**
+ * Records the `references` object (model doc §12; #150). On 1.18.31 `references`
+ * is an object keyed by alias, each value `{ path }` or `{ repository, branch }`
+ * (plus optional `description`/`hidden`), or a string shorthand. Every alias is
+ * recorded as one opaque declaration; the target is never opened and only its
+ * kind is persisted. An array — which the runtime rejects as invalid config — is
+ * recorded as an unsupported declaration rather than dropped.
+ */
+function recordReferences(
+  value: unknown,
+  displayPath: string,
+  origin: NativeOrigin,
+  scope: string,
+  elements: ObservedElement[],
+  diagnostics: Diagnostic[],
+): void {
+  if (value === undefined) return;
+  if (!isRecord(value)) {
+    elements.push(unsupportedConfigKey(withFragment(displayPath, 'references'), origin, scope));
+    return;
+  }
+  for (const [alias, target] of cappedEntries(value, displayPath, diagnostics)) {
     elements.push(
-      buildObservedElement({
-        runtimeId: RUNTIME_ID,
+      declaredElement(
+        'references',
+        withFragment(displayPath, capMetadataString(`references.${alias}`)),
+        referenceTargetKind(target),
         origin,
         scope,
-        kind,
-        path: withFragment(displayPath, `${kind}.${index}`),
-        inspectability: 'opaque',
-        metadata: toSafeMetadata({ declaredTargetKind: declaredTargetKind(entry, kind) }),
-      }),
+      ),
     );
+  }
+}
+
+/**
+ * Records the `skills` config key's declared sources (model doc §12; #151):
+ * `skills.paths` (directories/globs) and `skills.urls`. They are declarations
+ * `pfl` never opens, so each becomes an opaque `skills` element carrying only a
+ * derived kind.
+ */
+function recordSkillSources(
+  value: unknown,
+  displayPath: string,
+  origin: NativeOrigin,
+  scope: string,
+  elements: ObservedElement[],
+  diagnostics: Diagnostic[],
+): void {
+  if (value === undefined) return;
+  if (!isRecord(value)) {
+    elements.push(unsupportedConfigKey(withFragment(displayPath, 'skills'), origin, scope));
+    return;
+  }
+  for (const key of ['paths', 'urls'] as const) {
+    const list = value[key];
+    if (!Array.isArray(list)) continue;
+    if (list.length > MAX_CONFIG_ITEMS) {
+      diagnostics.push(truncationDiagnostic(displayPath, `skills.${key} targets`));
+    }
+    list.slice(0, MAX_CONFIG_ITEMS).forEach((entry, index) => {
+      const path = withFragment(displayPath, `skills.${key}.${index}`);
+      if (typeof entry !== 'string') {
+        elements.push(unsupportedConfigKey(path, origin, scope));
+        return;
+      }
+      // A `urls` entry is necessarily a URL; a `paths` entry is a path or glob.
+      const kind = key === 'urls' ? 'url' : declaredTargetKind(entry, 'instructions');
+      elements.push(declaredElement('skills', path, kind, origin, scope));
+    });
+  }
+}
+
+/** An opaque declaration element: the kind is stored, the target is not. */
+function declaredElement(
+  kind: OpenCodeElementKind,
+  path: string,
+  declaredKind: string,
+  origin: NativeOrigin,
+  scope: string,
+): ObservedElement {
+  return buildObservedElement({
+    runtimeId: RUNTIME_ID,
+    origin,
+    scope,
+    kind,
+    path,
+    inspectability: 'opaque',
+    metadata: toSafeMetadata({ declaredTargetKind: declaredKind }),
   });
+}
+
+/** A `references` entry's kind, from the string shorthand or the object form. */
+function referenceTargetKind(target: unknown): string {
+  if (typeof target === 'string') return referenceStringKind(target);
+  if (isRecord(target)) {
+    const path = target['path'];
+    if (typeof path === 'string') return referenceStringKind(path);
+    if (typeof target['repository'] === 'string') return 'repository';
+  }
+  return 'other';
+}
+
+/**
+ * A reference string is a local path, a glob, or a Git repository. The
+ * `owner/repo` shorthand (one separator, no leading `.`/`/`/`~`) is a
+ * repository; anything else Git-shaped is caught by the `.git` suffix.
+ */
+function referenceStringKind(value: string): string {
+  const trimmed = value.trim();
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) return 'url';
+  if (/[*?[]/.test(trimmed)) return 'glob';
+  if (trimmed.startsWith('/')) return 'absolute-path';
+  // `owner/repo` shorthand: one separator, and no leading `.`/`~` (so a relative
+  // path like `../refs` is a path, not a repository).
+  if (/^[^./~\s][^/\s]*\/[^/\s]+$/.test(trimmed)) return 'repository';
+  if (/\.git\/?$/.test(trimmed)) return 'repository';
+  return 'path';
 }
 
 /** Only the target's *kind* is derived from the declaration, never its value. */
@@ -916,7 +1018,6 @@ async function collectElementDir(
       metadataForPath,
       elements,
       diagnostics,
-      unsupported: kind === 'unknown',
     });
   }
 }
@@ -963,14 +1064,16 @@ function isSkillFile(relativePath: string): boolean {
 function kindForEntry(
   spec: ElementDirSpec,
   entry: DiscoveredPath,
-): OpenCodeElementKind | 'unknown' | undefined {
+): OpenCodeElementKind | undefined {
   // The filter is repeated here because a symlink or non-regular entry is
   // recorded by the walk without running `selectFile`; without this a symlink
   // of any name would be recorded as the directory's kind.
   if (!spec.selectFile(entry.relativePath)) return undefined;
-  if (spec.kind === 'unknown') return 'unknown';
   if (spec.kind === 'subagents') {
-    return entry.metadata?.['agentMode'] === 'primary' ? 'agents' : 'subagents';
+    const declared = entry.metadata?.['agentMode'];
+    const mode = typeof declared === 'string' ? declared : (spec.defaultAgentMode ?? 'subagent');
+    // `all` is not `primary`, so it stays in the conservative subagent bucket.
+    return mode === 'primary' ? 'agents' : 'subagents';
   }
   return spec.kind;
 }
