@@ -29,7 +29,7 @@ against outcomes.
 
 ## Status
 
-**v0.1.** `pfl` implements static inspection end to end for `claude-code`,
+**v1.0.** `pfl` implements static inspection end to end for `claude-code`,
 `codex`, and `opencode`:
 
 - `pfl inspect` discovers a runtime's harness, resolves it, and stores immutable
