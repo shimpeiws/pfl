@@ -346,8 +346,9 @@ To exercise the workflow without publishing, push a **prerelease** tag — one
 whose version contains a `-`, for example `v1.0.0-rc.1`, with `package.json`
 set to the same version. Every gate, the tag/version check, and the tarball
 smoke test run exactly as for a release, and the publish step becomes
-`npm publish --dry-run`. The dry run does not perform the OIDC token exchange,
-so provenance attachment is confirmed only on a real publish. The workflow also
+`npm publish --dry-run --tag next` (npm refuses a prerelease under the default
+`latest` dist-tag). The dry run does not perform the OIDC token exchange, so
+provenance attachment is confirmed only on a real publish. The workflow also
 asserts that the runner's npm supports trusted publishing (>= 11.5.1), failing
 early with a clear message otherwise.
 
