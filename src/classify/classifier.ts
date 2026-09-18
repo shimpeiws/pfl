@@ -23,7 +23,7 @@ import type { FacetMappings } from './mappings.js';
  */
 
 export const CLASSIFIER_ID = 'pfl-native';
-export const CLASSIFIER_VERSION = '4';
+export const CLASSIFIER_VERSION = '5';
 
 /**
  * Native kinds deliberately left without a facet mapping, so a kind the table
@@ -87,6 +87,18 @@ function classifyElement(
       facets: [],
       confidence: 'unknown',
       reason: `no deterministic facet mapping for native kind "${observed.native.kind}"`,
+    };
+  }
+  // An opaque element's contents are unreadable, so its facets are recorded but
+  // their assignment cannot be more certain than `unknown`. Without this a
+  // declared-but-unopened target (a config `instructions` entry) would inherit
+  // the mapped kind's `high` confidence, asserting behavior pfl cannot observe.
+  if (observed.inspectability === 'opaque' && mapping.confidence !== 'unknown') {
+    return {
+      elementId,
+      facets: [...mapping.facets],
+      confidence: 'unknown',
+      reason: `${mapping.reason}; contents are opaque`,
     };
   }
   return {

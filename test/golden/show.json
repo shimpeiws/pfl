@@ -50,7 +50,7 @@
     "relations": [],
     "findings": [],
     "interpretationProvenance": {
-      "classifierVersion": "4",
+      "classifierVersion": "5",
       "origin": "stored"
     }
   }

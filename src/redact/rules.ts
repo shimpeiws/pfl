@@ -36,9 +36,23 @@ export const CODEX_REDACTION_RULES: readonly RedactionRule[] = [
   },
 ];
 
+/**
+ * OpenCode-specific credential names. OpenCode is provider-agnostic, so this is
+ * a shape rule (any `PROVIDER_..._KEY|TOKEN|SECRET=` assignment) rather than a
+ * provider enumeration that would silently fall behind a new provider.
+ */
+export const OPENCODE_REDACTION_RULES: readonly RedactionRule[] = [
+  {
+    from: 'display',
+    pattern: /\b([A-Z][A-Z0-9_]*_(?:API_?)?(?:KEY|TOKEN|SECRET)[A-Z0-9_]*\s*[:=]\s*)\S+/g,
+    replacement: `$1${REDACTED}`,
+  },
+];
+
 /** Every policy: common plus every runtime's rules. */
 export const ALL_REDACTION_RULES: readonly RedactionRule[] = [
   ...COMMON_REDACTION_RULES,
   ...CLAUDE_CODE_REDACTION_RULES,
   ...CODEX_REDACTION_RULES,
+  ...OPENCODE_REDACTION_RULES,
 ];

@@ -26,6 +26,15 @@ import {
   CONSENT_GROUPS as CODEX_CONSENT_GROUPS,
   RUNTIME_NAME as CODEX_RUNTIME_NAME,
 } from './codex/consent.js';
+import {
+  FACET_MAPPINGS as OPENCODE_FACET_MAPPINGS,
+  FINDING_KINDS as OPENCODE_FINDING_KINDS,
+} from './opencode/classify.js';
+import {
+  CONSENT_GROUPS as OPENCODE_CONSENT_GROUPS,
+  RUNTIME_NAME as OPENCODE_RUNTIME_NAME,
+} from './opencode/consent.js';
+import { OpencodeAdapter } from './opencode/index.js';
 import type { RuntimeAdapter } from './types.js';
 
 /**
@@ -70,6 +79,13 @@ const REGISTRY: Record<string, RuntimeRegistration> = {
     consentGroups: CODEX_CONSENT_GROUPS,
     facetMappings: CODEX_FACET_MAPPINGS,
     findingKinds: CODEX_FINDING_KINDS,
+  },
+  opencode: {
+    create: () => new OpencodeAdapter(),
+    runtimeName: OPENCODE_RUNTIME_NAME,
+    consentGroups: OPENCODE_CONSENT_GROUPS,
+    facetMappings: OPENCODE_FACET_MAPPINGS,
+    findingKinds: OPENCODE_FINDING_KINDS,
   },
 };
 

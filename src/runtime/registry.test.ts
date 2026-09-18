@@ -4,12 +4,13 @@ import { getAdapter, listRuntimeIds } from './registry.js';
 
 describe('runtime registry', () => {
   it('lists the initial runtimes', () => {
-    expect(listRuntimeIds()).toEqual(['claude-code', 'codex']);
+    expect(listRuntimeIds()).toEqual(['claude-code', 'codex', 'opencode']);
   });
 
   it('returns an adapter whose id matches the request', () => {
     expect(getAdapter('claude-code').id()).toBe('claude-code');
     expect(getAdapter('codex').id()).toBe('codex');
+    expect(getAdapter('opencode').id()).toBe('opencode');
   });
 
   it('rejects an unknown runtime with the runtime-unsupported exit code', () => {

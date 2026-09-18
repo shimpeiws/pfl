@@ -19,9 +19,14 @@ import { runReport } from './cli/report.js';
 import { runShow } from './cli/show.js';
 import { runSnapshots } from './cli/snapshots.js';
 import { redactingLogger } from './redact/output.js';
+import { listRuntimeIds } from './runtime/registry.js';
 import { packageVersion } from './version.js';
 
 const cli = cac('pfl');
+
+// Derived from the registry, so registering a runtime updates the help and the
+// missing-flag error instead of leaving them naming an outdated set.
+const RUNTIME_CHOICES = listRuntimeIds().join(', ');
 
 interface CommonFlags {
   json?: boolean;
@@ -99,7 +104,7 @@ function withErrorHandling<Args extends [...unknown[], CommonFlags | undefined]>
 
 cli
   .command('inspect', 'Inspect one runtime harness without executing it')
-  .option('--runtime <runtime>', 'Runtime to inspect: claude-code or codex')
+  .option('--runtime <runtime>', `Runtime to inspect: ${RUNTIME_CHOICES}`)
   .option(
     '--allow-scope <scope>',
     'Grant <runtime>:<scope> for this run only (repeatable; scope: user or install)',
@@ -110,10 +115,7 @@ cli
       'inspect',
       async (flags: { runtime?: string; allowScope?: string | string[] } & CommonFlags) => {
         if (!flags.runtime) {
-          throw new PflError(
-            '--runtime is required (claude-code or codex)',
-            EXIT_CODES.CONFIG_ERROR,
-          );
+          throw new PflError(`--runtime is required (${RUNTIME_CHOICES})`, EXIT_CODES.CONFIG_ERROR);
         }
         const allowScopes = parseAllowScopes(flags.allowScope, flags.runtime);
         return runInspect(
