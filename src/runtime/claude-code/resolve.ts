@@ -7,6 +7,7 @@ import { assembleResolvedSnapshot } from '../../resolution/assemble.js';
 import { resolveElements, type ElementResolutionInput } from '../../resolution/resolver.js';
 import type { ResolutionAxes, ResolutionSemantics } from '../types.js';
 import { versionPosition } from '../version-compat.js';
+import { eventTarget } from '../scaffold.js';
 import { VERIFIED_CLAUDE_CODE_RANGE } from './detect.js';
 import { PROJECT_CONFIG_DIR } from './paths.js';
 
@@ -147,13 +148,6 @@ function axesFor(element: ObservedElement): ResolutionAxes {
     default:
       return { applicability: { type: 'unknown' }, strategy: 'unknown', activation: 'unknown' };
   }
-}
-
-function eventTarget(element: ObservedElement): { target?: string } {
-  const events = element.metadata['eventNames'];
-  if (!Array.isArray(events)) return {};
-  const names = events.filter((value): value is string => typeof value === 'string');
-  return names.length > 0 ? { target: names.join(',') } : {};
 }
 
 /**
