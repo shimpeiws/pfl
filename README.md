@@ -340,14 +340,16 @@ git push origin v<version>
 
 The workflow re-runs every gate, checks that the tag matches the package
 version, inspects and smoke-installs the tarball, then publishes with
-`npm publish --access public` (provenance attached automatically).
+`npm publish --provenance --access public`.
 
-To exercise the workflow without publishing, push a **release-candidate** tag
-whose suffix is `-rc` (for example `v1.0.0-rc.1`, with `package.json` set to the
-same version). Every gate, the tag/version check, and the tarball smoke test
-run exactly as for a release, and the publish step becomes `npm publish
---dry-run`. The workflow also asserts that the runner's npm supports trusted
-publishing (>= 11.5.1), failing early with a clear message otherwise.
+To exercise the workflow without publishing, push a **prerelease** tag — one
+whose version contains a `-`, for example `v1.0.0-rc.1`, with `package.json`
+set to the same version. Every gate, the tag/version check, and the tarball
+smoke test run exactly as for a release, and the publish step becomes
+`npm publish --dry-run`. The dry run does not perform the OIDC token exchange,
+so provenance attachment is confirmed only on a real publish. The workflow also
+asserts that the runner's npm supports trusted publishing (>= 11.5.1), failing
+early with a clear message otherwise.
 
 ## Learn more
 

@@ -27,7 +27,8 @@
     "pfl": "dist/index.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "!dist/**/*.map"
   ],
   "os": [
     "darwin",
