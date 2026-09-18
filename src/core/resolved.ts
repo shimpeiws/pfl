@@ -68,6 +68,10 @@ export const RESOLVED_STATUS_VALUES = [
 ] as const;
 export type ResolvedStatus = (typeof RESOLVED_STATUS_VALUES)[number];
 
+/** The resolution confidence scale (design doc §17). Single-sourced for #88. */
+export const RESOLUTION_CONFIDENCE_VALUES = ['verified', 'unverified-runtime-version'] as const;
+export type ResolutionConfidence = (typeof RESOLUTION_CONFIDENCE_VALUES)[number];
+
 export interface ResolvedElement {
   id: ElementId;
 
@@ -131,7 +135,7 @@ export interface ResolvedSnapshot {
 
   resolution: {
     semanticsVersion: string;
-    confidence: 'verified' | 'unverified-runtime-version';
+    confidence: ResolutionConfidence;
   };
 
   elements: ResolvedElement[];

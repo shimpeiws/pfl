@@ -19,7 +19,10 @@ import {
   type Completeness,
   type Diagnostic,
 } from '../core/diagnostics.js';
-import type { Interpretation } from '../core/interpretation.js';
+import {
+  CLASSIFICATION_CONFIDENCE_VALUES as CORE_CLASSIFICATION_CONFIDENCE_VALUES,
+  type Interpretation,
+} from '../core/interpretation.js';
 import {
   INSPECTABILITY_VALUES as CORE_INSPECTABILITY_VALUES,
   NATIVE_ORIGIN_VALUES as CORE_NATIVE_ORIGIN_VALUES,
@@ -32,6 +35,7 @@ import {
   APPLICABILITY_VALUES as CORE_APPLICABILITY_VALUES,
   PERSISTED_RELATION_TYPES,
   RESOLVED_STATUS_VALUES as CORE_RESOLVED_STATUS_VALUES,
+  RESOLUTION_CONFIDENCE_VALUES as CORE_RESOLUTION_CONFIDENCE_VALUES,
   STRATEGY_VALUES as CORE_STRATEGY_VALUES,
   type ResolvedSnapshot,
 } from '../core/resolved.js';
@@ -88,6 +92,8 @@ const SAFE_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 // and the model cannot drift. The alias is a widening to `readonly string[]`
 // for `.includes(value: string)`, not a second copy.
 const COMPLETENESS_VALUES: readonly string[] = CORE_COMPLETENESS_VALUES;
+const CLASSIFICATION_CONFIDENCE_VALUES: readonly string[] = CORE_CLASSIFICATION_CONFIDENCE_VALUES;
+const RESOLUTION_CONFIDENCE_VALUES: readonly string[] = CORE_RESOLUTION_CONFIDENCE_VALUES;
 const DIAGNOSTIC_SEVERITY_VALUES: readonly string[] = CORE_DIAGNOSTIC_SEVERITY_VALUES;
 const NATIVE_ORIGIN_VALUES: readonly string[] = CORE_NATIVE_ORIGIN_VALUES;
 const INSPECTABILITY_VALUES: readonly string[] = CORE_INSPECTABILITY_VALUES;
@@ -715,7 +721,9 @@ function isResolvedSnapshot(value: unknown): value is ResolvedSnapshot {
   const resolution = value['resolution'];
   if (!isRecord(resolution) || typeof resolution['semanticsVersion'] !== 'string') return false;
   const confidence = resolution['confidence'];
-  if (confidence !== 'verified' && confidence !== 'unverified-runtime-version') return false;
+  if (typeof confidence !== 'string' || !RESOLUTION_CONFIDENCE_VALUES.includes(confidence)) {
+    return false;
+  }
 
   if (
     !Array.isArray(value['elements']) ||
@@ -811,7 +819,9 @@ function isElementInterpretation(value: unknown): boolean {
   if (!isRecord(value)) return false;
   if (typeof value['elementId'] !== 'string' || typeof value['reason'] !== 'string') return false;
   const confidence = value['confidence'];
-  if (confidence !== 'high' && confidence !== 'medium' && confidence !== 'unknown') return false;
+  if (typeof confidence !== 'string' || !CLASSIFICATION_CONFIDENCE_VALUES.includes(confidence)) {
+    return false;
+  }
   return (
     Array.isArray(value['facets']) && value['facets'].every((facet) => typeof facet === 'string')
   );

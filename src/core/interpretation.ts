@@ -8,7 +8,8 @@ import type { ElementId, InterpretationId, ResolvedSnapshotId } from './ids.js';
  * authoritative even when classification is imperfect.
  */
 
-export type ClassificationConfidence = 'high' | 'medium' | 'unknown';
+export const CLASSIFICATION_CONFIDENCE_VALUES = ['high', 'medium', 'unknown'] as const;
+export type ClassificationConfidence = (typeof CLASSIFICATION_CONFIDENCE_VALUES)[number];
 
 export interface ElementInterpretation {
   elementId: ElementId;

@@ -1,0 +1,75 @@
+{
+  "pflVersion": "VERSION",
+  "command": "inspect",
+  "ok": true,
+  "completeness": "partial",
+  "diagnostics": [
+    {
+      "severity": "warning",
+      "code": "unreadable-file",
+      "message": "could not read file: .claude/skills/broken/SKILL.md",
+      "path": ".claude/skills/broken/SKILL.md"
+    },
+    {
+      "severity": "warning",
+      "code": "unreadable-file",
+      "message": "could not read .claude/skills/broken/SKILL.md",
+      "path": ".claude/skills/broken/SKILL.md"
+    },
+    {
+      "severity": "info",
+      "code": "path-not-found",
+      "message": "search area does not exist: agents",
+      "path": "agents"
+    },
+    {
+      "severity": "info",
+      "code": "path-not-found",
+      "message": "search area does not exist: commands",
+      "path": "commands"
+    },
+    {
+      "severity": "info",
+      "code": "path-not-found",
+      "message": "search area does not exist: rules",
+      "path": "rules"
+    },
+    {
+      "severity": "info",
+      "code": "path-not-found",
+      "message": "search area does not exist: output-styles",
+      "path": "output-styles"
+    },
+    {
+      "severity": "info",
+      "code": "path-not-found",
+      "message": "search area does not exist: hooks",
+      "path": "hooks"
+    },
+    {
+      "severity": "info",
+      "code": "path-not-found",
+      "message": "search area does not exist: [redacted]",
+      "path": "projects/FIXTURE_ENCODED_ROOT/memory"
+    }
+  ],
+  "data": {
+    "runtime": "claude-code",
+    "runtimeVersion": "2.1.272",
+    "runtimeCompatibility": "verified",
+    "project": "FIXTURE_PROJECT",
+    "observed": {
+      "snapshotId": "obs_ID",
+      "elements": 25,
+      "opaqueLayers": 1,
+      "completeness": "partial"
+    },
+    "resolved": {
+      "snapshotId": "res_ID",
+      "effective": 18,
+      "conditional": 0,
+      "shadowed": 3,
+      "confidence": "verified"
+    }
+  }
+}

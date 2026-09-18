@@ -12,7 +12,7 @@
   ],
   "data": {
     "observed": {
-      "id": "el_0123456789abcdef",
+      "id": "el_0fc92802d8f84176",
       "inspectability": "observable",
       "metadata": {},
       "native": {
@@ -32,17 +32,19 @@
       "applicability": {
         "type": "project"
       },
-      "id": "el_0123456789abcdef",
+      "id": "el_0fc92802d8f84176",
       "resolution": {
-        "reason": "accumulates",
+        "reason": "accumulates with the other layers",
         "strategy": "accumulate"
       },
       "status": "effective"
     },
     "interpretation": {
       "confidence": "high",
-      "elementId": "el_0123456789abcdef",
-      "facets": ["instructions"],
+      "elementId": "el_0fc92802d8f84176",
+      "facets": [
+        "instructions"
+      ],
       "reason": "defines agent behavior"
     },
     "relations": [],
