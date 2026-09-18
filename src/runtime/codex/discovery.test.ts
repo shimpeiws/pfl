@@ -235,6 +235,35 @@ describe('collectCodexHarness', () => {
     expect(paths.get('../AGENTS.override.md')?.native.kind).toBe('fallback-instructions');
   });
 
+  it('does not walk into a nested checkout boundary (issue #162)', async () => {
+    const { project, home } = await makeFixture();
+    const vendor = join(project.root, 'vendor');
+    await mkdir(join(vendor, 'inner'), { recursive: true });
+    await writeFile(join(vendor, 'AGENTS.md'), '# vendor instructions\n');
+    await writeFile(join(vendor, 'inner', 'AGENTS.md'), '# vendor nested instructions\n');
+    await mkdir(join(vendor, '.git'), { recursive: true });
+
+    const snapshot = await collectCodexHarness(project, CONSENTED, home);
+    const paths = byPath(snapshot.elements);
+
+    expect(paths.has('vendor/AGENTS.md')).toBe(false);
+    expect(paths.has('vendor/inner/AGENTS.md')).toBe(false);
+    expect(snapshot.diagnostics.some((d) => d.code === 'nested-checkout-not-walked')).toBe(true);
+    // Positive control: the normal nested element is still discovered.
+    expect(paths.get('docs/AGENTS.md')?.native.kind).toBe('instructions');
+  });
+
+  it('still discovers project instructions when the root itself has .git', async () => {
+    const { project, home } = await makeFixture();
+    await mkdir(join(project.root, '.git'), { recursive: true });
+
+    const snapshot = await collectCodexHarness(project, CONSENTED, home);
+    const paths = byPath(snapshot.elements);
+
+    expect(paths.get('AGENTS.md')?.native.kind).toBe('instructions');
+    expect(paths.get('docs/AGENTS.md')?.native.kind).toBe('instructions');
+  });
+
   it('makes subtree-specific-instruction reachable through discovery and resolution', async () => {
     const { project, home } = await makeFixture();
 

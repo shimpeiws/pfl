@@ -243,6 +243,86 @@ describe('walkHarnessPaths content-derived metadata', () => {
   });
 });
 
+describe('walkHarnessPaths nested checkout pruning (issue #162)', () => {
+  it('prunes a directory containing a .git directory when pruneNestedCheckouts is set', async () => {
+    const fixture = await makeFixture();
+    const nested = join(fixture.root, '.claude', 'vendor');
+    await mkdir(join(nested, 'inner'), { recursive: true });
+    await writeFile(join(nested, 'inner', 'CLAUDE.md'), '# vendor instructions');
+    await writeFile(join(nested, 'CLAUDE.md'), '# vendor root instructions');
+    await mkdir(join(nested, '.git'), { recursive: true });
+
+    const { entries, diagnostics } = await walkHarnessPaths(fixture.root, ['.claude'], {
+      pruneDirectories: ['node_modules'],
+      pruneNestedCheckouts: true,
+    });
+
+    expect(entries.some((entry) => entry.relativePath.includes('vendor'))).toBe(false);
+    expect(
+      diagnostics.some(
+        (d) => d.code === 'nested-checkout-not-walked' && d.path === '.claude/vendor',
+      ),
+    ).toBe(true);
+    // Positive control: a sibling inside the same area is still walked.
+    expect(entries.some((entry) => entry.relativePath === '.claude/skills/foo/SKILL.md')).toBe(
+      true,
+    );
+  });
+
+  it('prunes a directory containing a .git file (linked worktree / submodule)', async () => {
+    const fixture = await makeFixture();
+    const worktree = join(fixture.root, '.claude', 'linked');
+    await mkdir(worktree, { recursive: true });
+    await writeFile(join(worktree, 'CLAUDE.md'), '# linked worktree instructions');
+    await writeFile(join(worktree, '.git'), 'gitdir: ../../.git/worktrees/linked');
+
+    const { entries, diagnostics } = await walkHarnessPaths(fixture.root, ['.claude'], {
+      pruneDirectories: ['node_modules'],
+      pruneNestedCheckouts: true,
+    });
+
+    expect(entries.some((entry) => entry.relativePath.includes('linked'))).toBe(false);
+    expect(diagnostics.some((d) => d.code === 'nested-checkout-not-walked')).toBe(true);
+    expect(entries.some((entry) => entry.relativePath === '.claude/skills/foo/SKILL.md')).toBe(
+      true,
+    );
+  });
+
+  it('prunes a directory containing a symlinked .git (conservative boundary)', async () => {
+    const fixture = await makeFixture();
+    const nested = join(fixture.root, '.claude', 'hostile');
+    await mkdir(nested, { recursive: true });
+    await writeFile(join(nested, 'CLAUDE.md'), '# hostile instructions');
+    await symlink('/some/external/.git', join(nested, '.git'));
+
+    const { entries, diagnostics } = await walkHarnessPaths(fixture.root, ['.claude'], {
+      pruneDirectories: ['node_modules'],
+      pruneNestedCheckouts: true,
+    });
+
+    // A symlinked .git is still treated as a boundary (conservative).
+    expect(entries.some((entry) => entry.relativePath.includes('hostile'))).toBe(false);
+    expect(diagnostics.some((d) => d.code === 'nested-checkout-not-walked')).toBe(true);
+    // The symlink target is never read.
+    expect(entries.some((entry) => entry.relativePath.includes('external'))).toBe(false);
+  });
+
+  it('does not prune by default (opt-in only)', async () => {
+    const fixture = await makeFixture();
+    const nested = join(fixture.root, '.claude', 'vendor');
+    await mkdir(join(nested, 'inner'), { recursive: true });
+    await writeFile(join(nested, 'inner', 'SKILL.md'), '# vendor skill');
+    await mkdir(join(nested, '.git'), { recursive: true });
+
+    const { entries } = await walkHarnessPaths(fixture.root, ['.claude'], {
+      pruneDirectories: ['node_modules'],
+    });
+
+    // Without the option the nested checkout is still walked (mirrors plugin dirs).
+    expect(entries.some((entry) => entry.relativePath.includes('vendor'))).toBe(true);
+  });
+});
+
 describe('walkHarnessPaths hostile input (S3, S7)', () => {
   it('refuses a hardlinked regular file (nlink > 1)', async () => {
     const fixture = await makeFixture();
