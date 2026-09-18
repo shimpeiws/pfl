@@ -132,6 +132,8 @@ export function builtinLayer(runtimeId: RuntimeId, path: string): ObservedElemen
  */
 export interface AddKnownFileParams<K extends string> {
   runtimeId: RuntimeId;
+  /** The adapter's element builders, so `kind` is pinned to its own union. */
+  builders: ElementBuilders<K>;
   absPath: string;
   displayPath: string;
   origin: NativeOrigin;
@@ -144,8 +146,7 @@ export interface AddKnownFileParams<K extends string> {
 }
 
 export async function addKnownFile<K extends string>(params: AddKnownFileParams<K>): Promise<void> {
-  const { absPath, displayPath, origin, scope, baseDir, elements, diagnostics } = params;
-  const builders = createElementBuilders<K>(params.runtimeId);
+  const { absPath, displayPath, origin, scope, baseDir, elements, diagnostics, builders } = params;
   const target = await inspectFileTarget(absPath, baseDir);
   if (target.status === 'missing') return; // absence is not a finding
   if (target.status === 'symlink') {
@@ -203,6 +204,10 @@ export async function addKnownFile<K extends string>(params: AddKnownFileParams<
  * walked area: the adapter supplies the runtime id, the resolved kind, and its
  * metadata function; the symlink/hardlink/non-regular/limit decisions are here.
  *
+ * Every unreadable, unsupported, or skipped entry is recorded with its reason
+ * rather than dropped, which is the best-effort invariant (design doc §10.2,
+ * §10.3, §18).
+ *
  * `unsupported` records the item as `unsupported-by-adapter` (Claude Code's
  * unknown-kind path). It is checked after the non-regular case to preserve the
  * existing order, where an unknown-kind non-regular entry is still reported as
@@ -210,6 +215,8 @@ export async function addKnownFile<K extends string>(params: AddKnownFileParams<
  */
 export interface PushWalkedEntryParams<K extends string> {
   runtimeId: RuntimeId;
+  /** The adapter's element builders, so `kind` is pinned to its own union. */
+  builders: ElementBuilders<K>;
   entry: DiscoveredPath;
   origin: NativeOrigin;
   scope: string;
@@ -223,8 +230,7 @@ export interface PushWalkedEntryParams<K extends string> {
 }
 
 export function pushWalkedEntry<K extends string>(params: PushWalkedEntryParams<K>): void {
-  const { entry, origin, scope, kind, displayPath, elements, diagnostics } = params;
-  const builders = createElementBuilders<K>(params.runtimeId);
+  const { entry, origin, scope, kind, displayPath, elements, diagnostics, builders } = params;
   if (entry.kind === 'symlink') {
     elements.push(builders.symlinkElement(origin, scope, kind, displayPath));
     return;
@@ -280,9 +286,7 @@ export function toObservedProject(project: ProjectContext): ObservedProject {
   };
 }
 
-export function reasonForWalkSkip(
-  skipReason: 'hardlink-not-followed' | 'file-too-large',
-): ObservedReason {
+function reasonForWalkSkip(skipReason: 'hardlink-not-followed' | 'file-too-large'): ObservedReason {
   return skipReason === 'hardlink-not-followed' ? 'hardlink-not-followed' : 'limit-exceeded';
 }
 

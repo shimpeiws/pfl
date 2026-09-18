@@ -68,8 +68,8 @@ const USER_PREFIX = '~/.claude';
 
 // The shared element builders, parameterised by this adapter's kind union so a
 // misspelled kind is a compile error (roadmap M9 #90, #131).
-const { symlinkElement, unreadableElement, skippedElement, skippedNonRegularElement } =
-  createElementBuilders<ClaudeCodeRecordedKind>(RUNTIME_ID);
+const builders = createElementBuilders<ClaudeCodeRecordedKind>(RUNTIME_ID);
+const { symlinkElement, unreadableElement, skippedElement, skippedNonRegularElement } = builders;
 
 const USER_DIR_KIND: Record<(typeof USER_ELEMENT_DIRS)[number], ClaudeCodeElementKind> = {
   skills: 'skills',
@@ -462,6 +462,7 @@ async function addWalkedArea(
       : entry.relativePath;
     pushWalkedEntry({
       runtimeId: RUNTIME_ID,
+      builders,
       entry,
       origin,
       scope,
@@ -487,6 +488,7 @@ function addKnownFile(
 ): Promise<void> {
   return sharedAddKnownFile({
     runtimeId: RUNTIME_ID,
+    builders,
     absPath,
     displayPath,
     origin,
@@ -745,8 +747,6 @@ function configElement(
     metadata: toSafeMetadata(raw),
   });
 }
-
-/** Built-in instruction layers exist but are never readable (design doc §12). */
 
 function metadataForPath(displayPath: string): Record<string, SafeMetadataValue> {
   const name = basename(displayPath);

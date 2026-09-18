@@ -64,8 +64,8 @@ const USER_PREFIX = '~/.codex';
 
 // The shared element builders, parameterised by this adapter's kind union so a
 // misspelled kind is a compile error (roadmap M9 #90, #131).
-const { symlinkElement, unreadableElement, skippedElement, skippedNonRegularElement } =
-  createElementBuilders<CodexRecordedKind>(RUNTIME_ID);
+const builders = createElementBuilders<CodexRecordedKind>(RUNTIME_ID);
+const { symlinkElement, unreadableElement, skippedElement, skippedNonRegularElement } = builders;
 
 export async function discoverCodex(
   project: ProjectContext,
@@ -597,6 +597,7 @@ async function addWalkedArea(
     // on a separate `permissions` element at `<file>#permissions`.
     pushWalkedEntry({
       runtimeId: RUNTIME_ID,
+      builders,
       entry,
       origin,
       scope,
@@ -613,12 +614,6 @@ async function addWalkedArea(
   }
 }
 
-/**
- * Records one walked entry as an observed element. A symlink, a refused
- * hardlink or oversized file, a non-regular entry, and a file that could not be
- * read are each surfaced with their reason rather than dropped, which is the
- * best-effort invariant (design doc §10.2, §10.3, §18).
- */
 /**
  * A `.rules` file's permission counts as a second element. Only the counts
  * leave the walk — a pattern, command, or argument never does (design doc §19,
@@ -689,6 +684,7 @@ function addKnownFile(
 ): Promise<void> {
   return sharedAddKnownFile({
     runtimeId: RUNTIME_ID,
+    builders,
     absPath,
     displayPath,
     origin,
