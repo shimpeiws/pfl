@@ -41,13 +41,19 @@ absent from both this register and the code as a fix is a defect.
   Codex-only checkout.
 - **Why accepted:** consent is a statement that `pfl` may read outside the
   project; the runtime scope selects which harness files are read, not the
-  runtime-independent Git metadata that establishes project identity. Gating it
-  per runtime would require the runtime before the project id is known, which is
-  circular without the store's root index. M6 fixes the pre-consent read (S5);
-  M8's scope taxonomy and root index give read commands a runtime-specific
-  context and remove the approximation.
-- **Reopens if:** M8 lands, or a read command gains a runtime argument.
-- **Recorded:** 2026-09-17 (M6 Phase 4).
+  runtime-independent Git metadata that establishes project identity. M8's
+  scope split (#81) and root index (#86) narrowed the approximation but did not
+  remove it: a linked worktree now resolves the same root with or without a
+  grant, but a command run from a **subdirectory** still needs the gated
+  ancestor walk to find the repository root, so the runtime cannot be
+  determined first. Passing `false` unconditionally would stop read commands
+  from a subdirectory, a correctness regression rather than a tightening.
+- **Reopens if:** a read command gains a `--runtime` argument, or the root
+  index records the runtime (or the ancestor roots) for a root, so the runtime
+  is known before the project id is.
+- **Callers:** `src/cli/read.ts`, `src/cli/snapshots.ts`, and `src/cli/gc.ts`.
+- **Recorded:** 2026-09-17 (M6 Phase 4). Re-evaluated 2026-09-18 by the v1.0
+  release-candidate audit (`docs/security/reviews/2026-09-18-v1.0-release-candidate.md`).
 
 ## A4 — The project index has no lock (roadmap #86)
 

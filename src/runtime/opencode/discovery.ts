@@ -972,7 +972,7 @@ function permissionCounts(permission: Record<string, unknown>): Record<string, S
 /**
  * Walks every element directory in one scope. Skills hold `<name>/SKILL.md`;
  * every other surface holds files directly. The legacy `mode(s)/` directory is
- * recorded as unsupported rather than classified as agents.
+ * agent-like and defaults to a primary agent (#149).
  */
 async function collectElementDirs(
   base: string,
@@ -1011,8 +1011,8 @@ async function collectElementDir(
               ...frontmatterMetadata(read.facts),
             };
             // Only a well-formed block contributes a mode; a malformed block
-            // must not change the element's kind, so it falls to the
-            // conservative `subagents` default (see `kindForEntry`).
+            // falls to the directory's `defaultAgentMode` (see `kindForEntry`):
+            // `subagent` for `agent(s)/`, `primary` for `mode(s)/`.
             if (spec.kind === 'subagents' && !read.malformed) {
               const mode = frontmatterMode(content);
               if (mode !== undefined) metadata['agentMode'] = normalizeAgentMode(mode);
@@ -1353,8 +1353,9 @@ function pluginIdentity(entry: unknown): { name?: string; kind?: string } {
         : undefined;
   if (raw === undefined) return {};
   if (BARE_PACKAGE_SPECIFIER.test(raw)) return { name: raw };
-  // A non-bare specifier is a relative/absolute path or a `file://` URL — never
-  // a repository — so the path-only classifier is used.
+  // A non-bare specifier is a path or a `file://` URL in the documented shapes;
+  // the path-only classifier is used so a relative path is not read as an
+  // `owner/repo` repository shorthand.
   return { kind: referencePathKind(raw) };
 }
 

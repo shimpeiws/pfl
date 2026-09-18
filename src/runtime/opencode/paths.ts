@@ -12,7 +12,7 @@ import { basename, join } from 'node:path';
  *   skill(s)/<name>/SKILL.md    skills
  *   plugin(s)/*.ts, *.js        local plugins
  *   tool(s)/**                  custom tools
- *   mode(s)/**                  legacy; recorded unsupported-by-adapter
+ *   mode(s)/**                  agents (primary default; #149)
  *   theme(s)/**                 UI chrome; not modelled
  *   opencode.json[c]            project configuration
  *

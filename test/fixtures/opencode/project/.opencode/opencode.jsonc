@@ -16,6 +16,13 @@
   "agent": {
     "primary-agent": { "mode": "primary" },
   },
+  // Declared targets: the values must never reach the store (only a kind does).
+  "references": {
+    "refsecret": { "path": "/abs/sk-ant-OPENCODE-EXFIL-0123456789" },
+  },
+  "skills": {
+    "urls": ["https://example.com/s?token=sk-ant-OPENCODE-EXFIL-0123456789"],
+  },
   "sentinelKey": "SENTINEL_OPENCODE_SETTINGS",
   "$schema": "https://opencode.ai/config.json",
 }
