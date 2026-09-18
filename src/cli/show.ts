@@ -129,8 +129,12 @@ export async function runShow(
   if (relations.length > 0) {
     out.info('');
     out.info('Relations');
+    const pathById = new Map<ElementId, string | undefined>(
+      observed.elements.map((element) => [element.id, element.source.path]),
+    );
+    const endpoint = (id: ElementId): string => pathById.get(id) ?? id;
     for (const relation of relations) {
-      out.info(`  ${relation.type}: ${relation.from} -> ${relation.to}`);
+      out.info(`  ${relation.type}: ${endpoint(relation.from)} -> ${endpoint(relation.to)}`);
     }
   }
   if (findings.length > 0) {
