@@ -1,5 +1,6 @@
 node_modules/
 dist/
+coverage/
 *.tsbuildinfo
 
 # pfl stores snapshots under ~/.pfl/ by design, never inside the inspected

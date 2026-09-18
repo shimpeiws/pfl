@@ -9,8 +9,11 @@
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
     "declaration": true,
-    "declarationMap": true,
-    "sourceMap": true,
+    // Source maps are deliberately not emitted: `files: ["dist"]` would ship
+    // maps that resolve to nothing, and shipping `src` to fix that was rejected
+    // (roadmap M10). The release workflow asserts the tarball is map-free.
+    "declarationMap": false,
+    "sourceMap": false,
     "outDir": "./dist",
     "rootDir": "./src"
   },

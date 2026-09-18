@@ -50,6 +50,7 @@ deferred plus the OpenCode model reconciliation (#144). See
 
 ```sh
 pnpm test              # vitest run
+pnpm run test:coverage # vitest run --coverage (thresholds in vitest.config.ts)
 pnpm run check         # oxlint --deny-warnings
 pnpm run format        # oxfmt --check
 pnpm run build         # tsc --build (type check)
