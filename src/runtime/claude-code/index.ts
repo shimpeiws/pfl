@@ -4,6 +4,7 @@ import type { ObservedSnapshot } from '../../core/observed.js';
 import type { ResolvedSnapshot } from '../../core/resolved.js';
 import type { AccessPolicy, ProjectContext, RuntimeAdapter, RuntimeDetection } from '../types.js';
 import { grants } from '../../discovery/gate.js';
+import { installScopeNotGranted } from '../scaffold.js';
 import { detectClaudeCode } from './detect.js';
 import { discoverClaudeCode } from './discovery.js';
 import { resolveClaudeCode } from './resolve.js';
@@ -21,22 +22,7 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
     pathValue: string = process.env['PATH'] ?? '',
   ): Promise<RuntimeDetection> {
     if (!grants(access, 'install')) {
-      return {
-        runtimeId: this.id(),
-        // `unknown`, not `no`: detection could not look, so "not consented" stays
-        // distinguishable from "not installed" (roadmap §5 M7, issue #76).
-        installed: 'unknown',
-        version: null,
-        runtimeCompatibility: 'unverified',
-        diagnostics: [
-          {
-            severity: 'info',
-            code: 'consent-not-granted:install',
-            message:
-              'runtime detection reads installation metadata outside the project and needs consent',
-          },
-        ],
-      };
+      return installScopeNotGranted(this.id());
     }
     return detectClaudeCode(home ?? homedir(), pathValue);
   }

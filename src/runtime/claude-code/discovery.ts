@@ -1,4 +1,3 @@
-import { readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { assembleObservedSnapshot } from '../../discovery/assemble.js';
@@ -12,22 +11,26 @@ import { runtimeId } from '../../core/ids.js';
 import type {
   NativeOrigin,
   ObservedElement,
-  ObservedProject,
-  ObservedReason,
   ObservedSnapshot,
   SafeMetadataValue,
 } from '../../core/observed.js';
-import {
-  MAX_ANCESTOR_DIRS,
-  MAX_FILE_BYTES,
-  MAX_PARSE_BYTES,
-  limitExceededDiagnostic,
-} from '../../limits.js';
-import { inspectFileTarget, readTextFileGuarded } from '../../util/fs.js';
-import { sha256Digest } from '../../util/hash.js';
+import { MAX_ANCESTOR_DIRS, MAX_PARSE_BYTES, limitExceededDiagnostic } from '../../limits.js';
+import { readTextFileGuarded } from '../../util/fs.js';
 import { packageVersion } from '../../version.js';
 import type { AccessPolicy, ProjectContext } from '../types.js';
 import { grants } from '../../discovery/gate.js';
+import {
+  addKnownFile as sharedAddKnownFile,
+  builtinLayer,
+  createElementBuilders,
+  hardlinkDiagnostic,
+  isRecord,
+  malformedFrontmatterDiagnostic,
+  nonRegularDiagnostic,
+  pushWalkedEntry,
+  toObservedProject,
+  unreadableDiagnostic,
+} from '../scaffold.js';
 import { detectClaudeCode } from './detect.js';
 import { CLAUDE_CODE_SAFE_METADATA_ALLOWLIST } from './metadata.js';
 import {
@@ -44,7 +47,6 @@ import {
   encodeProjectDir,
   userConfigDir,
   type ClaudeCodeElementKind,
-  UNKNOWN_ELEMENT_KIND,
   type ClaudeCodeRecordedKind,
 } from './paths.js';
 import { redactClaudeCode } from './redact.js';
@@ -63,6 +65,11 @@ import { redactClaudeCode } from './redact.js';
 
 const RUNTIME_ID = runtimeId('claude-code');
 const USER_PREFIX = '~/.claude';
+
+// The shared element builders, parameterised by this adapter's kind union so a
+// misspelled kind is a compile error (roadmap M9 #90, #131).
+const builders = createElementBuilders<ClaudeCodeRecordedKind>(RUNTIME_ID);
+const { symlinkElement, unreadableElement, skippedElement, skippedNonRegularElement } = builders;
 
 const USER_DIR_KIND: Record<(typeof USER_ELEMENT_DIRS)[number], ClaudeCodeElementKind> = {
   skills: 'skills',
@@ -139,7 +146,7 @@ export async function collectClaudeCodeHarness(
       message: 'user-scope discovery skipped: the user scope was not granted',
     });
   }
-  elements.push(builtinLayer());
+  elements.push(builtinLayer(RUNTIME_ID, '(builtin) claude-code instruction layers'));
 
   return assembleObservedSnapshot({
     project: toObservedProject(project),
@@ -453,45 +460,23 @@ async function addWalkedArea(
     const displayPath = displayPrefix
       ? `${displayPrefix}/${entry.relativePath}`
       : entry.relativePath;
-    if (entry.kind === 'symlink') {
-      elements.push(symlinkElement(origin, scope, kind, displayPath));
-      continue;
-    }
-    if (entry.skipReason !== undefined) {
-      elements.push(
-        skippedElement(origin, scope, kind, displayPath, reasonForWalkSkip(entry.skipReason)),
-      );
-      continue;
-    }
-    if (entry.kind === 'unknown') {
-      elements.push(skippedNonRegularElement(origin, scope, kind, displayPath));
-      continue;
-    }
-    if (kind === 'unknown') {
-      elements.push(unsupportedElement(origin, scope, displayPath));
-      continue;
-    }
-    if (entry.digest === undefined) {
-      diagnostics.push(unreadableDiagnostic(displayPath));
-      elements.push(unreadableElement(origin, scope, kind, displayPath));
-      continue;
-    }
-    elements.push(
-      buildObservedElement({
-        runtimeId: RUNTIME_ID,
-        origin,
-        scope,
-        kind,
-        path: displayPath,
-        digest: entry.digest,
-        ...(entry.sizeBytes !== undefined ? { sizeBytes: entry.sizeBytes } : {}),
-        metadata: { ...metadataForPath(displayPath), ...(entry.metadata ?? {}) },
-      }),
-    );
+    pushWalkedEntry({
+      runtimeId: RUNTIME_ID,
+      builders,
+      entry,
+      origin,
+      scope,
+      kind,
+      displayPath,
+      metadataForPath,
+      elements,
+      diagnostics,
+      unsupported: kind === 'unknown',
+    });
   }
 }
 
-async function addKnownFile(
+function addKnownFile(
   absPath: string,
   displayPath: string,
   origin: NativeOrigin,
@@ -501,51 +486,19 @@ async function addKnownFile(
   elements: ObservedElement[],
   diagnostics: Diagnostic[],
 ): Promise<void> {
-  const target = await inspectFileTarget(absPath, baseDir);
-  if (target.status === 'missing') return; // absence is not a finding
-  if (target.status === 'symlink') {
-    elements.push(symlinkElement(origin, scope, kind, displayPath));
-    return;
-  }
-  if (target.status === 'hardlink') {
-    diagnostics.push(hardlinkDiagnostic(displayPath));
-    elements.push(skippedElement(origin, scope, kind, displayPath, 'hardlink-not-followed'));
-    return;
-  }
-  if (target.status === 'not-regular') {
-    diagnostics.push(nonRegularDiagnostic(displayPath));
-    elements.push(skippedNonRegularElement(origin, scope, kind, displayPath));
-    return;
-  }
-  if (target.status === 'unreadable') {
-    diagnostics.push(unreadableDiagnostic(displayPath));
-    elements.push(unreadableElement(origin, scope, kind, displayPath));
-    return;
-  }
-  if ((target.sizeBytes ?? 0) > MAX_FILE_BYTES) {
-    diagnostics.push(limitExceededDiagnostic('MAX_FILE_BYTES', MAX_FILE_BYTES, displayPath));
-    elements.push(skippedElement(origin, scope, kind, displayPath, 'limit-exceeded'));
-    return;
-  }
-
-  try {
-    const content = await readFile(absPath);
-    elements.push(
-      buildObservedElement({
-        runtimeId: RUNTIME_ID,
-        origin,
-        scope,
-        kind,
-        path: displayPath,
-        digest: sha256Digest(content),
-        sizeBytes: content.length,
-        metadata: metadataForPath(displayPath),
-      }),
-    );
-  } catch {
-    diagnostics.push(unreadableDiagnostic(displayPath));
-    elements.push(unreadableElement(origin, scope, kind, displayPath));
-  }
+  return sharedAddKnownFile({
+    runtimeId: RUNTIME_ID,
+    builders,
+    absPath,
+    displayPath,
+    origin,
+    scope,
+    kind,
+    baseDir,
+    metadataForPath,
+    elements,
+    diagnostics,
+  });
 }
 
 async function collectSettings(
@@ -795,74 +748,6 @@ function configElement(
   });
 }
 
-function symlinkElement(
-  origin: NativeOrigin,
-  scope: string,
-  kind: ClaudeCodeRecordedKind,
-  path: string,
-): ObservedElement {
-  return buildObservedElement({
-    runtimeId: RUNTIME_ID,
-    origin,
-    scope,
-    kind,
-    path,
-    symlink: true,
-    status: 'skipped',
-    reason: 'symlink-not-followed',
-  });
-}
-
-function unsupportedElement(origin: NativeOrigin, scope: string, path: string): ObservedElement {
-  return buildObservedElement({
-    runtimeId: RUNTIME_ID,
-    origin,
-    scope,
-    kind: UNKNOWN_ELEMENT_KIND,
-    path,
-    status: 'unsupported',
-    reason: 'unsupported-by-adapter',
-  });
-}
-
-function unreadableElement(
-  origin: NativeOrigin,
-  scope: string,
-  kind: ClaudeCodeRecordedKind,
-  path: string,
-): ObservedElement {
-  return buildObservedElement({
-    runtimeId: RUNTIME_ID,
-    origin,
-    scope,
-    kind,
-    path,
-    status: 'unreadable',
-    reason: 'unreadable',
-  });
-}
-
-/** Built-in instruction layers exist but are never readable (design doc §12). */
-function builtinLayer(): ObservedElement {
-  return buildObservedElement({
-    runtimeId: RUNTIME_ID,
-    origin: 'builtin',
-    scope: null,
-    kind: 'runtime-provided-instructions',
-    path: '(builtin) claude-code instruction layers',
-    inspectability: 'opaque',
-  });
-}
-
-function toObservedProject(project: ProjectContext): ObservedProject {
-  return {
-    id: project.id,
-    displayName: project.displayName,
-    root: project.root,
-    ...(project.remote !== undefined ? { remote: project.remote } : {}),
-  };
-}
-
 function metadataForPath(displayPath: string): Record<string, SafeMetadataValue> {
   const name = basename(displayPath);
   const dot = name.lastIndexOf('.');
@@ -896,33 +781,6 @@ function arrayLength(value: unknown): number {
   return Array.isArray(value) ? value.length : 0;
 }
 
-function skippedElement(
-  origin: NativeOrigin,
-  scope: string,
-  kind: ClaudeCodeRecordedKind,
-  path: string,
-  reason: ObservedReason,
-): ObservedElement {
-  return buildObservedElement({
-    runtimeId: RUNTIME_ID,
-    origin,
-    scope,
-    kind,
-    path,
-    status: 'skipped',
-    reason,
-  });
-}
-
-function skippedNonRegularElement(
-  origin: NativeOrigin,
-  scope: string,
-  kind: ClaudeCodeRecordedKind,
-  path: string,
-): ObservedElement {
-  return skippedElement(origin, scope, kind, path, 'non-regular-file-not-opened');
-}
-
 /**
  * Compile-time guard (roadmap M9 #131). If any builder helper's `kind` widens
  * back to `string`, this becomes `never`, and the assertion in the test fails.
@@ -936,47 +794,3 @@ type KindParams =
   | Parameters<typeof skippedElement>[2]
   | Parameters<typeof skippedNonRegularElement>[2];
 export type AssertKindsNarrow = string extends KindParams ? never : true;
-
-function reasonForWalkSkip(skipReason: 'hardlink-not-followed' | 'file-too-large'): ObservedReason {
-  return skipReason === 'hardlink-not-followed' ? 'hardlink-not-followed' : 'limit-exceeded';
-}
-
-function unreadableDiagnostic(displayPath: string): Diagnostic {
-  return {
-    severity: 'warning',
-    code: 'unreadable-file',
-    message: `could not read ${displayPath}`,
-    path: displayPath,
-  };
-}
-
-function nonRegularDiagnostic(displayPath: string): Diagnostic {
-  return {
-    severity: 'warning',
-    code: 'non-regular-file',
-    message: `not a regular file, not opened: ${displayPath}`,
-    path: displayPath,
-  };
-}
-
-function hardlinkDiagnostic(displayPath: string): Diagnostic {
-  return {
-    severity: 'warning',
-    code: 'hardlink-not-followed',
-    message: `hardlink not followed: ${displayPath}`,
-    path: displayPath,
-  };
-}
-
-function malformedFrontmatterDiagnostic(displayPath: string): Diagnostic {
-  return {
-    severity: 'warning',
-    code: 'invalid-frontmatter',
-    message: `frontmatter is malformed or unterminated: ${displayPath}`,
-    path: displayPath,
-  };
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
