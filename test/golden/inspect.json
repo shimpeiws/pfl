@@ -58,6 +58,7 @@
     "runtimeVersion": "2.1.272",
     "runtimeCompatibility": "verified",
     "project": "FIXTURE_PROJECT",
+    "store": "~/.pfl/projects/FIXTURE_PROJECT",
     "observed": {
       "snapshotId": "obs_ID",
       "elements": 25,

@@ -85,6 +85,9 @@ describe('runInspect', () => {
     expect(output).toContain('Conditional');
     expect(output).toContain('Shadowed');
     expect(output).toContain('Opaque layers');
+    expect(output).toContain('Store');
+    expect(output).toMatch(/Store\s+~\/\.pfl\/projects\//);
+    expect(output).not.toContain(home);
     expect(output).toContain('pfl report');
 
     const projectId = (await resolveProjectContext(project)).id;
@@ -121,6 +124,9 @@ describe('runInspect', () => {
     });
     expect(payload.observed.snapshotId).toMatch(/^obs_/);
     expect(payload.resolved.snapshotId).toMatch(/^res_/);
+    // The store path is home-redacted: no raw home prefix, always ~/.pfl/projects/.
+    expect(payload.store).toMatch(/^~\/\.pfl\/projects\//);
+    expect(payload.store).not.toContain(home);
     // The temp home is used by discovery too, so the isolated fixture is fully
     // inspected (2 project files + 1 user skill + 1 opaque layer), all effective.
     expect(payload.observed.elements).toBe(4);

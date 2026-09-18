@@ -153,10 +153,15 @@ Only `data` varies. Each shape below is the payload once, not repeated per run.
 {
   runtime, runtimeVersion, runtimeCompatibility,
   project,
+  store,
   observed: { snapshotId, elements, opaqueLayers, completeness },
   resolved: { snapshotId, effective, conditional, shadowed, confidence }
 }
 ```
+
+`store` is the home-redacted project directory under `~/.pfl/`, e.g.
+`~/.pfl/projects/git-0f214d60555919a5`. It tells the user where artifacts were
+written. A field addition to `data` is minor per the Compatibility section.
 
 Observed and resolved diagnostics travel in the envelope's `diagnostics`, not
 nested under `data`.

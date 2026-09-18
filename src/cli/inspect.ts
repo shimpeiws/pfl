@@ -13,12 +13,13 @@ import { allowsOutsideProject, type RuntimeDetection } from '../runtime/types.js
 import { resolveStoredProjectId } from '../snapshot/project-index.js';
 import { SNAPSHOT_SCHEMA_VERSION } from '../snapshot/serialization.js';
 import {
+  projectDir,
   writeInterpretation,
   writeLatestPointer,
   writeObservedSnapshot,
   writeResolvedSnapshot,
 } from '../snapshot/store.js';
-import { redactingLogger } from '../redact/output.js';
+import { redactPath, redactingLogger } from '../redact/output.js';
 import type { Logger } from '../util/logger.js';
 import { type CommandOutcome } from './document.js';
 
@@ -27,6 +28,7 @@ export interface InspectData {
   runtimeVersion: string | null;
   runtimeCompatibility: 'verified' | 'unverified';
   project: string;
+  store: string;
   observed: {
     snapshotId: string;
     elements: number;
@@ -153,15 +155,20 @@ export async function runInspect(
     home,
   );
 
-  const data = inspectData(observed, resolved);
+  const store = redactPath(projectDir(project.id, home), { home });
+  const data = inspectData(observed, resolved, store);
 
   if (options.json !== true) {
-    renderInspect(out, request.runtimeName, observed, resolved, detection);
+    renderInspect(out, request.runtimeName, observed, resolved, detection, store);
   }
   return { data, diagnostics, completeness: observed.completeness };
 }
 
-function inspectData(observed: ObservedSnapshot, resolved: ResolvedSnapshot): InspectData {
+function inspectData(
+  observed: ObservedSnapshot,
+  resolved: ResolvedSnapshot,
+  store: string,
+): InspectData {
   const opaqueLayers = observed.elements.filter(
     (element) => element.inspectability === 'opaque',
   ).length;
@@ -170,6 +177,7 @@ function inspectData(observed: ObservedSnapshot, resolved: ResolvedSnapshot): In
     runtimeVersion: observed.runtime.version,
     runtimeCompatibility: observed.adapter.runtimeCompatibility,
     project: observed.project.id,
+    store,
     observed: {
       snapshotId: observed.snapshotId,
       elements: observed.elements.length,
@@ -196,6 +204,7 @@ function renderInspect(
   observed: ObservedSnapshot,
   resolved: ResolvedSnapshot,
   detection: RuntimeDetection,
+  store: string,
 ): void {
   const opaqueLayers = observed.elements.filter(
     (element) => element.inspectability === 'opaque',
@@ -217,6 +226,9 @@ function renderInspect(
   out.info('Snapshot');
   out.info(`  observed   ${observed.snapshotId}`);
   out.info(`  resolved   ${resolved.snapshotId}`);
+
+  out.info('');
+  out.info(`Store           ${store}`);
 
   if (detection.runtimeCompatibility === 'unverified') {
     out.info('');
