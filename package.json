@@ -1,7 +1,7 @@
 {
   "name": "@shimpeiws/pfl",
   "version": "0.1.1",
-  "description": "Pre-Flight Listen for coding-agent harnesses: static inspection of Claude Code and Codex harness configuration.",
+  "description": "Pre-Flight Listen for coding-agent harnesses: static inspection of Claude Code, Codex, and OpenCode harness configuration.",
   "keywords": [
     "agent",
     "claude-code",
@@ -10,6 +10,7 @@
     "coding-agent",
     "harness",
     "inspection",
+    "opencode",
     "static-analysis"
   ],
   "homepage": "https://github.com/shimpeiws/pfl#readme",
@@ -27,6 +28,10 @@
   },
   "files": [
     "dist"
+  ],
+  "os": [
+    "darwin",
+    "linux"
   ],
   "type": "module",
   "exports": {
