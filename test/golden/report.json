@@ -17,8 +17,8 @@
       "id": "path-0123456789abcdef",
       "displayName": "owner/repo"
     },
-    "observedSnapshotId": "obs_ID",
-    "resolvedSnapshotId": "res_ID",
+    "observedSnapshotId": "obs_0123456789ab",
+    "resolvedSnapshotId": "res_0123456789ab",
     "confidence": "verified",
     "stats": {
       "byFacet": {

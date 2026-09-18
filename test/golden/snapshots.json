@@ -14,9 +14,9 @@
     "project": "PROJECT_ID",
     "runs": [
       {
-        "observedId": "obs_ID",
-        "resolvedId": "res_ID",
-        "interpretationId": "int_ID",
+        "observedId": "obs_0123456789ab",
+        "resolvedId": "res_0123456789ab",
+        "interpretationId": "int_0123456789ab",
         "capturedAt": "2026-09-18T00:00:00.000Z",
         "runtime": {
           "id": "claude-code",

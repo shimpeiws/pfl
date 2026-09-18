@@ -1,9 +1,16 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { classify } from '../../src/classify/classifier.js';
+import { deriveFindings } from '../../src/classify/findings.js';
 import { buildDocument, buildErrorDocument, type Envelope } from '../../src/cli/document.js';
+import { elementIdFor, runtimeId } from '../../src/core/ids.js';
+import type { ObservedElement } from '../../src/core/observed.js';
+import type { ResolvedElement } from '../../src/core/resolved.js';
+import { assembleObservedSnapshot } from '../../src/discovery/assemble.js';
+import { assembleResolvedSnapshot } from '../../src/resolution/assemble.js';
 import { EXIT_CODES, PflError } from '../../src/cli/exit-codes.js';
 import { runDiff } from '../../src/cli/diff.js';
 import { runGc } from '../../src/cli/gc.js';
@@ -38,9 +45,70 @@ import { materialize } from '../fixtures/materialize.js';
 const silent: Logger = { info: () => undefined, warn: () => undefined, error: () => undefined };
 const GOLDEN_DIR = dirname(fileURLToPath(import.meta.url));
 const FIXTURES = join(GOLDEN_DIR, '..', 'fixtures', 'schema');
-const ELEMENT_ID = 'el_0123456789abcdef';
+const RUNTIME = runtimeId('claude-code');
+const ELEMENT_ID = elementIdFor({
+  runtimeId: RUNTIME,
+  origin: 'project',
+  path: 'CLAUDE.md',
+  kind: 'instructions',
+});
 const OBSERVED_ID = 'obs_0123456789ab';
 const RESOLVED_ID = 'res_0123456789ab';
+
+/** The representative observed snapshot, built through the real assembler. */
+function buildObserved() {
+  const element: ObservedElement = {
+    id: ELEMENT_ID,
+    native: { kind: 'instructions', origin: 'project', scope: 'project' },
+    source: {
+      path: 'CLAUDE.md',
+      digest: 'sha256:0000000000000000000000000000000000000000000000000000000000000000',
+      sizeBytes: 12,
+    },
+    inspectability: 'observable',
+    metadata: {},
+    status: 'observed',
+  };
+  return assembleObservedSnapshot({
+    project: { id: 'path-0123456789abcdef', displayName: 'owner/repo', root: '/repo' },
+    runtime: { id: RUNTIME, version: '2.1.272' },
+    adapter: { id: 'claude-code', version: '0.1.1', runtimeCompatibility: 'verified' },
+    elements: [element],
+    diagnostics: [{ severity: 'warning', code: 'example', message: 'example' }],
+    capturedAt: '2026-09-18T00:00:00.000Z',
+    snapshotId: OBSERVED_ID as never,
+    home: '',
+  });
+}
+
+function buildResolved() {
+  const observed = buildObserved();
+  const element: ResolvedElement = {
+    id: ELEMENT_ID,
+    status: 'effective',
+    applicability: { type: 'project' },
+    activation: 'always',
+    resolution: { strategy: 'accumulate' },
+  };
+  return assembleResolvedSnapshot({
+    observed,
+    elements: [element],
+    snapshotId: RESOLVED_ID as never,
+    runtimeCompatibility: 'verified',
+  });
+}
+
+function buildInterpretation() {
+  const observed = buildObserved();
+  const resolved = buildResolved();
+  return {
+    schemaVersion: '1',
+    interpretationId: 'int_0123456789ab',
+    resolvedSnapshotId: resolved.snapshotId,
+    ...classify(observed, resolved),
+    findings: deriveFindings(observed, resolved),
+  };
+}
 
 let projectRoot = '';
 let home = '';
@@ -77,9 +145,15 @@ beforeAll(async () => {
   );
 });
 
-function normalize(envelope: Envelope, extra: ReadonlyArray<readonly [string, string]> = []): unknown {
-  // Replace the values that legitimately vary between runs: the package version,
-  // random snapshot ids, and the temp project's id, root, and display name.
+function normalize(
+  envelope: Envelope,
+  extra: ReadonlyArray<readonly [string, string]> = [],
+  maskIds = false,
+): unknown {
+  // Replace the values that legitimately vary between runs: the package version
+  // and the temp project's id, root, and display name. Snapshot ids are masked
+  // only where a command generates them freshly (`inspect`); everywhere else the
+  // fixture ids are fixed, and masking them would hide an id-wiring regression.
   let text = JSON.stringify(envelope);
   for (const [from, to] of [
     [projectId, 'PROJECT_ID'],
@@ -89,11 +163,13 @@ function normalize(envelope: Envelope, extra: ReadonlyArray<readonly [string, st
   ] as ReadonlyArray<readonly [string, string]>) {
     if (from !== '') text = text.split(from).join(to);
   }
-  text = text
-    .replace(/"pflVersion":"[^"]*"/g, '"pflVersion":"VERSION"')
-    .replace(/obs_[0-9a-f]{12}/g, 'obs_ID')
-    .replace(/res_[0-9a-f]{12}/g, 'res_ID')
-    .replace(/int_[0-9a-f]{12}/g, 'int_ID');
+  text = text.replace(/"pflVersion":"[^"]*"/g, '"pflVersion":"VERSION"');
+  if (maskIds) {
+    text = text
+      .replace(/obs_[0-9a-f]{12}/g, 'obs_ID')
+      .replace(/res_[0-9a-f]{12}/g, 'res_ID')
+      .replace(/int_[0-9a-f]{12}/g, 'int_ID');
+  }
   return JSON.parse(text) as unknown;
 }
 
@@ -213,15 +289,25 @@ describe('inspect golden', () => {
         silent,
       );
       const inspectProjectId = (await resolveProjectContext(m.projectRoot)).id;
-      const value = normalize(buildDocument('inspect', outcome, { home: m.home }), [
-        [m.home, 'FIXTURE_HOME'],
-        [m.projectRoot, 'FIXTURE_ROOT'],
-        [m.base, 'FIXTURE_BASE'],
-        // The runtime encodes the project root with `/` as `-` in its own
-        // layout, so the encoded base is replaced too.
-        [m.base.replace(/\//g, '-'), 'FIXTURE_BASE_ENCODED'],
-        [inspectProjectId, 'FIXTURE_PROJECT'],
-      ]);
+      // The runtime encodes the canonical project root with `/` as `-` in its
+      // own memory path. The canonical (realpath) form must be replaced, not the
+      // raw temp path: on macOS `mkdtemp` returns `/var/...` while realpath is
+      // `/private/var/...`, and Linux has no such alias.
+      const canonicalRoot = await realpath(m.projectRoot);
+      const canonicalBase = await realpath(m.base);
+      const value = normalize(
+        buildDocument('inspect', outcome, { home: m.home }),
+        [
+          [canonicalRoot.replace(/\//g, '-'), 'FIXTURE_ENCODED_ROOT'],
+          [canonicalRoot, 'FIXTURE_CANON_ROOT'],
+          [canonicalBase, 'FIXTURE_CANON_BASE'],
+          [m.projectRoot, 'FIXTURE_ROOT'],
+          [m.base, 'FIXTURE_BASE'],
+          [m.home, 'FIXTURE_HOME'],
+          [inspectProjectId, 'FIXTURE_PROJECT'],
+        ],
+        true,
+      );
       await golden('inspect', value);
     } finally {
       await rm(m.base, { recursive: true, force: true });
@@ -230,12 +316,19 @@ describe('inspect golden', () => {
 });
 
 describe('stored snapshot golden', () => {
-  it('serializes each fixture back to the exact canonical bytes', async () => {
-    for (const name of ['observed', 'resolved', 'interpretation']) {
-      const text = await readFile(join(FIXTURES, `${name}.json`), 'utf8');
-      // The fixture is the golden: canonical form is part of the contract
-      // (ADR 0001), so the writer must reproduce the file byte for byte.
-      expect(serializeSnapshot(JSON.parse(text) as never), name).toBe(text);
+  it('pins the assembler output to the fixture byte for byte', async () => {
+    const built: Record<string, string> = {
+      observed: serializeSnapshot(buildObserved()),
+      resolved: serializeSnapshot(buildResolved()),
+      interpretation: serializeSnapshot(buildInterpretation() as never),
+    };
+    for (const [name, bytes] of Object.entries(built)) {
+      const fixture = await readFile(join(FIXTURES, `${name}.json`), 'utf8');
+      // The fixture is the assembler's canonical output: a new field or a
+      // changed shape in assembly moves the bytes and fails here, which the
+      // serializer round-trip alone would not catch.
+      expect(bytes, name).toBe(fixture);
+      expect(serializeSnapshot(JSON.parse(fixture) as never), name).toBe(fixture);
     }
   });
 });

@@ -2,11 +2,14 @@
 
 - Date: 2026-09-18
 - Reviewer: independent review by a separate OpenCode process (`opencode run
---agent plan`) plus maintainer disposition.
+--agent plan`, two rounds) plus maintainer disposition. (The codex and Claude
+  reviewers were rate-limited.)
 - Trigger: `src/snapshot/store.ts` changed (two more closed vocabularies are
   single-sourced).
 - Result: no trust-boundary impact; the review's findings were completeness gaps
-  in the freeze evidence, all remediated here
+  in the freeze evidence, all remediated here. The second round found that the
+  first `inspect` golden was macOS-path-specific and would have failed on the
+  ubuntu CI runner.
 
 ## What changed
 
@@ -16,10 +19,12 @@ The freeze evidence from #88 had three gaps the separate review found:
    with the fixture's temp paths and random ids normalized so it is stable
    across runs.
 2. The "stored snapshot golden" only checked serialize→parse→serialize
-   idempotency; it did not pin the writer's output. The schema fixtures are now
-   kept in canonical form (excluded from the formatter) and the test asserts
-   `serializeSnapshot(parse(fixture))` reproduces the file byte for byte, so the
-   fixture is itself the golden.
+   idempotency; it did not pin the producer. The fixtures are now the real
+   assemblers' output (kept canonical, excluded from the formatter), and the
+   test rebuilds the observed, resolved, and interpretation artifacts through
+   `assembleObservedSnapshot` / `assembleResolvedSnapshot` / `classify` +
+   `deriveFindings` and asserts the exact canonical bytes against the fixtures,
+   so the fixture is itself the golden.
 3. The enum single-sourcing missed two closed vocabularies: the classification
    confidence and the resolution confidence. Both are now arrays in the core
    modules, and `store.ts` aliases them like the rest.
@@ -43,13 +48,15 @@ corrected.
 
 ## Findings and disposition
 
-| #   | Severity | Finding                                                               | Disposition                            |
-| --- | -------- | --------------------------------------------------------------------- | -------------------------------------- |
-| 1   | Medium   | `inspect` `--json` document was not frozen                            | Fixed: golden added                    |
-| 2   | Medium   | The persisted-shape golden proved idempotency, not the writer's bytes | Fixed: canonical fixture is the golden |
-| 3   | Low      | Two closed vocabularies were still hand-written in the validator      | Fixed: single-sourced                  |
-| 4   | Low      | Read-compat test name overstated what it exercises                    | Fixed: renamed                         |
-| 5   | Low      | Unused `index.json` fixture                                           | Fixed: read by a test                  |
+| #   | Severity | Finding                                                                                                                                                        | Disposition                                                                                                                      |
+| --- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | Medium   | `inspect` `--json` document was not frozen                                                                                                                     | Fixed: golden added                                                                                                              |
+| 2   | Medium   | The persisted-shape golden proved only serializer idempotency, not the producer's output                                                                       | Fixed: the fixtures are now the assembler's output, and a test rebuilds them through the assemblers and compares bytes           |
+| 3   | Low      | Two closed vocabularies were still hand-written in the validator                                                                                               | Fixed: single-sourced                                                                                                            |
+| 4   | Low      | Read-compat test name overstated what it exercises                                                                                                             | Fixed: renamed                                                                                                                   |
+| 5   | Low      | Unused `index.json` fixture                                                                                                                                    | Fixed: read by a test                                                                                                            |
+| 6   | High     | The first `inspect` golden baked the macOS realpath (`/var` → `/private/var`) into the runtime's encoded memory path, so it would fail on the ubuntu CI runner | Fixed: the canonical (realpath) project root and its runtime-encoded form are normalized, making the golden platform-independent |
+| 7   | Low      | Snapshot-id masking applied to every command, hiding id-wiring regressions                                                                                     | Fixed: masking is limited to `inspect`, which generates fresh ids                                                                |
 
 No finding was accepted as a risk.
 
@@ -57,5 +64,8 @@ No finding was accepted as a risk.
 
 - Full gate green: `test` (57 files, 499 tests), `check`, `format`, `build`,
   `typecheck:test`, `knip`.
-- The golden suite passes twice with different temp paths, confirming the
-  normalization is sufficient; the writer test asserts exact canonical bytes.
+- The golden suite passes repeatedly with different temp paths; the `inspect`
+  golden contains no absolute or macOS-specific path, so it is
+  platform-independent. The producer test rebuilds the representative observed,
+  resolved, and interpretation artifacts through the real assemblers and asserts
+  the exact canonical bytes against the fixtures.

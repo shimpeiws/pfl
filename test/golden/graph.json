@@ -11,11 +11,11 @@
     }
   ],
   "data": {
-    "observedSnapshotId": "obs_ID",
-    "resolvedSnapshotId": "res_ID",
+    "observedSnapshotId": "obs_0123456789ab",
+    "resolvedSnapshotId": "res_0123456789ab",
     "nodes": [
       {
-        "id": "el_0123456789abcdef",
+        "id": "el_0fc92802d8f84176",
         "path": "CLAUDE.md",
         "kind": "instructions",
         "origin": "project",

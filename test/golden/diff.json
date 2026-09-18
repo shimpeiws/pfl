@@ -17,10 +17,10 @@
   ],
   "data": {
     "runtime": "claude-code",
-    "observedSnapshotIdA": "obs_ID",
-    "observedSnapshotIdB": "obs_ID",
-    "resolvedSnapshotIdA": "res_ID",
-    "resolvedSnapshotIdB": "res_ID",
+    "observedSnapshotIdA": "obs_0123456789ab",
+    "observedSnapshotIdB": "obs_0123456789ab",
+    "resolvedSnapshotIdA": "res_0123456789ab",
+    "resolvedSnapshotIdB": "res_0123456789ab",
     "structural": {
       "added": 0,
       "removed": 0,

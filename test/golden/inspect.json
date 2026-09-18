@@ -50,7 +50,7 @@
       "severity": "info",
       "code": "path-not-found",
       "message": "search area does not exist: [redacted]",
-      "path": "projects/-privateFIXTURE_BASE_ENCODED-project/memory"
+      "path": "projects/FIXTURE_ENCODED_ROOT/memory"
     }
   ],
   "data": {
