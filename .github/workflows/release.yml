@@ -88,10 +88,11 @@ jobs:
       # only the publish becomes a dry run. This is the first of the two stages
       # the v1.0 release plan requires. The dry run does not perform the OIDC
       # token exchange, so provenance attachment is confirmed only on the real
-      # publish.
+      # publish. `--tag next` is required: npm refuses to publish a prerelease
+      # under the default `latest` dist-tag.
       - name: Publish (dry run for a prerelease tag)
         if: contains(github.ref_name, '-')
-        run: npm publish --dry-run --access public
+        run: npm publish --dry-run --access public --tag next
 
       # Trusted publishing (npm OIDC): no token. Provenance is requested
       # explicitly, since it is not always attached automatically.
