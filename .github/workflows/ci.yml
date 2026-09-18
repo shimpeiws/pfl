@@ -4,6 +4,11 @@ on:
   push:
     branches: [main]
   pull_request:
+  schedule:
+    # Nightly full suite (including the end-to-end CLI test) on the default
+    # branch, so toolchain and runner drift surfaces even on a day with no
+    # diff. 18:00 UTC is 03:00 JST.
+    - cron: '0 18 * * *'
 
 permissions:
   contents: read
