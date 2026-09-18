@@ -233,9 +233,9 @@ async function collectProject(
   const root = project.root;
 
   // Project instructions: AGENTS.md (fallback CLAUDE.md) at the root and in
-  // nested directories. `.git` and `node_modules` are pruned, and the project
-  // config directory is excluded by path so its files stay the `.opencode/**`
-  // walk's elements.
+  // nested directories. `.git`, `node_modules`, and nested checkout boundaries
+  // are pruned, and the project config directory is excluded by path so its
+  // files stay the `.opencode/**` walk's elements.
   await addInstructionTree(root, elements, diagnostics);
 
   // Project configuration: the project's own `opencode.json[c]`, then the
@@ -397,6 +397,8 @@ export function managedConfigDirFor(
  * read from the root and nested directories; the fallback is suppressed in a
  * directory that also holds `AGENTS.md` (model doc §4.1). `.opencode/**` is
  * excluded by path so a config-dir file is never a second instruction element.
+ * Nested checkout boundaries (directories containing a `.git` entry) are
+ * pruned (issue #162).
  */
 async function addInstructionTree(
   root: string,
@@ -405,6 +407,7 @@ async function addInstructionTree(
 ): Promise<void> {
   const walked = await walkHarnessPaths(root, ['.'], {
     pruneDirectories: PROJECT_WALK_PRUNE_DIRECTORIES,
+    pruneNestedCheckouts: true,
     selectFile: isProjectInstructionPath,
   });
   diagnostics.push(...walked.diagnostics);
@@ -419,7 +422,8 @@ async function addInstructionTree(
     // `selectFile` is applied to regular files inside the walk, but a symlink or
     // non-regular entry is recorded without that filter, so the candidate check
     // is repeated here for every entry kind. Without it a symlink anywhere in
-    // the project would be recorded as an instruction element.
+    // the project would be recorded as an instruction element. Nested checkout
+    // boundaries are already pruned by the walk (issue #162).
     if (!isProjectInstructionPath(entry.relativePath)) continue;
     const name = basename(entry.relativePath);
     if (name === INSTRUCTION_FALLBACK_FILE && agentsDirs.has(dirname(entry.relativePath))) continue;

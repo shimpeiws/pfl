@@ -307,6 +307,38 @@ describe('collectClaudeCodeHarness', () => {
     expect(paths.get('../CLAUDE.local.md')?.native.kind).toBe('instructions');
   });
 
+  it('does not walk into a nested checkout boundary (issue #162)', async () => {
+    const fixture = await makeFixture();
+    const vendor = join(fixture.project.root, 'vendor');
+    await mkdir(join(vendor, 'inner'), { recursive: true });
+    await writeFile(join(vendor, 'CLAUDE.md'), '# vendor instructions\n');
+    await writeFile(join(vendor, 'inner', 'CLAUDE.md'), '# vendor nested instructions\n');
+    await mkdir(join(vendor, '.git'), { recursive: true });
+
+    const snapshot = await collect(fixture);
+    const paths = byPath(snapshot.elements);
+
+    expect(paths.has('vendor/CLAUDE.md')).toBe(false);
+    expect(paths.has('vendor/inner/CLAUDE.md')).toBe(false);
+    expect(snapshot.diagnostics.some((d) => d.code === 'nested-checkout-not-walked')).toBe(true);
+    // Positive control: the normal nested element is still discovered.
+    expect(paths.get('docs/CLAUDE.md')?.native.kind).toBe('instructions');
+  });
+
+  it('still discovers project instructions when the root itself has .git', async () => {
+    const fixture = await makeFixture();
+    // Every real project has .git at root; this verifies the walk root is never
+    // treated as a boundary (issue #162 CONSIDER 1 regression test).
+    await mkdir(join(fixture.project.root, '.git'), { recursive: true });
+
+    const snapshot = await collect(fixture);
+    const paths = byPath(snapshot.elements);
+
+    expect(paths.get('CLAUDE.md')?.native.kind).toBe('instructions');
+    expect(paths.get('docs/CLAUDE.md')?.native.kind).toBe('instructions');
+    expect(paths.get('CLAUDE.local.md')?.native.kind).toBe('instructions');
+  });
+
   it('makes subtree-specific-instruction reachable through discovery and resolution', async () => {
     const fixture = await makeFixture();
 

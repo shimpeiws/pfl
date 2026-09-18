@@ -55,6 +55,14 @@ version-control or dependency tree. It adds `selectFile`: a rejected regular
 file is neither read nor recorded, so a search for a few known filenames
 (`AGENTS.md`) does not open every file in the tree.
 
+issue #162 adds `pruneNestedCheckouts`: when a walked directory contains a
+`.git` entry (file or directory) it is a distinct working tree — a linked
+worktree, a nested clone, or a submodule — and the walk records an info-level
+`nested-checkout-not-walked` diagnostic and does not descend. The `.git` entry
+is detected with `lstat` (never followed), so a symlinked `.git` is also a
+boundary. The option is opt-in; the current call sites that enable it are all
+project-rooted walks, so the new `lstat` is project-implicit.
+
 ### `discovery/project-identity.ts`
 
 | Read                                                     | Guard                               | Classification |
@@ -123,24 +131,25 @@ is unaffected.
 
 ### `runtime/claude-code`
 
-| Location       | Read                                                        | Guard                                                                                                                            | Classification                |
-| -------------- | ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
-| `detect.ts`    | `lstat` of `~/.local/share/claude`, `~/.local/bin/claude`   | ancestor guard (base: home)                                                                                                      | install-scope                 |
-| `detect.ts`    | `lstat` + `readdir` of `~/.local/share/claude/versions`     | ancestor guard (base: home)                                                                                                      | install-scope                 |
-| `detect.ts`    | `readFile` `~/.claude/.last-update-result.json`             | `readTextFileGuarded` (leaf guard)                                                                                               | install-scope                 |
-| `detect.ts`    | bin dirs, `PATH` entries, npm/Homebrew prefixes             | `readExternalInstall` (see `runtime/external-install.ts`); consent-gated                                                         | install-scope                 |
-| `discovery.ts` | walk `<root>/**` for `CLAUDE.md` / `CLAUDE.local.md`        | walk guards; `selectFile` reads only those names, excluding the project config directory by path; `.git` / `node_modules` pruned | project-implicit              |
-| `discovery.ts` | walk `.claude/**` and `~/.claude/<dirs>/**`                 | walk guards                                                                                                                      | project-implicit / user-scope |
-| `discovery.ts` | `readFile` `settings.json`, `settings.local.json`           | `readTextFileGuarded` + scope base                                                                                               | project-implicit / user-scope |
-| `discovery.ts` | `readFile` parent-directory `CLAUDE.md` / `CLAUDE.local.md` | `inspectFileTarget(dir, …)`; consent-gated; `MAX_ANCESTOR_DIRS`                                                                  | **external-gated**            |
-| `discovery.ts` | `readFile` `MANAGED_CONFIG_DIR/{CLAUDE.md,settings.json}`   | `inspectFileTarget` / `readTextFileGuarded` (base: managed dir); consent-gated                                                   | **external-gated**            |
-| `discovery.ts` | `readFile` `.mcp.json`                                      | `readTextFileGuarded` + `inspectFileTarget(root, …)`                                                                             | project-implicit              |
-| `discovery.ts` | `readFile` `~/.claude.json`                                 | `readTextFileGuarded` (base: home)                                                                                               | user-scope                    |
+| Location       | Read                                                        | Guard                                                                                                                                                                            | Classification                |
+| -------------- | ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
+| `detect.ts`    | `lstat` of `~/.local/share/claude`, `~/.local/bin/claude`   | ancestor guard (base: home)                                                                                                                                                      | install-scope                 |
+| `detect.ts`    | `lstat` + `readdir` of `~/.local/share/claude/versions`     | ancestor guard (base: home)                                                                                                                                                      | install-scope                 |
+| `detect.ts`    | `readFile` `~/.claude/.last-update-result.json`             | `readTextFileGuarded` (leaf guard)                                                                                                                                               | install-scope                 |
+| `detect.ts`    | bin dirs, `PATH` entries, npm/Homebrew prefixes             | `readExternalInstall` (see `runtime/external-install.ts`); consent-gated                                                                                                         | install-scope                 |
+| `discovery.ts` | walk `<root>/**` for `CLAUDE.md` / `CLAUDE.local.md`        | walk guards; `selectFile` reads only those names, excluding the project config directory by path; `.git` / `node_modules` pruned; nested checkout boundaries pruned (issue #162) | project-implicit              |
+| `discovery.ts` | walk `.claude/**` and `~/.claude/<dirs>/**`                 | walk guards                                                                                                                                                                      | project-implicit / user-scope |
+| `discovery.ts` | `readFile` `settings.json`, `settings.local.json`           | `readTextFileGuarded` + scope base                                                                                                                                               | project-implicit / user-scope |
+| `discovery.ts` | `readFile` parent-directory `CLAUDE.md` / `CLAUDE.local.md` | `inspectFileTarget(dir, …)`; consent-gated; `MAX_ANCESTOR_DIRS`                                                                                                                  | **external-gated**            |
+| `discovery.ts` | `readFile` `MANAGED_CONFIG_DIR/{CLAUDE.md,settings.json}`   | `inspectFileTarget` / `readTextFileGuarded` (base: managed dir); consent-gated                                                                                                   | **external-gated**            |
+| `discovery.ts` | `readFile` `.mcp.json`                                      | `readTextFileGuarded` + `inspectFileTarget(root, …)`                                                                                                                             | project-implicit              |
+| `discovery.ts` | `readFile` `~/.claude.json`                                 | `readTextFileGuarded` (base: home)                                                                                                                                               | user-scope                    |
 
 M7 Phase 5 extends the Claude Code adapter (issues #69, #70, #71) with no new
 unguarded read. The project instruction read becomes one subtree walk over
 `<root>/**` that selects only `CLAUDE.md` / `CLAUDE.local.md`, prunes `.git` and
-`node_modules`, and excludes the project config directory by path (so a
+`node_modules`, prunes nested checkout boundaries (directories containing a
+`.git` entry, issue #162), and excludes the project config directory by path (so a
 `CLAUDE.md` under `.claude/` stays the `.claude/**` walk's element and no id
 collides). It is project-implicit. `CLAUDE.md` / `CLAUDE.local.md` are also read
 from the project's parent directories, one directory at a time up to
@@ -161,18 +170,18 @@ strings; hook commands, types, and timeouts are not persisted.
 
 ### `runtime/codex`
 
-| Location       | Read                                                               | Guard                                                                                                                            | Classification                |
-| -------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
-| `detect.ts`    | `lstat` + `readdir` of `~/.codex/packages/standalone/releases`     | ancestor guard (base: `~/.codex`)                                                                                                | install-scope                 |
-| `detect.ts`    | `lstat` of `~/.codex/packages/standalone/releases`, `…/standalone` | ancestor guard (base: `~/.codex`)                                                                                                | install-scope                 |
-| `detect.ts`    | bin dirs, `PATH` entries, npm/Homebrew prefixes                    | `readExternalInstall` (see `runtime/external-install.ts`); consent-gated                                                         | install-scope                 |
-| `discovery.ts` | `readFile` known instruction files                                 | `inspectFileTarget(root, …)`                                                                                                     | project-implicit / user-scope |
-| `discovery.ts` | walk `<root>/**` for `AGENTS.md` / `AGENTS.override.md`            | walk guards; `selectFile` reads only those names, excluding the project config directory by path; `.git` / `node_modules` pruned | project-implicit              |
-| `discovery.ts` | walk `<root>/.codex/skills/**`                                     | walk guards                                                                                                                      | project-implicit              |
-| `discovery.ts` | `readFile` parent-directory `AGENTS.md` / `AGENTS.override.md`     | `inspectFileTarget(dir, …)`; consent-gated; `MAX_ANCESTOR_DIRS`                                                                  | **external-gated**            |
-| `discovery.ts` | walk `~/.codex/<dirs>/**`                                          | walk guards                                                                                                                      | user-scope                    |
-| `discovery.ts` | `readFile` `config.toml`                                           | `readTextFileGuarded` + scope base                                                                                               | user-scope                    |
-| `discovery.ts` | `readFile` `hooks.json`                                            | `readTextFileGuarded` + scope base                                                                                               | user-scope                    |
+| Location       | Read                                                               | Guard                                                                                                                                                                            | Classification                |
+| -------------- | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------- |
+| `detect.ts`    | `lstat` + `readdir` of `~/.codex/packages/standalone/releases`     | ancestor guard (base: `~/.codex`)                                                                                                                                                | install-scope                 |
+| `detect.ts`    | `lstat` of `~/.codex/packages/standalone/releases`, `…/standalone` | ancestor guard (base: `~/.codex`)                                                                                                                                                | install-scope                 |
+| `detect.ts`    | bin dirs, `PATH` entries, npm/Homebrew prefixes                    | `readExternalInstall` (see `runtime/external-install.ts`); consent-gated                                                                                                         | install-scope                 |
+| `discovery.ts` | `readFile` known instruction files                                 | `inspectFileTarget(root, …)`                                                                                                                                                     | project-implicit / user-scope |
+| `discovery.ts` | walk `<root>/**` for `AGENTS.md` / `AGENTS.override.md`            | walk guards; `selectFile` reads only those names, excluding the project config directory by path; `.git` / `node_modules` pruned; nested checkout boundaries pruned (issue #162) | project-implicit              |
+| `discovery.ts` | walk `<root>/.codex/skills/**`                                     | walk guards                                                                                                                                                                      | project-implicit              |
+| `discovery.ts` | `readFile` parent-directory `AGENTS.md` / `AGENTS.override.md`     | `inspectFileTarget(dir, …)`; consent-gated; `MAX_ANCESTOR_DIRS`                                                                                                                  | **external-gated**            |
+| `discovery.ts` | walk `~/.codex/<dirs>/**`                                          | walk guards                                                                                                                                                                      | user-scope                    |
+| `discovery.ts` | `readFile` `config.toml`                                           | `readTextFileGuarded` + scope base                                                                                                                                               | user-scope                    |
+| `discovery.ts` | `readFile` `hooks.json`                                            | `readTextFileGuarded` + scope base                                                                                                                                               | user-scope                    |
 
 M7 models more of `config.toml` (`[sandbox_workspace_write]`, `[projects.*]`,
 `[shell_environment_policy]`, `[marketplaces.*]`, `[plugins.*]`, `[profiles.*]`)
@@ -185,7 +194,8 @@ directories, not more.
 M7 Phase 3 adds two project-scoped read paths and one gated one. Project-scoped
 skills are walked under `<root>/.codex/skills/**`, and `AGENTS.md` /
 `AGENTS.override.md` are found by a project-subtree walk that prunes `.git`,
-`node_modules`, and the project config directory. Both are project-implicit.
+`node_modules`, nested checkout boundaries (issue #162), and the project config
+directory. Both are project-implicit.
 `AGENTS.md` is also read from the project's parent directories, one directory at
 a time up to `MAX_ANCESTOR_DIRS` (16): that is **external-gated**, refused
 without out-of-project consent, recorded as `../AGENTS.md` … , and never follows
@@ -226,19 +236,19 @@ source. Declared `instructions`/`references` targets, `skills.paths`/`skills.url
 entries, and non-package `plugin` specifiers are recorded as opaque declarations
 and **never opened**.
 
-| Location       | Read                                                                                    | Guard                                                                                                                    | Classification                                     |
-| -------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------- |
-| `detect.ts`    | bin dirs, `PATH` entries, Homebrew `Cellar` version dirs                                | `readExternalInstall` (see `runtime/external-install.ts`); consent-gated; npm is not read (package name unverified)      | install-scope                                      |
-| `discovery.ts` | walk `<root>/**` for `AGENTS.md` / `CLAUDE.md` (fallback), `.git`/`node_modules` pruned | walk guards; the candidate name is re-checked per entry (a symlink bypasses `selectFile`); `.opencode/` excluded by path | project-implicit                                   |
-| `discovery.ts` | `readFile` `<root>/opencode.json[c]`, `<root>/.opencode/opencode.json[c]`               | `readTextFileGuarded` + scope base; JSONC comments/trailing commas stripped by a bounded scanner                         | project-implicit                                   |
-| `discovery.ts` | walk `<root>/.opencode/<element-dirs>/**`                                               | walk guards; per-dir extension/skill filter; `mode(s)/` classified as agents (primary default) with frontmatter parsed   | project-implicit                                   |
-| `discovery.ts` | walk `<root>/.claude/skills/**`, `<root>/.agents/skills/**`                             | walk guards                                                                                                              | project-implicit (`claude-compat`/`agents-compat`) |
-| `discovery.ts` | `readFile` user `AGENTS.md`, else `~/.claude/CLAUDE.md` fallback                        | `inspectFileTarget(configDir, …)`; consent-gated                                                                         | user-scope (`claude-compat` fallback)              |
-| `discovery.ts` | `readFile` `~/.config/opencode/opencode.json[c]`                                        | `readTextFileGuarded` + scope base                                                                                       | user-scope                                         |
-| `discovery.ts` | walk `~/.config/opencode/<element-dirs>/**`                                             | walk guards                                                                                                              | user-scope                                         |
-| `discovery.ts` | walk `~/.claude/skills/**`, `~/.agents/skills/**`                                       | walk guards                                                                                                              | user-scope (`claude-compat`/`agents-compat`)       |
-| `discovery.ts` | `readFile` parent-directory `AGENTS.md` / `CLAUDE.md`                                   | `inspectFileTarget(dir, …)`; consent-gated; `MAX_ANCESTOR_DIRS`                                                          | **external-gated**                                 |
-| `discovery.ts` | `readFile` `MANAGED_CONFIG_DIR/opencode.json[c]`                                        | `readTextFileGuarded` (base: injected managed dir); consent-gated                                                        | **external-gated**                                 |
+| Location       | Read                                                                                                                                    | Guard                                                                                                                    | Classification                                     |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------- |
+| `detect.ts`    | bin dirs, `PATH` entries, Homebrew `Cellar` version dirs                                                                                | `readExternalInstall` (see `runtime/external-install.ts`); consent-gated; npm is not read (package name unverified)      | install-scope                                      |
+| `discovery.ts` | walk `<root>/**` for `AGENTS.md` / `CLAUDE.md` (fallback), `.git`/`node_modules` pruned; nested checkout boundaries pruned (issue #162) | walk guards; the candidate name is re-checked per entry (a symlink bypasses `selectFile`); `.opencode/` excluded by path | project-implicit                                   |
+| `discovery.ts` | `readFile` `<root>/opencode.json[c]`, `<root>/.opencode/opencode.json[c]`                                                               | `readTextFileGuarded` + scope base; JSONC comments/trailing commas stripped by a bounded scanner                         | project-implicit                                   |
+| `discovery.ts` | walk `<root>/.opencode/<element-dirs>/**`                                                                                               | walk guards; per-dir extension/skill filter; `mode(s)/` classified as agents (primary default) with frontmatter parsed   | project-implicit                                   |
+| `discovery.ts` | walk `<root>/.claude/skills/**`, `<root>/.agents/skills/**`                                                                             | walk guards                                                                                                              | project-implicit (`claude-compat`/`agents-compat`) |
+| `discovery.ts` | `readFile` user `AGENTS.md`, else `~/.claude/CLAUDE.md` fallback                                                                        | `inspectFileTarget(configDir, …)`; consent-gated                                                                         | user-scope (`claude-compat` fallback)              |
+| `discovery.ts` | `readFile` `~/.config/opencode/opencode.json[c]`                                                                                        | `readTextFileGuarded` + scope base                                                                                       | user-scope                                         |
+| `discovery.ts` | walk `~/.config/opencode/<element-dirs>/**`                                                                                             | walk guards                                                                                                              | user-scope                                         |
+| `discovery.ts` | walk `~/.claude/skills/**`, `~/.agents/skills/**`                                                                                       | walk guards                                                                                                              | user-scope (`claude-compat`/`agents-compat`)       |
+| `discovery.ts` | `readFile` parent-directory `AGENTS.md` / `CLAUDE.md`                                                                                   | `inspectFileTarget(dir, …)`; consent-gated; `MAX_ANCESTOR_DIRS`                                                          | **external-gated**                                 |
+| `discovery.ts` | `readFile` `MANAGED_CONFIG_DIR/opencode.json[c]`                                                                                        | `readTextFileGuarded` (base: injected managed dir); consent-gated                                                        | **external-gated**                                 |
 
 The remote-org and MDM layers are recorded as opaque elements with no read: the
 MDM plist is never parsed and the remote layer is never fetched, so neither

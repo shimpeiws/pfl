@@ -171,11 +171,11 @@ async function collectProject(
 
   // One subtree walk finds the project-root instruction files and every nested
   // `CLAUDE.md` / `CLAUDE.local.md`, so a root file is never recorded twice.
-  // `.git` and `node_modules` are pruned, frontmatter is not extracted (an
-  // instruction file is not a metadata carrier), and files under the project
-  // config directory are excluded by path: a file there is already discovered as
-  // a skill, and recording it here too would mint a second element under the
-  // same id.
+  // `.git`, `node_modules`, and nested checkout boundaries are pruned, frontmatter
+  // is not extracted (an instruction file is not a metadata carrier), and files
+  // under the project config directory are excluded by path: a file there is
+  // already discovered as a skill, and recording it here too would mint a second
+  // element under the same id.
   await addWalkedArea(
     root,
     '.',
@@ -189,6 +189,7 @@ async function collectProject(
       extractFrontmatter: false,
       selectFile: isProjectInstructionPath,
       pruneDirectories: PROJECT_WALK_PRUNE_DIRECTORIES,
+      pruneNestedCheckouts: true,
     },
   );
 
@@ -419,6 +420,8 @@ interface WalkedAreaOptions {
   selectFile?: (relativePath: string) => boolean;
   /** Directory names the walk must not descend into. */
   pruneDirectories?: readonly string[];
+  /** Treat directories containing a `.git` entry as boundaries (issue #162). */
+  pruneNestedCheckouts?: boolean;
 }
 
 async function addWalkedArea(
@@ -435,6 +438,9 @@ async function addWalkedArea(
   const walked = await walkHarnessPaths(root, [subpath], {
     ...(options.pruneDirectories !== undefined
       ? { pruneDirectories: options.pruneDirectories }
+      : {}),
+    ...(options.pruneNestedCheckouts !== undefined
+      ? { pruneNestedCheckouts: options.pruneNestedCheckouts }
       : {}),
     ...(options.selectFile !== undefined ? { selectFile: options.selectFile } : {}),
     ...(options.extractFrontmatter === false

@@ -290,6 +290,37 @@ describe('collectOpencodeHarness instructions', () => {
   });
 });
 
+describe('collectOpencodeHarness nested checkout pruning (issue #162)', () => {
+  it('does not walk into a nested checkout boundary', async () => {
+    const fixture = await makeFixture();
+    const vendor = join(fixture.project.root, 'vendor');
+    await mkdir(join(vendor, 'inner'), { recursive: true });
+    await writeFile(join(vendor, 'AGENTS.md'), '# vendor instructions\n');
+    await writeFile(join(vendor, 'inner', 'AGENTS.md'), '# vendor nested instructions\n');
+    await mkdir(join(vendor, '.git'), { recursive: true });
+
+    const observed = await collect(fixture, CONSENTED);
+    const found = paths(observed.elements);
+
+    expect(found).not.toContain('vendor/AGENTS.md');
+    expect(found).not.toContain('vendor/inner/AGENTS.md');
+    expect(observed.diagnostics.some((d) => d.code === 'nested-checkout-not-walked')).toBe(true);
+    // Positive control: the normal nested element is still discovered.
+    expect(found).toContain('docs/AGENTS.md');
+  });
+
+  it('still discovers project instructions when the root itself has .git', async () => {
+    const fixture = await makeFixture();
+    await mkdir(join(fixture.project.root, '.git'), { recursive: true });
+
+    const observed = await collect(fixture, CONSENTED);
+    const found = paths(observed.elements);
+
+    expect(found).toContain('AGENTS.md');
+    expect(found).toContain('docs/AGENTS.md');
+  });
+});
+
 describe('collectOpencodeHarness config', () => {
   it('records the modelled config keys structurally', async () => {
     const fixture = await makeFixture();

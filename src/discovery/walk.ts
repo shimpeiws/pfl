@@ -68,6 +68,15 @@ export interface WalkOptions {
    * does not read `.git` or a package-manager tree (roadmap §5 M7, issue #75).
    */
   pruneDirectories?: readonly string[];
+  /**
+   * When true, a directory that contains a `.git` entry (a linked worktree, a
+   * nested clone, or a submodule) is a distinct working tree: the walk records
+   * a `nested-checkout-not-walked` diagnostic naming it and does not descend
+   * into it (issue #162). The walk root itself is never treated as a boundary.
+   * The option is off by default so that plugin/skill directories that are
+   * themselves git repositories are not excluded.
+   */
+  pruneNestedCheckouts?: boolean;
 }
 
 export interface WalkResult {
@@ -84,6 +93,8 @@ interface WalkState {
   selectFile?: (relativePath: string) => boolean;
   /** Directory names never descended into; see `WalkOptions.pruneDirectories`. */
   pruneDirectories: ReadonlySet<string>;
+  /** Nested-checkout pruning; see `WalkOptions.pruneNestedCheckouts`. */
+  pruneNestedCheckouts: boolean;
   /** Entries examined so far, across every subpath, against `MAX_WALK_ENTRIES`. */
   walked: number;
   /** Set once the entry ceiling is hit, so the walk stops instead of roaming. */
@@ -102,7 +113,8 @@ interface WalkState {
  * number of entries, and the recursion depth (roadmap S3, S7). `selectFile`
  * narrows the walk to candidate filenames before they are read, and
  * `pruneDirectories` names directories (`.git`, `node_modules`) that are neither
- * recorded nor descended into.
+ * recorded nor descended into. `pruneNestedCheckouts` extends this to directories
+ * that contain a `.git` entry — a distinct working tree (issue #162).
  */
 export async function walkHarnessPaths(
   root: string,
@@ -116,6 +128,7 @@ export async function walkHarnessPaths(
     walked: 0,
     entryLimitHit: false,
     pruneDirectories: new Set(options.pruneDirectories ?? []),
+    pruneNestedCheckouts: options.pruneNestedCheckouts ?? false,
     ...(options.describeFile !== undefined ? { describeFile: options.describeFile } : {}),
     ...(options.selectFile !== undefined ? { selectFile: options.selectFile } : {}),
   };
@@ -216,6 +229,10 @@ async function walkDirectory(state: WalkState, dir: string, depth: number): Prom
 
       if (dirent.isDirectory()) {
         if (state.pruneDirectories.has(dirent.name)) continue;
+        if (state.pruneNestedCheckouts && (await containsGitEntry(full))) {
+          state.diagnostics.push(nestedCheckoutSkipped(relativePath));
+          continue;
+        }
         record(state, { relativePath, kind: 'directory' });
         await walkDirectory(state, full, depth + 1);
       } else if (dirent.isFile()) {
@@ -392,6 +409,32 @@ function unreadableFile(path: string): Diagnostic {
     severity: 'warning',
     code: 'unreadable-file',
     message: `could not read file: ${path}`,
+    path,
+  };
+}
+
+/**
+ * Whether a directory contains a `.git` entry (file or directory), signalling
+ * a distinct working tree — a linked worktree, a nested clone, or a submodule.
+ * Uses `lstat` so a symlinked `.git` is never followed. Only `ENOENT` is
+ * swallowed; other filesystem errors are re-thrown so they surface as
+ * walk-level diagnostics rather than being silently treated as "no boundary".
+ */
+async function containsGitEntry(dir: string): Promise<boolean> {
+  try {
+    await lstat(join(dir, '.git'));
+    return true;
+  } catch (error: unknown) {
+    if ((error as { code?: string }).code === 'ENOENT') return false;
+    throw error;
+  }
+}
+
+function nestedCheckoutSkipped(path: string): Diagnostic {
+  return {
+    severity: 'info',
+    code: 'nested-checkout-not-walked',
+    message: `nested checkout boundary not walked: ${path}`,
     path,
   };
 }
