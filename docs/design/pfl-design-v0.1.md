@@ -1174,6 +1174,8 @@ Snapshot
   observed   obs_abc123
   resolved   res_def456
 
+Store           ~/.pfl/projects/git-0f214d60555919a5
+
 ⚠ Claude Code 1.8.0 is newer than the verified adapter range.
   Resolution results are best-effort.
 
