@@ -4,9 +4,11 @@
  */
 
 /** No numeric completeness score is used (design doc §18). */
-export type Completeness = 'complete' | 'partial' | 'unknown';
+export const COMPLETENESS_VALUES = ['complete', 'partial', 'unknown'] as const;
+export type Completeness = (typeof COMPLETENESS_VALUES)[number];
 
-export type DiagnosticSeverity = 'info' | 'warning' | 'error';
+export const DIAGNOSTIC_SEVERITY_VALUES = ['info', 'warning', 'error'] as const;
+export type DiagnosticSeverity = (typeof DIAGNOSTIC_SEVERITY_VALUES)[number];
 
 /**
  * A non-fatal observation note. The design document does not fix a diagnostic

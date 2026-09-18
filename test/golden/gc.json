@@ -1,0 +1,28 @@
+{
+  "pflVersion": "VERSION",
+  "command": "gc",
+  "ok": true,
+  "completeness": "unknown",
+  "diagnostics": [
+    {
+      "severity": "info",
+      "code": "adopted-legacy-history",
+      "message": "adopted the existing history under PROJECT_ID"
+    }
+  ],
+  "data": {
+    "dryRun": true,
+    "keep": 20,
+    "retained": [
+      {
+        "observedId": "obs_0123456789ab",
+        "resolvedId": "res_0123456789ab",
+        "interpretationId": "int_0123456789ab"
+      }
+    ],
+    "reclaimed": [],
+    "orphans": [],
+    "reclaimedOrphans": [],
+    "unreferenced": []
+  }
+}

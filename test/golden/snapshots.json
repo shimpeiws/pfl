@@ -1,0 +1,29 @@
+{
+  "pflVersion": "VERSION",
+  "command": "snapshots",
+  "ok": true,
+  "completeness": "unknown",
+  "diagnostics": [
+    {
+      "severity": "info",
+      "code": "adopted-legacy-history",
+      "message": "adopted the existing history under PROJECT_ID"
+    }
+  ],
+  "data": {
+    "project": "PROJECT_ID",
+    "runs": [
+      {
+        "observedId": "obs_0123456789ab",
+        "resolvedId": "res_0123456789ab",
+        "interpretationId": "int_0123456789ab",
+        "capturedAt": "2026-09-18T00:00:00.000Z",
+        "runtime": {
+          "id": "claude-code",
+          "version": "2.1.272"
+        },
+        "completeness": "partial"
+      }
+    ]
+  }
+}

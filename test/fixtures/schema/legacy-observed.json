@@ -1,0 +1,26 @@
+{
+  "adapter": { "id": "claude-code", "runtimeCompatibility": "verified", "version": "0.1.1" },
+  "capturedAt": "2026-01-01T00:00:00.000Z",
+  "completeness": "complete",
+  "diagnostics": [],
+  "digests": {
+    "observed": "sha256:3333333333333333333333333333333333333333333333333333333333333333"
+  },
+  "elements": [
+    {
+      "id": "el_1111111111111111",
+      "inspectability": "observable",
+      "metadata": {},
+      "native": { "kind": "instructions", "origin": "user", "scope": "user" },
+      "source": {
+        "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+        "path": "~/.claude/CLAUDE.md"
+      },
+      "status": "observed"
+    }
+  ],
+  "project": { "displayName": "owner/repo", "id": "path-0123456789abcdef", "root": "/repo" },
+  "runtime": { "id": "claude-code", "version": "2.1.272" },
+  "schemaVersion": "1",
+  "snapshotId": "obs_legacy000000000"
+}

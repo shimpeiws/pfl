@@ -1,0 +1,29 @@
+{
+  "pflVersion": "VERSION",
+  "command": "list",
+  "ok": true,
+  "completeness": "partial",
+  "diagnostics": [
+    {
+      "severity": "info",
+      "code": "adopted-legacy-history",
+      "message": "adopted the existing history under PROJECT_ID"
+    }
+  ],
+  "data": {
+    "count": 1,
+    "elements": [
+      {
+        "id": "el_0123456789abcdef",
+        "kind": "instructions",
+        "origin": "project",
+        "status": "effective",
+        "facets": ["instructions"]
+      }
+    ],
+    "interpretation": {
+      "classifierVersion": "4",
+      "origin": "stored"
+    }
+  }
+}

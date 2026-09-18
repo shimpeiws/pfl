@@ -7,14 +7,34 @@ import type { ElementId, ObservedSnapshotId, RuntimeId } from './ids.js';
  * inventory logic improves.
  */
 
-/** Native source/origin of an element (design doc §11). */
-export type NativeOrigin = 'project' | 'user' | 'managed' | 'plugin' | 'builtin' | 'unknown';
+/**
+ * Native source/origin of an element (design doc §11). The array is the single
+ * source; the type derives from it, so a persisted-shape validator that imports
+ * the array cannot drift from the model (roadmap M8 #88).
+ */
+export const NATIVE_ORIGIN_VALUES = [
+  'project',
+  'user',
+  'managed',
+  'plugin',
+  'builtin',
+  'unknown',
+] as const;
+export type NativeOrigin = (typeof NATIVE_ORIGIN_VALUES)[number];
 
 /** How much of a runtime-provided layer is observable (design doc §12). */
-export type Inspectability = 'observable' | 'known-runtime-provided' | 'opaque';
+export const INSPECTABILITY_VALUES = ['observable', 'known-runtime-provided', 'opaque'] as const;
+export type Inspectability = (typeof INSPECTABILITY_VALUES)[number];
 
 /** Whether the element could be read at all (design doc §10, §18). */
-export type ObservedStatus = 'observed' | 'unreadable' | 'unsupported' | 'skipped' | 'unknown';
+export const OBSERVED_STATUS_VALUES = [
+  'observed',
+  'unreadable',
+  'unsupported',
+  'skipped',
+  'unknown',
+] as const;
+export type ObservedStatus = (typeof OBSERVED_STATUS_VALUES)[number];
 
 /**
  * Why an element is not `observed` (design doc §10.2, §10.3). A closed union,

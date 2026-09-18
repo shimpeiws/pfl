@@ -1,0 +1,39 @@
+{
+  "pflVersion": "VERSION",
+  "command": "report",
+  "ok": true,
+  "completeness": "partial",
+  "diagnostics": [
+    {
+      "severity": "info",
+      "code": "adopted-legacy-history",
+      "message": "adopted the existing history under PROJECT_ID"
+    }
+  ],
+  "data": {
+    "runtime": "claude-code",
+    "runtimeName": "Claude Code",
+    "project": {
+      "id": "path-0123456789abcdef",
+      "displayName": "owner/repo"
+    },
+    "observedSnapshotId": "obs_0123456789ab",
+    "resolvedSnapshotId": "res_0123456789ab",
+    "confidence": "verified",
+    "stats": {
+      "byFacet": {
+        "instructions": 1
+      },
+      "conditional": 0,
+      "effective": 1,
+      "observed": 1,
+      "opaque": 0,
+      "shadowed": 0
+    },
+    "findings": [],
+    "interpretation": {
+      "classifierVersion": "4",
+      "origin": "stored"
+    }
+  }
+}

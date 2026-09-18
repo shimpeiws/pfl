@@ -13,10 +13,28 @@ import {
 import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { EXIT_CODES, PflError } from '../cli/exit-codes.js';
-import type { Completeness, Diagnostic } from '../core/diagnostics.js';
+import {
+  COMPLETENESS_VALUES as CORE_COMPLETENESS_VALUES,
+  DIAGNOSTIC_SEVERITY_VALUES as CORE_DIAGNOSTIC_SEVERITY_VALUES,
+  type Completeness,
+  type Diagnostic,
+} from '../core/diagnostics.js';
 import type { Interpretation } from '../core/interpretation.js';
-import { OBSERVED_REASONS, type ObservedSnapshot } from '../core/observed.js';
-import { PERSISTED_RELATION_TYPES, type ResolvedSnapshot } from '../core/resolved.js';
+import {
+  INSPECTABILITY_VALUES as CORE_INSPECTABILITY_VALUES,
+  NATIVE_ORIGIN_VALUES as CORE_NATIVE_ORIGIN_VALUES,
+  OBSERVED_REASONS,
+  OBSERVED_STATUS_VALUES as CORE_OBSERVED_STATUS_VALUES,
+  type ObservedSnapshot,
+} from '../core/observed.js';
+import {
+  ACTIVATION_VALUES as CORE_ACTIVATION_VALUES,
+  APPLICABILITY_VALUES as CORE_APPLICABILITY_VALUES,
+  PERSISTED_RELATION_TYPES,
+  RESOLVED_STATUS_VALUES as CORE_RESOLVED_STATUS_VALUES,
+  STRATEGY_VALUES as CORE_STRATEGY_VALUES,
+  type ResolvedSnapshot,
+} from '../core/resolved.js';
 import { MAX_ARTIFACT_BYTES } from '../limits.js';
 import { checkSymlinkAncestors, readTextFileGuarded } from '../util/fs.js';
 import {
@@ -65,56 +83,19 @@ const FILE_MODE = 0o600;
 const ARTIFACT_SUFFIX = '.json';
 const LATEST_FILE = 'latest';
 const SAFE_SEGMENT = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
-const COMPLETENESS_VALUES: readonly string[] = ['complete', 'partial', 'unknown'];
-const NATIVE_ORIGIN_VALUES: readonly string[] = [
-  'project',
-  'user',
-  'managed',
-  'plugin',
-  'builtin',
-  'unknown',
-];
-const INSPECTABILITY_VALUES: readonly string[] = ['observable', 'known-runtime-provided', 'opaque'];
-const OBSERVED_STATUS_VALUES: readonly string[] = [
-  'observed',
-  'unreadable',
-  'unsupported',
-  'skipped',
-  'unknown',
-];
-const DIAGNOSTIC_SEVERITY_VALUES: readonly string[] = ['info', 'warning', 'error'];
-const RESOLVED_STATUS_VALUES: readonly string[] = [
-  'effective',
-  'shadowed',
-  'conditional',
-  'unresolved',
-  'unknown',
-];
-const ACTIVATION_VALUES: readonly string[] = [
-  'always',
-  'conditional',
-  'on-demand',
-  'event-driven',
-  'unknown',
-];
-const STRATEGY_VALUES: readonly string[] = [
-  'override',
-  'accumulate',
-  'available',
-  'policy',
-  'event-pipeline',
-  'runtime-defined',
-  'unknown',
-];
-const APPLICABILITY_VALUES: readonly string[] = [
-  'global',
-  'project',
-  'directory-subtree',
-  'tool-event',
-  'config-rule',
-  'runtime-defined',
-  'unknown',
-];
+// The persisted-shape validators use the model's own value lists (roadmap M8
+// #88): each is the array the corresponding type derives from, so the validator
+// and the model cannot drift. The alias is a widening to `readonly string[]`
+// for `.includes(value: string)`, not a second copy.
+const COMPLETENESS_VALUES: readonly string[] = CORE_COMPLETENESS_VALUES;
+const DIAGNOSTIC_SEVERITY_VALUES: readonly string[] = CORE_DIAGNOSTIC_SEVERITY_VALUES;
+const NATIVE_ORIGIN_VALUES: readonly string[] = CORE_NATIVE_ORIGIN_VALUES;
+const INSPECTABILITY_VALUES: readonly string[] = CORE_INSPECTABILITY_VALUES;
+const OBSERVED_STATUS_VALUES: readonly string[] = CORE_OBSERVED_STATUS_VALUES;
+const RESOLVED_STATUS_VALUES: readonly string[] = CORE_RESOLVED_STATUS_VALUES;
+const ACTIVATION_VALUES: readonly string[] = CORE_ACTIVATION_VALUES;
+const STRATEGY_VALUES: readonly string[] = CORE_STRATEGY_VALUES;
+const APPLICABILITY_VALUES: readonly string[] = CORE_APPLICABILITY_VALUES;
 
 export function pflHome(home: string = homedir()): string {
   return join(home, '.pfl');
