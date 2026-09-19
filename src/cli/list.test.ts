@@ -157,8 +157,9 @@ describe('runList', () => {
     await runList(projectRoot, { home }, logger);
 
     expect(lines).toHaveLength(4);
-    expect(lines.join('\n')).toContain(ids.skills ?? '');
-    expect(lines.join('\n')).toContain('skills');
+    // Skill row shows the derived label (parent dir), not the raw SKILL.md path.
+    const skillLine = lines.find((l) => l.includes(ids.skills ?? '')) ?? '';
+    expect(skillLine).toMatch(/^\.claude\/skills\/a\s+el_\w+\s+skills\s/);
   });
 
   it('filters by facet, origin, and status with AND', async () => {
@@ -205,6 +206,44 @@ describe('runList', () => {
     expect(outcome.data.elements[0]).toHaveProperty('facets');
     const ids = outcome.data.elements.map((element) => element.id);
     expect(ids).toEqual([...ids].sort());
+    // path is present for elements with a source path.
+    for (const element of outcome.data.elements) {
+      expect(element).toHaveProperty('path');
+      expect(typeof (element as { path?: string }).path).toBe('string');
+    }
+  });
+
+  it('shows (none) for elements without a source path and omits path in JSON', async () => {
+    const projectRoot = await tempDir('pfl-list-project-');
+    const home = await tempDir('pfl-list-home-');
+    const opaque = pair('runtime-provided-instructions', 'runtime://opaque', { origin: 'builtin' });
+    // ObservedElement with no source.path.
+    opaque.observed.source = {};
+    await seed(projectRoot, home, [opaque]);
+
+    const { lines, logger: humanLogger } = fakeLogger();
+    await runList(projectRoot, { home }, humanLogger);
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatch(/^\(none\)\s/);
+
+    const { logger: jsonLogger } = fakeLogger();
+    const outcome = await runList(projectRoot, { home, json: true }, jsonLogger);
+    expect(outcome.data.elements[0]).not.toHaveProperty('path');
+  });
+
+  it('redacts the source path in JSON output', async () => {
+    const projectRoot = await tempDir('pfl-list-project-');
+    const home = await tempDir('pfl-list-home-');
+    const absolutePath = join(home, '.claude', 'skills', 'x', 'SKILL.md');
+    const el = pair('skills', absolutePath, { origin: 'user' });
+    await seed(projectRoot, home, [el]);
+
+    const { logger } = fakeLogger();
+    const outcome = await runList(projectRoot, { home, json: true }, logger);
+    const path = (outcome.data.elements[0] as { path?: string }).path;
+    expect(path).toBeDefined();
+    expect(path).toMatch(/^~\//);
+    expect(path).not.toContain(home);
   });
 
   it('fails on an invalid facet and lists valid values', async () => {

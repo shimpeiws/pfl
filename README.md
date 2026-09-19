@@ -190,10 +190,10 @@ Notable
 
 ```text
 $ pfl list
-el_cff282ddc0b14d10  instructions  project  effective  instructions
-el_e53975ad56eddb00  instructions  user     effective  instructions
-el_9e0c49bbd513d2c5  skills        user     effective  knowledge,actions
-el_e411b87f4f06ceaf  runtime-provided-instructions  builtin  effective  instructions
+CLAUDE.md  el_cff282ddc0b14d10  instructions  project  effective  instructions
+~/.claude/CLAUDE.md  el_e53975ad56eddb00  instructions  user  effective  instructions
+~/.claude/skills/bar  el_9e0c49bbd513d2c5  skills  user  effective  knowledge,actions
+(none)  el_e411b87f4f06ceaf  runtime-provided-instructions  builtin  effective  instructions
 ```
 
 ```text

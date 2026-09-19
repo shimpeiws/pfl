@@ -2,7 +2,7 @@ import { homedir } from 'node:os';
 import { HARNESS_FACETS, isHarnessFacet, type HarnessFacet } from '../core/facets.js';
 import type { NativeOrigin } from '../core/observed.js';
 import type { ResolvedStatus } from '../core/resolved.js';
-import { redactingLogger } from '../redact/output.js';
+import { redactPath, redactingLogger } from '../redact/output.js';
 import type { Logger } from '../util/logger.js';
 import { type CommandOutcome } from './document.js';
 import { EXIT_CODES, PflError } from './exit-codes.js';
@@ -41,6 +41,7 @@ const RESOLVED_STATUSES: readonly ResolvedStatus[] = [
 
 interface ListRow {
   id: string;
+  path?: string;
   kind: string;
   origin: NativeOrigin;
   status: ResolvedStatus;
@@ -82,13 +83,18 @@ export async function runList(
   );
 
   const rows: ListRow[] = observed.elements
-    .map((element) => ({
-      id: element.id,
-      kind: element.native.kind,
-      origin: element.native.origin,
-      status: resolvedById.get(element.id)?.status ?? ('unknown' as ResolvedStatus),
-      facets: interpretationById.get(element.id)?.facets ?? [],
-    }))
+    .map((element) => {
+      const path =
+        element.source.path !== undefined ? redactPath(element.source.path, { home }) : undefined;
+      return {
+        id: element.id,
+        ...(path !== undefined && { path }),
+        kind: element.native.kind,
+        origin: element.native.origin,
+        status: resolvedById.get(element.id)?.status ?? ('unknown' as ResolvedStatus),
+        facets: interpretationById.get(element.id)?.facets ?? [],
+      };
+    })
     .filter(
       (row) =>
         (facet === undefined || row.facets.includes(facet)) &&
@@ -112,9 +118,26 @@ export async function runList(
     return outcome;
   }
   for (const row of rows) {
-    out.info(`${row.id}  ${row.kind}  ${row.origin}  ${row.status}  ${row.facets.join(',')}`);
+    out.info(
+      `${displayPath(row.path, row.kind)}  ${row.id}  ${row.kind}  ${row.origin}  ${row.status}  ${row.facets.join(',')}`,
+    );
   }
   return outcome;
+}
+
+/**
+ * Derive the human-readable label from a redacted source path and kind.
+ * For skills, the parent directory of SKILL.md is the distinguishing part,
+ * matching the `catalogIdentity` precedent in
+ * src/runtime/opencode/discovery.ts.
+ */
+function displayPath(path: string | undefined, kind: string): string {
+  if (path === undefined) return '(none)';
+  if (kind === 'skills' && path.endsWith('/SKILL.md')) {
+    const dir = path.slice(0, -'/SKILL.md'.length);
+    return dir.length > 0 ? dir : path;
+  }
+  return path;
 }
 
 function validateFacet(value: string | undefined): HarnessFacet | undefined {
