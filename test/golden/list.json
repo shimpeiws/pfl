@@ -15,6 +15,7 @@
     "elements": [
       {
         "id": "el_0fc92802d8f84176",
+        "path": "CLAUDE.md",
         "kind": "instructions",
         "origin": "project",
         "status": "effective",

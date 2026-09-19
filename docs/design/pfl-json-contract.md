@@ -182,10 +182,12 @@ nested under `data`.
 ### `list`
 
 ```text
-{ count, elements: [{ id, kind, origin, status, facets }], interpretation: { classifierVersion, origin } }
+{ count, elements: [{ id, path?, kind, origin, status, facets }], interpretation: { classifierVersion, origin } }
 ```
 
-`elements` is ordered by `id`.
+`elements` is ordered by `id`. `path` is the redacted source path (absent for
+elements without one); human output strips the trailing `SKILL.md` segment to
+show the skill directory name. `path` is an additive field added in #167.
 
 ### `show`
 
@@ -281,11 +283,11 @@ deleted with it. `snapshots` and `gc` report `completeness: "unknown"`.
 
 The document is a display channel, so its text passes the same policy as other
 output. `diagnostics` and error messages are redacted at the export level, and
-the file paths a command emits — `show`'s element, `graph`'s node paths — are
-re-redacted at the boundary rather than trusted from the artifact. Every other
-`data` field is a structural fact, or a value that passed the allowlist and the
-redaction layer when the snapshot was persisted; the document layer does not
-re-derive those.
+the file paths a command emits — `show`'s element, `graph`'s node paths,
+`list`'s `path` — are re-redacted at the boundary rather than trusted from the
+artifact. Every other `data` field is a structural fact, or a value that passed the
+allowlist and the redaction layer when the snapshot was persisted; the document
+layer does not re-derive those.
 
 ## Array order
 

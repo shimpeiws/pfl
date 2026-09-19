@@ -39,7 +39,8 @@ Valid origins: `project`, `user`, `managed`, `plugin`, `builtin`, `unknown`.
 
 Valid statuses: `effective`, `shadowed`, `conditional`, `unresolved`, `unknown`.
 
-Elements are ordered by `id`.
+Elements are ordered by `id`. Each row shows the source path (or `(none)` when
+none), id, kind, origin, status, and facets.
 
 ## `show`
 
