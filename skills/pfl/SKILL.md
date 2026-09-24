@@ -83,10 +83,11 @@ Common recipes:
 
 ```sh
 pfl list --kind skills --origin project --origin user   # what skills load?
-pfl list --kind hooks                                   # what hooks are active?
+pfl list --kind hooks --status effective                # what hooks are active?
 pfl list --kind subagents                               # what subagents exist?
 pfl list --status shadowed                              # what is shadowed?
 pfl list --kind mcp-configuration                       # what MCP servers?
+pfl show <mcp-element-id>                               # …and the server names inside
 pfl graph --status effective --json                     # the effective harness only
 ```
 
