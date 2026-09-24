@@ -11,6 +11,7 @@
     }
   ],
   "data": {
+    "runtime": "claude-code",
     "count": 1,
     "total": 1,
     "elements": [

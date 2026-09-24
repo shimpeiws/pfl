@@ -69,8 +69,10 @@ The binary is `pfl`. Supported runtimes: `claude-code`, `codex`, `opencode`.
    pfl gc --keep 10 --prune-orphans
    ```
 
-The default snapshot for read commands is `latest`. The literal `latest` is
-accepted anywhere an id is.
+The default snapshot for read commands is `latest` — the newest run across all
+runtimes. The literal `latest` is accepted anywhere an id is. Scope `latest`
+to one runtime with `--runtime <id>` on `report`, `list`, `show`, `graph`, or
+`diff` when the store mixes runtimes.
 
 ## Consent and the user scope
 

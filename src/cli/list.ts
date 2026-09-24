@@ -15,6 +15,8 @@ import {
 
 export interface ListOptions {
   snapshot?: string;
+  /** Scope `latest` to this runtime's newest run (#180). */
+  runtime?: string;
   facet?: string;
   /** Repeatable at the CLI; an element matches when its kind is any of these. */
   kind?: readonly string[];
@@ -54,6 +56,8 @@ interface ListRow {
 }
 
 export interface ListData {
+  /** The runtime the answered snapshot belongs to (#180). */
+  runtime: string;
   count: number;
   /** Elements matching the filters before `--limit` truncates (#178). */
   total: number;
@@ -80,7 +84,7 @@ export async function runList(
   const home = options.home ?? homedir();
   const out = redactingLogger(logger, options.json ? 'export' : 'display', { home });
 
-  const run = await loadInterpretation(cwd, options.snapshot, home);
+  const run = await loadInterpretation(cwd, options.snapshot, home, options.runtime);
   const { observed, resolved, interpretation, diagnostics } = run;
   for (const diagnostic of diagnostics) {
     out.warn(diagnostic.message, { code: diagnostic.code, path: diagnostic.path ?? undefined });
@@ -120,6 +124,7 @@ export async function runList(
     .slice(0, options.limit);
   const limited = rows.slice(0, options.limit);
   const data: ListData = {
+    runtime: observed.runtime.id,
     count: elements.length,
     total: rows.length,
     elements,
@@ -128,6 +133,9 @@ export async function runList(
   const outcome = { data, diagnostics, completeness: observed.completeness };
 
   if (options.json) return outcome;
+  // The runtime stays prominent so an agent can assert which snapshot answered.
+  out.info(`Runtime: ${observed.runtime.id} (${resolved.snapshotId})`);
+  out.info('');
   if (limited.length === 0) {
     out.info('No elements match.');
     return outcome;

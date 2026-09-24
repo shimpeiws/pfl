@@ -58,6 +58,21 @@ function parseAllowScopes(value: string | string[] | undefined, runtime: string)
 }
 
 /**
+ * Validates `--runtime` on the read commands. An unknown id fails loudly with
+ * the registered choices rather than silently matching no snapshot.
+ */
+function parseRuntimeFlag(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  if (!listRuntimeIds().includes(value)) {
+    throw new PflError(
+      `unknown runtime: ${value}; valid runtimes: ${RUNTIME_CHOICES}`,
+      EXIT_CODES.RUNTIME_UNSUPPORTED,
+    );
+  }
+  return value;
+}
+
+/**
  * Parses `gc --keep`. A value-less option arrives as `true` (and `--no-keep` as
  * `false`), and a whitespace-only string coerces to 0; each would silently
  * reclaim every run but the latest, so they are refused rather than clamped.
@@ -148,23 +163,30 @@ cli
 cli
   .command('report', 'Interpret the latest (or named) snapshot')
   .option('--snapshot <id>', 'Snapshot id (default: latest)')
+  .option('--runtime <id>', `Scope 'latest' to a runtime: ${RUNTIME_CHOICES}`)
   .option('--json', 'Output as JSON')
   .action(
-    withErrorHandling('report', async (flags: { snapshot?: string } & CommonFlags) => {
-      return runReport(
-        process.cwd(),
-        {
-          ...(flags.snapshot !== undefined ? { snapshot: flags.snapshot } : {}),
-          json: flags.json ?? false,
-        },
-        loggerForFlags(flags),
-      );
-    }),
+    withErrorHandling(
+      'report',
+      async (flags: { snapshot?: string; runtime?: string } & CommonFlags) => {
+        const runtime = parseRuntimeFlag(flags.runtime);
+        return runReport(
+          process.cwd(),
+          {
+            ...(flags.snapshot !== undefined ? { snapshot: flags.snapshot } : {}),
+            ...(runtime !== undefined ? { runtime } : {}),
+            json: flags.json ?? false,
+          },
+          loggerForFlags(flags),
+        );
+      },
+    ),
   );
 
 cli
   .command('list', 'List elements from the latest (or named) snapshot')
   .option('--snapshot <id>', 'Snapshot id (default: latest)')
+  .option('--runtime <id>', `Scope 'latest' to a runtime: ${RUNTIME_CHOICES}`)
   .option('--facet <facet>', 'Filter by semantic facet')
   .option('--kind <kind>', 'Filter by element kind (repeatable)')
   .option('--origin <origin>', 'Filter by native origin')
@@ -177,6 +199,7 @@ cli
       async (
         flags: {
           snapshot?: string;
+          runtime?: string;
           facet?: string;
           kind?: string | string[];
           origin?: string;
@@ -185,10 +208,12 @@ cli
         } & CommonFlags,
       ) => {
         const limit = parseLimit(flags.limit);
+        const runtime = parseRuntimeFlag(flags.runtime);
         return runList(
           process.cwd(),
           {
             ...(flags.snapshot !== undefined ? { snapshot: flags.snapshot } : {}),
+            ...(runtime !== undefined ? { runtime } : {}),
             ...(flags.facet !== undefined ? { facet: flags.facet } : {}),
             ...(flags.kind !== undefined ? { kind: [flags.kind].flat() } : {}),
             ...(flags.origin !== undefined ? { origin: flags.origin } : {}),
@@ -205,16 +230,19 @@ cli
 cli
   .command('show <element-id>', 'Drill into one element')
   .option('--snapshot <id>', 'Snapshot id (default: latest)')
+  .option('--runtime <id>', `Scope 'latest' to a runtime: ${RUNTIME_CHOICES}`)
   .option('--json', 'Output as JSON')
   .action(
     withErrorHandling(
       'show',
-      async (elementId: string, flags: { snapshot?: string } & CommonFlags) => {
+      async (elementId: string, flags: { snapshot?: string; runtime?: string } & CommonFlags) => {
+        const runtime = parseRuntimeFlag(flags.runtime);
         return runShow(
           process.cwd(),
           elementId,
           {
             ...(flags.snapshot !== undefined ? { snapshot: flags.snapshot } : {}),
+            ...(runtime !== undefined ? { runtime } : {}),
             json: flags.json ?? false,
           },
           loggerForFlags(flags),
@@ -226,18 +254,24 @@ cli
 cli
   .command('graph', 'Render provenance and resolution for a snapshot')
   .option('--snapshot <id>', 'Snapshot id (default: latest)')
+  .option('--runtime <id>', `Scope 'latest' to a runtime: ${RUNTIME_CHOICES}`)
   .option('--json', 'Output as JSON')
   .action(
-    withErrorHandling('graph', async (flags: { snapshot?: string } & CommonFlags) => {
-      return runGraph(
-        process.cwd(),
-        {
-          ...(flags.snapshot !== undefined ? { snapshot: flags.snapshot } : {}),
-          json: flags.json ?? false,
-        },
-        loggerForFlags(flags),
-      );
-    }),
+    withErrorHandling(
+      'graph',
+      async (flags: { snapshot?: string; runtime?: string } & CommonFlags) => {
+        const runtime = parseRuntimeFlag(flags.runtime);
+        return runGraph(
+          process.cwd(),
+          {
+            ...(flags.snapshot !== undefined ? { snapshot: flags.snapshot } : {}),
+            ...(runtime !== undefined ? { runtime } : {}),
+            json: flags.json ?? false,
+          },
+          loggerForFlags(flags),
+        );
+      },
+    ),
   );
 
 cli
@@ -282,6 +316,7 @@ cli
 
 cli
   .command('diff <snapshot-a> [snapshot-b]', 'Compare two snapshots (default: latest)')
+  .option('--runtime <id>', `Scope 'latest' to a runtime: ${RUNTIME_CHOICES}`)
   .option('--json', 'Output as JSON')
   .action(
     withErrorHandling(
@@ -293,13 +328,16 @@ cli
       ) => {
         // `cac` omits the second positional when it is not given and passes the
         // options object in its place, so it is recovered from either position.
-        const flags = maybeFlags ?? (snapshotBOrFlags as CommonFlags) ?? {};
+        const flags = (maybeFlags ?? (snapshotBOrFlags as CommonFlags) ?? {}) as CommonFlags & {
+          runtime?: string;
+        };
         const snapshotB = typeof snapshotBOrFlags === 'string' ? snapshotBOrFlags : undefined;
+        const runtime = parseRuntimeFlag(flags.runtime);
         return runDiff(
           process.cwd(),
           snapshotA,
           snapshotB,
-          { json: flags.json ?? false },
+          { ...(runtime !== undefined ? { runtime } : {}), json: flags.json ?? false },
           loggerForFlags(flags),
         );
       },

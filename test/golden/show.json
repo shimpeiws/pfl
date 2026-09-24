@@ -11,6 +11,7 @@
     }
   ],
   "data": {
+    "runtime": "claude-code",
     "observed": {
       "id": "el_0fc92802d8f84176",
       "inspectability": "observable",

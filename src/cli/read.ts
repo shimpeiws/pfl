@@ -60,6 +60,7 @@ export async function loadInterpretation(
   cwd: string,
   requestedId: string | undefined,
   home: string = homedir(),
+  runtime?: string,
 ): Promise<InterpretedRun> {
   const context = await resolveProjectContext(cwd, {
     allowExternalGit: await hasAnyUserConsent(home),
@@ -67,7 +68,12 @@ export async function loadInterpretation(
   // A read does not mutate the store; it computes the same id an `inspect`
   // would persist (roadmap #86).
   const storedProject = await resolveStoredProjectId(context, home, { write: false });
-  const { resolvedId, diagnostics } = await resolveResolvedId(storedProject.id, requestedId, home);
+  const { resolvedId, diagnostics } = await resolveResolvedId(
+    storedProject.id,
+    requestedId,
+    home,
+    runtime,
+  );
   diagnostics.unshift(...storedProject.diagnostics);
   const resolved = await readResolvedSnapshot(storedProject.id, resolvedId, home);
   const observed = await readObservedSnapshot(storedProject.id, resolved.observedSnapshotId, home);
@@ -115,8 +121,47 @@ async function resolveResolvedId(
   projectId: string,
   requestedId: string | undefined,
   home: string,
+  runtime?: string,
 ): Promise<{ resolvedId: string; diagnostics: Diagnostic[] }> {
   if (requestedId === undefined || requestedId === 'latest') {
+    if (runtime !== undefined) {
+      // The `latest` pointer names whichever runtime was inspected last, so a
+      // runtime-scoped read scans the run list for the newest matching
+      // resolved run instead (#180).
+      const { runs, diagnostics } = await listRuns(projectId, home);
+      const context = diagnostics.length > 0 ? { diagnostics } : {};
+      throwOnStoreFailure(diagnostics);
+      const scoped = runs.filter((entry) => entry.runtime.id === runtime);
+      const first = scoped.at(0);
+      if (first === undefined) {
+        throw new PflError(
+          `no snapshots stored for runtime ${runtime}; run \`pfl inspect --runtime ${runtime}\` first`,
+          EXIT_CODES.CONFIG_ERROR,
+          context,
+        );
+      }
+      // `runs` is newest first, but `capturedAt` has millisecond precision and
+      // a tie keeps directory order, which does not track inspection order.
+      // The `latest` pointer names the run that finished last, so it breaks a
+      // tie among matching-runtime runs at the newest timestamp.
+      let newest = first;
+      const tied = scoped.filter((entry) => entry.capturedAt === first.capturedAt);
+      if (tied.length > 1) {
+        const pointer = await readLatestPointer(projectId, home);
+        const pointed = tied.find((entry) => entry.observedId === pointer?.observed);
+        if (pointed !== undefined) newest = pointed;
+      }
+      if (newest.resolvedId === null) {
+        // The newest matching run is unusable; answering with an older one
+        // would silently serve a stale harness as `latest`.
+        throw new PflError(
+          `could not read a resolved snapshot for the newest ${runtime} run`,
+          EXIT_CODES.CONFIG_ERROR,
+          context,
+        );
+      }
+      return { resolvedId: newest.resolvedId, diagnostics };
+    }
     const pointer = await readLatestPointer(projectId, home);
     if (pointer === null) {
       throw new PflError(
@@ -128,6 +173,7 @@ async function resolveResolvedId(
   }
 
   const { runs, diagnostics } = await listRuns(projectId, home);
+  throwOnStoreFailure(diagnostics);
   const run = runs.find(
     (entry) => entry.resolvedId === requestedId || entry.observedId === requestedId,
   );
@@ -153,6 +199,13 @@ async function resolveResolvedId(
     }
     throw new PflError(`unknown snapshot: ${requestedId}`, EXIT_CODES.CONFIG_ERROR, context);
   }
+  if (runtime !== undefined && run.runtime.id !== runtime) {
+    throw new PflError(
+      `snapshot ${requestedId} is a ${run.runtime.id} snapshot, not ${runtime}`,
+      EXIT_CODES.CONFIG_ERROR,
+      context,
+    );
+  }
   if (run.resolvedId === null) {
     // A resolved snapshot that failed to read cannot be attributed to one
     // observation by its content alone, so the message stays general and the
@@ -164,4 +217,16 @@ async function resolveResolvedId(
     );
   }
   return { resolvedId: run.resolvedId, diagnostics };
+}
+
+/**
+ * A scan that could not read a store directory is a store failure, not an
+ * empty history: propagating it keeps a broken store from masquerading as
+ * "no snapshots" (exit 2) when the contract reserves exit 6 for it (#180).
+ */
+function throwOnStoreFailure(diagnostics: Diagnostic[]): void {
+  const failure = diagnostics.find((entry) => entry.code === 'snapshot-store-unreadable');
+  if (failure !== undefined) {
+    throw new PflError(failure.message, EXIT_CODES.SNAPSHOT_STORE_FAILED, { diagnostics });
+  }
 }

@@ -20,7 +20,7 @@ Exits 5 when the user scope is required and not granted.
 ## `report`
 
 ```sh
-pfl report [--snapshot <id>] [--json]
+pfl report [--snapshot <id>] [--runtime <id>] [--json]
 ```
 
 Interprets the latest (or named) snapshot. Summary: effective element count,
@@ -31,7 +31,7 @@ so `--json` readers do not need a `show` call per id.
 ## `list`
 
 ```sh
-pfl list [--snapshot <id>] [--facet <f>] [--kind <k>] [--origin <o>] [--status <s>] [--limit <n>] [--json]
+pfl list [--snapshot <id>] [--runtime <id>] [--facet <f>] [--kind <k>] [--origin <o>] [--status <s>] [--limit <n>] [--json]
 ```
 
 Valid facets: `instructions`, `knowledge`, `memory`, `actions`, `delegation`,
@@ -56,7 +56,7 @@ none), id, kind, origin, status, and facets.
 ## `show`
 
 ```sh
-pfl show <element-id> [--snapshot <id>] [--json]
+pfl show <element-id> [--snapshot <id>] [--runtime <id>] [--json]
 ```
 
 Drills into one element: observed fact, resolved interpretation, relations,
@@ -65,7 +65,7 @@ findings, and provenance.
 ## `graph`
 
 ```sh
-pfl graph [--snapshot <id>] [--json]
+pfl graph [--snapshot <id>] [--runtime <id>] [--json]
 ```
 
 Renders the provenance graph (observed sources → resolved elements) and
@@ -75,12 +75,21 @@ activates).
 ## `diff`
 
 ```sh
-pfl diff <snapshot-a> [snapshot-b] [--json]
+pfl diff <snapshot-a> [snapshot-b] [--runtime <id>] [--json]
 ```
 
 Compares two snapshots structurally (added / removed / changed elements),
 by effective state (newly effective / no longer effective / activation changed),
 and by semantic facet delta. The second operand defaults to `latest`.
+
+## `--runtime` on read commands
+
+`report`, `list`, `show`, `graph`, and `diff` accept `--runtime <id>`. Without
+it, `latest` means whichever runtime was inspected last; with it, `latest`
+means the newest stored run for that runtime. A named `--snapshot` (or a `diff`
+operand) from another runtime is refused with exit 2. The runtime is also in
+every human header and JSON `data.runtime`, so a consumer can assert which
+snapshot answered.
 
 ## `snapshots`
 

@@ -124,6 +124,7 @@ is not in the observed snapshot.
 
 ```json
 {
+  "runtime": "claude-code",
   "count": 4,
   "total": 4,
   "elements": [
@@ -146,6 +147,7 @@ is how many elements matched before `--limit` truncated the list.
 
 ```json
 {
+  "runtime": "claude-code",
   "observed": { "…" },
   "resolved": { "…" },
   "interpretation": { "…" },
@@ -163,6 +165,7 @@ is how many elements matched before `--limit` truncated the list.
   "resolvedSnapshotId": "res_…",
   "nodes": [],
   "edges": [],
+  "runtime": "claude-code",
   "interpretation": { "classifierVersion": "…", "origin": "stored" }
 }
 ```
