@@ -2,7 +2,7 @@ import type { Diagnostic } from '../core/diagnostics.js';
 import type { ObservedElement } from '../core/observed.js';
 import { encodeProjectDir } from '../runtime/claude-code/paths.js';
 import type { Logger } from '../util/logger.js';
-import { applyRedactionRules, type RedactionLevel } from './common.js';
+import { applyRedactionRules, HIGH_ENTROPY_RULE, type RedactionLevel } from './common.js';
 import { ALL_REDACTION_RULES } from './rules.js';
 
 /**
@@ -20,8 +20,14 @@ import { ALL_REDACTION_RULES } from './rules.js';
  *   high-entropy heuristic is deliberately **not** applied to paths: it would
  *   redact legitimate long path segments (an encoded project directory is one
  *   long `-`-joined run).
- * - **Free text** (diagnostic messages, error strings) gets the full policy at
- *   the channel's level, high-entropy rule included.
+ * - **Diagnostic messages** are templates with interpolated paths, so they get
+ *   the same path treatment plus the high-entropy catch-all scoped to the
+ *   tokens that are not paths: the rule's character class includes `/`, so a
+ *   path-bearing token is left alone (#179), while an unlabelled
+ *   high-entropy value anywhere else in the message stays masked.
+ * - **Free text** (error strings, logger output) gets the full policy at the
+ *   channel's level, high-entropy rule included: unlike a diagnostic template
+ *   it may carry arbitrary text, which is where the catch-all earns its keep.
  */
 
 export interface RedactionContext {
@@ -88,7 +94,56 @@ export function redactFreeText(
   return redactHomePath(applyRedactionRules(value, ALL_REDACTION_RULES, level), ctx.home);
 }
 
-/** Redacts a diagnostic's message and optional path. */
+/**
+ * Applies the export-tier high-entropy catch-all to the non-path tokens of a
+ * diagnostic message. A token containing `/` is a path (or a path-like
+ * fragment glued to punctuation): its long segments are the legitimate runs
+ * the catch-all would destroy, so it is left to PATH_RULES. Every other token
+ * still faces the rule, so an unlabelled high-entropy value — a secret with no
+ * known shape — stays masked at export and persistence.
+ */
+/**
+ * Whether a whitespace-separated token is a path (or a path glued to
+ * punctuation) rather than a bare secret. `/` alone is not enough — the
+ * high-entropy alphabet includes it, so a slash-bearing secret would pose as a
+ * path. Require a marker paths carry and secrets rarely do: a leading `~`,
+ * `/`, or `.` (allowing a punctuation prefix), a `/~` home expansion, a `.`
+ * anywhere (hidden directories, file extensions), or a second `/` (a real
+ * path has directories; a secret's slashes are sparse). An ambiguous token
+ * fails closed to the catch-all.
+ */
+function isPathToken(token: string): boolean {
+  const first = token.indexOf('/');
+  if (first === -1) return false;
+  return (
+    /^[~/.(]/.test(token) ||
+    token.includes('/~') ||
+    token.includes('.') ||
+    token.indexOf('/', first + 1) !== -1
+  );
+}
+
+function redactDiagnosticMessage(
+  message: string,
+  level: RedactionLevel,
+  ctx: RedactionContext,
+): string {
+  const ruled = applyRedactionRules(message, PATH_RULES, level);
+  const caught = ruled
+    .split(/(\s+)/)
+    .map((token) =>
+      isPathToken(token) ? token : applyRedactionRules(token, [HIGH_ENTROPY_RULE], level),
+    )
+    .join('');
+  return redactHomePath(caught, ctx.home);
+}
+
+/**
+ * Redacts a diagnostic's message and optional path. The message gets
+ * PATH_RULES over its whole text and the high-entropy catch-all over its
+ * non-path tokens, so `level` gates only that catch-all — the same parity
+ * `redactPath` gives the sibling `path` field.
+ */
 export function redactDiagnostic(
   diagnostic: Diagnostic,
   level: RedactionLevel,
@@ -96,7 +151,7 @@ export function redactDiagnostic(
 ): Diagnostic {
   return {
     ...diagnostic,
-    message: redactFreeText(diagnostic.message, level, ctx),
+    message: redactDiagnosticMessage(diagnostic.message, level, ctx),
     ...(diagnostic.path !== undefined ? { path: redactPath(diagnostic.path, ctx) } : {}),
   };
 }
