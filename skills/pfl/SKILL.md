@@ -49,19 +49,28 @@ The binary is `pfl`. Supported runtimes: `claude-code`, `codex`, `opencode`.
    pfl show <element-id>       # drill into one element
    ```
 
-3. **Compare** — structural, effective, and facet-level diff:
+3. **Export** — the full sanitized IR (Observed + Resolved + Interpretation +
+   relations + findings, joined by element id) as one document, for a
+   downstream agent that would otherwise need `list` followed by `show` per
+   element:
+
+   ```sh
+   pfl export --json
+   ```
+
+4. **Compare** — structural, effective, and facet-level diff:
 
    ```sh
    pfl diff <snapshot-a> [snapshot-b]
    ```
 
-4. **Render** — provenance and resolution graph:
+5. **Render** — provenance and resolution graph:
 
    ```sh
    pfl graph
    ```
 
-5. **Manage** — list snapshots, reclaim old ones:
+6. **Manage** — list snapshots, reclaim old ones:
 
    ```sh
    pfl snapshots
@@ -71,8 +80,8 @@ The binary is `pfl`. Supported runtimes: `claude-code`, `codex`, `opencode`.
 
 The default snapshot for read commands is `latest` — the newest run across all
 runtimes. The literal `latest` is accepted anywhere an id is. Scope `latest`
-to one runtime with `--runtime <id>` on `report`, `list`, `show`, `graph`, or
-`diff` when the store mixes runtimes.
+to one runtime with `--runtime <id>` on `report`, `list`, `show`, `graph`,
+`export`, or `diff` when the store mixes runtimes.
 
 `pfl list` and `pfl graph` can be verbose on a real harness — hundreds of
 elements and thousands of lines, which costs tens of thousands of tokens as

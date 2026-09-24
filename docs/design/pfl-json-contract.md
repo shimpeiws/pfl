@@ -292,6 +292,41 @@ stored interpretation is never an error; a stored interpretation this binary
 cannot interpret is not absence and fails the read like any other uninterpretable
 artifact.
 
+### `export`
+
+```text
+{
+  project: { id, displayName },
+  runtime: { id, version, adapter: { id, version, runtimeCompatibility } },
+  snapshot: { observedSnapshotId, resolvedSnapshotId, capturedAt, schemaVersion },
+  resolution: { semanticsVersion, confidence },
+  elements: [{ id, observed, resolved, interpretation }],
+  relations: [{ type, from, to }],
+  findings: [{ rule, message, elementIds }],
+  interpretation: { classifier: { id, version }, origin }
+}
+```
+
+Roadmap #203. `export` is a projection over the same read path `report` /
+`list` / `show` / `graph` share, composed into one document: it performs no
+new classification, adds no findings, and never re-explores the harness.
+`elements` carries **every** element of the observed snapshot, ordered by
+`id`, unfiltered — this is the difference from `list`, which is scoped by
+`--facet`/`--kind`/`--origin`/`--status` and prints a summary row per element.
+Each entry joins that element's Observed Fact to its Resolved Fact and Derived
+Interpretation by element id; `resolved` and `interpretation` are `null`, not
+omitted, when no such layer exists for the element, matching `show`.
+`relations` and `findings` are the resolved snapshot's and the interpretation's
+in full, unfiltered by element (unlike `show`, which scopes both to the one
+element requested).
+
+`export.data.interpretation` names the classifier as `{ id, version }` rather
+than the `classifierVersion` string the other read commands use (see
+"Interpretation provenance" above) — `export` is meant to stand alone as a
+document, so it spells out which classifier produced it rather than assuming
+the reader already knows `pfl-native` is the only one. `origin` is `stored` or
+`recomputed`, with the same meaning as elsewhere.
+
 ### `gc`
 
 The envelope applies unchanged. `data` lists what was or would be reclaimed,
@@ -327,16 +362,20 @@ deleted with it. `snapshots` and `gc` report `completeness: "unknown"`.
 The document is a display channel, so its text passes the same policy as other
 output. `diagnostics` and error messages are redacted at the export level, and
 the file paths a command emits — `show`'s element, `graph`'s node paths,
-`list`'s `path` — are re-redacted at the boundary rather than trusted from the
-artifact. Every other `data` field is a structural fact, or a value that passed the
-allowlist and the redaction layer when the snapshot was persisted; the document
-layer does not re-derive those.
+`list`'s `path`, `export.data.elements[].observed.source.path` — are
+re-redacted at the boundary rather than trusted from the artifact. Every other
+`data` field is a structural fact, or a value that passed the allowlist and the
+redaction layer when the snapshot was persisted; the document layer does not
+re-derive those. `export` adds no field a persisted artifact did not already
+allow: no instruction, memory, skill, or hook body; no environment value,
+secret, or credential; no raw config value an adapter's allowlist excludes.
 
 ## Array order
 
 Array order is part of the contract only where stated here:
 
-- **Elements are ordered by `id`** — `list.data.elements`, `graph.data.nodes`.
+- **Elements are ordered by `id`** — `list.data.elements`, `graph.data.nodes`,
+  `export.data.elements`.
 - **Diagnostics are in emission order** — `diagnostics`.
 - **Diff relations** are ordered by the element ids they join (`from`, then
   `to`), then `type`; **diff findings** by `rule`, then cited element ids, then
