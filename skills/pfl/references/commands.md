@@ -50,6 +50,8 @@ kind fails and lists the valid set. `--kind` is repeatable and ORs:
 `--kind subagents --kind commands` matches either.
 
 Valid origins: `project`, `user`, `managed`, `plugin`, `builtin`, `unknown`.
+`--origin` is repeatable and ORs, like `--kind`:
+`--origin project --origin user` matches either.
 
 Valid statuses: `effective`, `shadowed`, `conditional`, `unresolved`, `unknown`.
 

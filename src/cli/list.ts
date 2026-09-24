@@ -19,7 +19,8 @@ export interface ListOptions {
   facet?: string;
   /** Repeatable at the CLI; an element matches when its kind is any of these. */
   kind?: readonly string[];
-  origin?: string;
+  /** Repeatable at the CLI; an element matches when its origin is any of these. */
+  origin?: readonly string[];
   status?: string;
   /** Maximum number of elements returned; the matched total stays in `total`. */
   limit?: number;
@@ -63,7 +64,7 @@ export async function runList(
 ): Promise<CommandOutcome<ListData>> {
   const facets = validateFacets(options.facet === undefined ? undefined : [options.facet]);
   const kinds = validateKinds(options.kind);
-  const origins = validateOrigins(options.origin === undefined ? undefined : [options.origin]);
+  const origins = validateOrigins(options.origin);
   const statuses = validateStatuses(options.status === undefined ? undefined : [options.status]);
   const home = options.home ?? homedir();
   const out = redactingLogger(logger, options.json ? 'export' : 'display', { home });

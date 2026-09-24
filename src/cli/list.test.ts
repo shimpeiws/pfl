@@ -180,9 +180,16 @@ describe('runList', () => {
     expect(byStatus.lines.at(-1)).toContain(ids.permissions ?? '');
 
     const byOrigin = fakeLogger();
-    await runList(projectRoot, { home, origin: 'user' }, byOrigin.logger);
+    await runList(projectRoot, { home, origin: ['user'] }, byOrigin.logger);
     expect(byOrigin.lines).toHaveLength(3);
     expect(byOrigin.lines.at(-1)).toContain(ids.memory ?? '');
+
+    // Repeated --origin flags OR, matching --kind and `pfl graph --origin`.
+    const byOrigins = fakeLogger();
+    await runList(projectRoot, { home, origin: ['user', 'project'] }, byOrigins.logger);
+    expect(byOrigins.lines).toHaveLength(6);
+    expect(byOrigins.lines.join('\n')).toContain(ids.memory ?? '');
+    expect(byOrigins.lines.join('\n')).toContain(ids.skills ?? '');
   });
 
   it('filters by kind, and ORs repeated kinds', async () => {
@@ -347,11 +354,11 @@ describe('runList', () => {
     const { projectRoot, home } = await fixture();
     const { logger } = fakeLogger();
 
-    await expect(runList(projectRoot, { home, origin: 'elsewhere' }, logger)).rejects.toMatchObject(
-      {
-        exitCode: EXIT_CODES.CONFIG_ERROR,
-      },
-    );
+    await expect(
+      runList(projectRoot, { home, origin: ['elsewhere'] }, logger),
+    ).rejects.toMatchObject({
+      exitCode: EXIT_CODES.CONFIG_ERROR,
+    });
     await expect(runList(projectRoot, { home, status: 'zombie' }, logger)).rejects.toMatchObject({
       exitCode: EXIT_CODES.CONFIG_ERROR,
     });

@@ -153,6 +153,7 @@ the stored observed diagnostics in full, including `info`.
   "elements": [
     {
       "id": "el_…",
+      "path": "CLAUDE.md",
       "kind": "instructions",
       "origin": "project",
       "scope": "project",
