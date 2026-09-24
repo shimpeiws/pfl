@@ -1,5 +1,6 @@
 import type { Diagnostic } from '../core/diagnostics.js';
 import type { ObservedElement } from '../core/observed.js';
+import { encodeProjectDir } from '../runtime/claude-code/paths.js';
 import type { Logger } from '../util/logger.js';
 import { applyRedactionRules, type RedactionLevel } from './common.js';
 import { ALL_REDACTION_RULES } from './rules.js';
@@ -14,7 +15,7 @@ import { ALL_REDACTION_RULES } from './rules.js';
  * Two kinds of text need different treatment:
  *
  * - **Paths** carry the account name (an absolute project root, or the
- *   `/`→`-` encoded project directory Claude Code uses for memory). They get
+ *   `/`+`.`→`-` encoded project directory Claude Code uses for memory). They get
  *   the home directory replaced by `~`, plus the token/secret rules. The
  *   high-entropy heuristic is deliberately **not** applied to paths: it would
  *   redact legitimate long path segments (an encoded project directory is one
@@ -59,13 +60,14 @@ function replaceAtBoundary(value: string, needle: string, boundary: string): str
  * matching a longer `-Users-alice2` run.
  */
 function replaceHomeSegment(value: string, home: string): string {
-  const encodedHome = home.replaceAll('/', '-');
+  const encodedHome = encodeProjectDir(home);
   return replaceAtBoundary(replaceAtBoundary(value, home, '/'), encodedHome, '-');
 }
 
 /**
  * Replaces the home directory with `~`, in both its raw and its Claude Code
- * `/`→`-` encoded form, so a path carries a shape without the account name.
+ * encoded form (`/` and `.` → `-`), so a path carries a shape without the
+ * account name.
  */
 export function redactHomePath(value: string, home: string): string {
   if (home.length <= 1) return value;
