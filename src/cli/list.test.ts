@@ -215,6 +215,32 @@ describe('runList', () => {
     expect(lines[1]).toContain('1 more element(s) match');
   });
 
+  it('limits JSON elements after the id sort, not before it', async () => {
+    const projectRoot = await tempDir('pfl-list-project-');
+    const home = await tempDir('pfl-list-home-');
+    // Seed in descending id order so discovery order is the reverse of the
+    // document order; a limit applied before sorting would keep the largest id.
+    const pairs = [
+      pair('instructions', 'CLAUDE.md'),
+      pair('skills', '.claude/skills/a/SKILL.md'),
+      pair('memory', '~/.claude/projects/x/memory/MEMORY.md'),
+    ].sort((a, b) => (a.observed.id < b.observed.id ? 1 : -1));
+    await seed(projectRoot, home, pairs);
+    const smallest = pairs.at(-1)?.observed.id;
+
+    const { lines, logger } = fakeLogger();
+    const outcome = await runList(projectRoot, { home, json: true, limit: 1 }, logger);
+
+    expect(outcome.data.elements.map((element) => element.id)).toEqual([smallest]);
+    expect(outcome.data.total).toBe(3);
+
+    // The human listing deliberately keeps discovery order.
+    const human = fakeLogger();
+    await runList(projectRoot, { home, limit: 1 }, human.logger);
+    expect(human.lines[0]).toContain(pairs[0]?.observed.id ?? '');
+    expect(lines).toHaveLength(0);
+  });
+
   it('reports total equal to count when --limit is absent', async () => {
     const { projectRoot, home } = await fixture();
     const { logger } = fakeLogger();

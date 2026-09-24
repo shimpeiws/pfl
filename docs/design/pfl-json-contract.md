@@ -182,12 +182,15 @@ nested under `data`.
 ### `list`
 
 ```text
-{ count, elements: [{ id, path?, kind, origin, status, facets }], interpretation: { classifierVersion, origin } }
+{ count, total, elements: [{ id, path?, kind, origin, status, facets }], interpretation: { classifierVersion, origin } }
 ```
 
-`elements` is ordered by `id`. `path` is the redacted source path (absent for
-elements without one); human output strips the trailing `SKILL.md` segment to
-show the skill directory name. `path` is an additive field added in #167.
+`elements` is ordered by `id`. `count` is the number of returned elements;
+`total` is how many elements matched the filters before `--limit` truncated
+the list, so `total` >= `count` always. `path` is the redacted source path
+(absent for elements without one); human output strips the trailing `SKILL.md`
+segment to show the skill directory name. `path` is an additive field added in
+#167; `total` is an additive field added in #178.
 
 ### `show`
 

@@ -111,10 +111,14 @@ export async function runList(
         (status === undefined || row.status === status),
     );
 
-  const limited = options.limit === undefined ? rows : rows.slice(0, options.limit);
-  // Elements are ordered by id, as the document contract states; the human
-  // listing keeps discovery order.
-  const elements = [...limited].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  // Elements are ordered by id, as the document contract states, so --limit
+  // slices after the sort: a discovery-order slice is not a prefix of the
+  // unlimited list. The human listing keeps discovery order and slices on its
+  // own.
+  const elements = [...rows]
+    .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
+    .slice(0, options.limit);
+  const limited = rows.slice(0, options.limit);
   const data: ListData = {
     count: elements.length,
     total: rows.length,
