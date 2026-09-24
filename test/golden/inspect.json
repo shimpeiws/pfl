@@ -57,12 +57,6 @@
       "code": "duplicate-element-name",
       "message": "subagents name \"reviewer\" is defined more than once (.claude/agents/reviewer.md, ~/.[redacted].md)",
       "path": ".claude/agents/reviewer.md"
-    },
-    {
-      "severity": "warning",
-      "code": "duplicate-element-name",
-      "message": "plugin skills name \"x\" is defined more than once (~/.[redacted].md, ~/.[redacted].md); this may be one plugin installed at more than one path",
-      "path": "~/.claude/plugins/market/plug/skills/x/SKILL.md"
     }
   ],
   "data": {

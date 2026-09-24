@@ -1,6 +1,7 @@
 import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { assembleObservedSnapshot } from '../../discovery/assemble.js';
+import { duplicateNameDiagnostics, duplicateNameGroups } from '../../discovery/duplicate-names.js';
 import { frontmatterMetadata, readFrontmatter } from '../../discovery/frontmatter.js';
 import { filterToAllowlist } from '../../discovery/metadata.js';
 import { buildObservedElement } from '../../discovery/observed-element.js';
@@ -1133,8 +1134,11 @@ function frontmatterMode(content: string): string | undefined {
   return undefined;
 }
 
+const NONDETERMINISTIC_NOTE = '; the surviving copy is not deterministic';
+
 /**
- * Emits one diagnostic per catalog name defined more than once. OpenCode emits a
+ * Reports catalog names defined more than once, aggregated into one diagnostic
+ * per kind with a bounded sample (#183). OpenCode emits a
  * single catalog entry and documents no tie-break, and the measured winner was
  * not stable across consecutive invocations (model doc §6), so the duplicate is
  * reported and no winner is depended on.
@@ -1143,27 +1147,16 @@ function detectDuplicateNames(
   elements: readonly ObservedElement[],
   diagnostics: Diagnostic[],
 ): void {
-  const byName = new Map<string, string[]>();
-  for (const element of elements) {
-    const identity = catalogIdentity(element);
-    if (identity === null) continue;
-    const key = `${identity.kind}\u0000${identity.name}`;
-    const paths = byName.get(key) ?? [];
-    paths.push(element.source.path ?? '');
-    byName.set(key, paths);
-  }
-
-  for (const [key, paths] of byName) {
-    if (paths.length <= 1) continue;
-    const [kind, name] = key.split('\u0000') as [string, string];
-    const first = paths[0];
-    diagnostics.push({
-      severity: 'warning',
-      code: 'duplicate-element-name',
-      message: `${kind} name "${name}" is defined more than once (${[...paths].sort().join(', ')}); the surviving copy is not deterministic`,
-      ...(first !== undefined ? { path: first } : {}),
-    });
-  }
+  const collisions = duplicateNameGroups(elements, catalogIdentity).map(
+    ({ kind, name, entries, pluginOnly }) => ({
+      kind,
+      name,
+      entries,
+      pluginOnly,
+      note: NONDETERMINISTIC_NOTE,
+    }),
+  );
+  diagnostics.push(...duplicateNameDiagnostics(collisions));
 }
 
 /** The catalog name an element contributes, when it is a named catalog entry. */
