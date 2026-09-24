@@ -210,6 +210,8 @@ describe('runReport', () => {
     ].sort((a, b) => (a.id < b.id ? -1 : 1));
     expect(finding?.elementIds).toEqual(expected.map((entry) => entry.id));
     expect(finding?.elements).toEqual(expected);
+  });
+
   it('explains why the snapshot is partial, and --explain dumps stored diagnostics (#169)', async () => {
     const projectRoot = await tempDir('pfl-report-project-');
     const home = await tempDir('pfl-report-home-');

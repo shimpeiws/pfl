@@ -179,6 +179,22 @@ nested under `data`.
 }
 ```
 
+With `--explain`, `data` additionally carries `explanation` (#169, additive):
+
+```text
+explanation: {
+  causes: {
+    elements: [{ id, path?, kind, status, reason? }],
+    diagnostics: [{ severity, code, message }]
+  },
+  diagnostics: [{ severity, code, message }]
+}
+```
+
+`causes` holds the elements (`unreadable`/`unsupported`/`skipped`) and the
+warning/error diagnostics that made the snapshot `partial`; `diagnostics` is
+the stored observed diagnostics in full, including `info`.
+
 ### `list`
 
 ```text
@@ -217,11 +233,22 @@ under `--runtime` (#180, additive). `report` and `diff` already carry it.
 ### `snapshots`
 
 ```text
-{ project, runs: [{ observedId, resolvedId, interpretationId, capturedAt, runtime, completeness }] }
+{
+  project,
+  runs: [{
+    observedId, resolvedId, interpretationId, capturedAt, runtime, completeness,
+    partialCauses?: {
+      elements: { skipped, unreadable, unsupported },
+      diagnostics: { warning, error }
+    }
+  }]
+}
 ```
 
 `runs` is newest first. `interpretationId` is `null` when the run has no stored
-interpretation (a pre-v1.0 run, or an interrupted `inspect`).
+interpretation (a pre-v1.0 run, or an interrupted `inspect`). `partialCauses`
+is present only when `completeness` is `partial` and counts what made it so
+(#169, additive).
 
 ### `diff`
 
