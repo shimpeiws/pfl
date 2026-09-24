@@ -77,6 +77,19 @@ export const USER_PROJECTS_DIR = 'projects';
 /** Plugin directory, relative to the user config directory. */
 export const USER_PLUGINS_DIR = 'plugins';
 
+/**
+ * Display-path prefix of the plugin marketplace catalog area (#176). Files
+ * under it are cloned catalog repositories, not installed plugins — the runtime
+ * loads installed plugins from `plugins/cache/` — so they are never effective
+ * and never a competing definition for duplicate-name detection (#183).
+ */
+export const USER_MARKETPLACES_PREFIX = `~/.claude/${USER_PLUGINS_DIR}/marketplaces/`;
+
+/** True when a display path sits inside the marketplace catalog area (#176). */
+export function isMarketplaceCatalogPath(path: string | undefined): boolean {
+  return path !== undefined && path.startsWith(USER_MARKETPLACES_PREFIX);
+}
+
 /** Settings file names inside a config directory. */
 export const SETTINGS_FILES = ['settings.json', 'settings.local.json'] as const;
 

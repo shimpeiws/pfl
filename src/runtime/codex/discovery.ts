@@ -1,7 +1,11 @@
 import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { assembleObservedSnapshot } from '../../discovery/assemble.js';
-import { duplicateNameGroups } from '../../discovery/duplicate-names.js';
+import {
+  duplicateNameDiagnostics,
+  duplicateNameGroups,
+  type DuplicateCollision,
+} from '../../discovery/duplicate-names.js';
 import { frontmatterMetadata, readFrontmatter } from '../../discovery/frontmatter.js';
 import { filterToAllowlist } from '../../discovery/metadata.js';
 import { buildObservedElement } from '../../discovery/observed-element.js';
@@ -88,8 +92,11 @@ function catalogIdentity(element: ObservedElement): { kind: string; name: string
   return { kind, name: dot > 0 ? name.slice(0, dot) : name };
 }
 
+const PLUGIN_MULTI_PATH_NOTE = '; this may be one plugin installed at more than one path';
+
 /**
- * Emits one diagnostic per catalog name defined more than once. Codex resolves
+ * Reports catalog names defined more than once, aggregated into one diagnostic
+ * per kind with a bounded sample (#183). Codex resolves
  * duplicate skill names deterministically, so the diagnostic records the fact
  * without asserting a winner. Mixed plugin + non-plugin groups are split so
  * non-plugin collisions are still reported.
@@ -98,50 +105,40 @@ function detectDuplicateNames(
   elements: readonly ObservedElement[],
   diagnostics: Diagnostic[],
 ): void {
-  const groups = duplicateNameGroups(elements, catalogIdentity);
-  for (const { kind, name, entries, pluginOnly, hasPlugin } of groups) {
+  const collisions: DuplicateCollision[] = [];
+  for (const { kind, name, entries, pluginOnly, hasPlugin } of duplicateNameGroups(
+    elements,
+    catalogIdentity,
+  )) {
     // Mixed plugin + non-plugin: only suppress for skills (where plugin
     // namespacing is verified). Codex currently only has skills as a catalog
     // kind, so this guard is always true here.
     if (hasPlugin && !pluginOnly && kind === 'skills') {
       const nonPluginEntries = entries.filter((e) => e.origin !== 'plugin');
       const pluginEntries = entries.filter((e) => e.origin === 'plugin');
-
       if (nonPluginEntries.length > 1) {
-        const joined = nonPluginEntries.map((e) => e.path).join(', ');
-        diagnostics.push({
-          severity: 'warning',
-          code: 'duplicate-element-name',
-          message: `${kind} name "${name}" is defined more than once (${joined})`,
-          ...(nonPluginEntries[0] !== undefined ? { path: nonPluginEntries[0].path } : {}),
-        });
+        collisions.push({ kind, name, entries: nonPluginEntries, pluginOnly: false });
       }
       if (pluginEntries.length > 1) {
-        const joined = pluginEntries.map((e) => e.path).join(', ');
-        diagnostics.push({
-          severity: 'warning',
-          code: 'duplicate-element-name',
-          message: `plugin ${kind} name "${name}" is defined more than once (${joined}); this may be one plugin installed at more than one path`,
-          ...(pluginEntries[0] !== undefined ? { path: pluginEntries[0].path } : {}),
+        collisions.push({
+          kind,
+          name,
+          entries: pluginEntries,
+          pluginOnly: true,
+          note: PLUGIN_MULTI_PATH_NOTE,
         });
       }
       continue;
     }
-
-    const joined = entries.map((e) => e.path).join(', ');
-    diagnostics.push({
-      severity: 'warning',
-      code: 'duplicate-element-name',
-      ...(pluginOnly
-        ? {
-            message: `plugin ${kind} name "${name}" is defined more than once (${joined}); this may be one plugin installed at more than one path`,
-          }
-        : {
-            message: `${kind} name "${name}" is defined more than once (${joined})`,
-          }),
-      ...(entries[0] !== undefined ? { path: entries[0].path } : {}),
+    collisions.push({
+      kind,
+      name,
+      entries,
+      pluginOnly,
+      ...(pluginOnly ? { note: PLUGIN_MULTI_PATH_NOTE } : {}),
     });
   }
+  diagnostics.push(...duplicateNameDiagnostics(collisions));
 }
 
 export async function discoverCodex(

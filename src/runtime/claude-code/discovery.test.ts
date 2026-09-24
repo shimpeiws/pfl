@@ -1030,4 +1030,69 @@ describe('duplicate catalog names', () => {
     );
     expect(nonPluginDuplicate).toBeDefined();
   });
+
+  it('aggregates same-kind duplicates into one diagnostic with a bounded sample (#183)', async () => {
+    const base = await tempDir('pfl-claude-dup-agg-');
+    const root = join(base, 'project');
+    const home = join(base, 'home');
+
+    for (const name of ['alpha', 'beta', 'gamma', 'delta']) {
+      await mkdir(join(root, '.claude', 'skills', name), { recursive: true });
+      await mkdir(join(userConfigDir(home), 'skills', name), { recursive: true });
+      await writeFile(join(root, '.claude', 'skills', name, 'SKILL.md'), `# ${name}\n`);
+      await writeFile(join(userConfigDir(home), 'skills', name, 'SKILL.md'), `# ${name}\n`);
+    }
+
+    const snapshot = await collectClaudeCodeHarness(
+      { id: 'proj', displayName: 'owner/repo', root, remote: 'github.com/owner/repo' },
+      CONSENTED,
+      home,
+    );
+
+    const duplicates = snapshot.diagnostics.filter((d) => d.code === 'duplicate-element-name');
+    expect(duplicates).toHaveLength(1);
+    const message = duplicates[0]?.message ?? '';
+    expect(message).toContain('4 skills names are defined more than once');
+    expect(message).toContain('showing 3 of 4');
+    // Exactly three names are sampled; which three is a walk-order detail.
+    expect(message.split('; ')).toHaveLength(3);
+  });
+
+  it('does not treat marketplace catalog clones as competing definitions (#176, #183)', async () => {
+    const base = await tempDir('pfl-claude-dup-mkt-');
+    const root = join(base, 'project');
+    const home = join(base, 'home');
+    await mkdir(userConfigDir(home), { recursive: true });
+
+    for (const market of ['official', 'community']) {
+      await mkdir(
+        join(userConfigDir(home), 'plugins', 'marketplaces', market, 'plug', 'skills', 'x'),
+        { recursive: true },
+      );
+      await writeFile(
+        join(
+          userConfigDir(home),
+          'plugins',
+          'marketplaces',
+          market,
+          'plug',
+          'skills',
+          'x',
+          'SKILL.md',
+        ),
+        '# Catalog skill\n',
+      );
+    }
+
+    const snapshot = await collectClaudeCodeHarness(
+      { id: 'proj', displayName: 'owner/repo', root, remote: 'github.com/owner/repo' },
+      CONSENTED,
+      home,
+    );
+
+    const duplicate = snapshot.diagnostics.find(
+      (d) => d.code === 'duplicate-element-name' && d.message.includes('"x"'),
+    );
+    expect(duplicate).toBeUndefined();
+  });
 });

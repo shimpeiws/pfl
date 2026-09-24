@@ -9,7 +9,7 @@ import type { ResolutionAxes, ResolutionSemantics } from '../types.js';
 import { versionPosition } from '../version-compat.js';
 import { eventTarget } from '../scaffold.js';
 import { VERIFIED_CLAUDE_CODE_RANGE } from './detect.js';
-import { PROJECT_CONFIG_DIR, USER_PLUGINS_DIR } from './paths.js';
+import { PROJECT_CONFIG_DIR, isMarketplaceCatalogPath } from './paths.js';
 
 /**
  * Claude Code resolution rules, verified against Claude Code 2.1.272 (design doc
@@ -116,10 +116,8 @@ export async function resolveClaudeCode(
  */
 export const MARKETPLACE_CATALOG_REASON = 'marketplace catalog clone; the plugin is not installed';
 
-const MARKETPLACE_PATH_PREFIX = `~/.claude/${USER_PLUGINS_DIR}/marketplaces/`;
-
 function isMarketplaceCatalog(element: ObservedElement): boolean {
-  return element.source.path?.startsWith(MARKETPLACE_PATH_PREFIX) === true;
+  return isMarketplaceCatalogPath(element.source.path);
 }
 
 function axesFor(element: ObservedElement): ResolutionAxes {
