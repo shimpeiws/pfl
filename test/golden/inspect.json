@@ -49,13 +49,13 @@
     {
       "severity": "info",
       "code": "path-not-found",
-      "message": "search area does not exist: [redacted]",
+      "message": "search area does not exist: projects/FIXTURE_ENCODED_ROOT/memory",
       "path": "projects/FIXTURE_ENCODED_ROOT/memory"
     },
     {
       "severity": "warning",
       "code": "duplicate-element-name",
-      "message": "subagents name \"reviewer\" is defined more than once (.claude/agents/reviewer.md, ~/.[redacted].md)",
+      "message": "subagents name \"reviewer\" is defined more than once (.claude/agents/reviewer.md, ~/.claude/plugins/market/plug/agents/reviewer.md)",
       "path": ".claude/agents/reviewer.md"
     }
   ],

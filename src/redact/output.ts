@@ -19,8 +19,13 @@ import { ALL_REDACTION_RULES } from './rules.js';
  *   high-entropy heuristic is deliberately **not** applied to paths: it would
  *   redact legitimate long path segments (an encoded project directory is one
  *   long `-`-joined run).
- * - **Free text** (diagnostic messages, error strings) gets the full policy at
- *   the channel's level, high-entropy rule included.
+ * - **Diagnostic messages** are templates with interpolated paths, so they get
+ *   the same path treatment: the export-tier high-entropy rule would destroy
+ *   the embedded path (its character class includes `/`), which is the bug
+ *   from #179. The known secret shapes still apply.
+ * - **Free text** (error strings, logger output) gets the full policy at the
+ *   channel's level, high-entropy rule included: unlike a diagnostic template
+ *   it may carry arbitrary text, which is where the catch-all earns its keep.
  */
 
 export interface RedactionContext {
@@ -86,7 +91,11 @@ export function redactFreeText(
   return redactHomePath(applyRedactionRules(value, ALL_REDACTION_RULES, level), ctx.home);
 }
 
-/** Redacts a diagnostic's message and optional path. */
+/**
+ * Redacts a diagnostic's message and optional path. The message uses
+ * PATH_RULES, whose rules all apply from 'display' up, so `level` is inert
+ * there — the same parity `redactPath` gives the sibling `path` field.
+ */
 export function redactDiagnostic(
   diagnostic: Diagnostic,
   level: RedactionLevel,
@@ -94,7 +103,7 @@ export function redactDiagnostic(
 ): Diagnostic {
   return {
     ...diagnostic,
-    message: redactFreeText(diagnostic.message, level, ctx),
+    message: redactHomePath(applyRedactionRules(diagnostic.message, PATH_RULES, level), ctx.home),
     ...(diagnostic.path !== undefined ? { path: redactPath(diagnostic.path, ctx) } : {}),
   };
 }

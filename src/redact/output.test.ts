@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { redactFreeText, redactHomePath, redactPath, redactingLogger } from './output.js';
+import {
+  redactDiagnostic,
+  redactFreeText,
+  redactHomePath,
+  redactPath,
+  redactingLogger,
+} from './output.js';
 
 const HOME = '/Users/alice';
 
@@ -48,6 +54,48 @@ describe('redactFreeText', () => {
     expect(redactFreeText('could not read file', 'persistence', { home: HOME })).toBe(
       'could not read file',
     );
+  });
+});
+
+describe('redactDiagnostic', () => {
+  it('keeps an embedded long path in the message intact (#179)', () => {
+    // The high-entropy rule's character class includes '/', so an assembled
+    // message like this used to lose the path at export/persistence level.
+    const longPath = `~/.claude/plugins/cache/pstack-claude/pstack/0.9.15/skills/architect/SKILL.md`;
+    const diagnostic = {
+      severity: 'warning' as const,
+      code: 'duplicate-element-name',
+      message: `skills name "architect" is defined more than once (${longPath}, ~/.claude/skills/architect/SKILL.md)`,
+    };
+
+    const redacted = redactDiagnostic(diagnostic, 'persistence', { home: HOME });
+
+    expect(redacted.message).toContain(longPath);
+    expect(redacted.message).not.toContain('[redacted]');
+  });
+
+  it('still strips the home prefix from a path embedded in the message', () => {
+    const diagnostic = {
+      severity: 'info' as const,
+      code: 'path-not-found',
+      message: `could not read ${HOME}/.letta/worktrees/opencode-scope-model/file.md`,
+    };
+
+    const redacted = redactDiagnostic(diagnostic, 'persistence', { home: HOME });
+
+    expect(redacted.message).toBe('could not read ~/.letta/worktrees/opencode-scope-model/file.md');
+  });
+
+  it('still masks a known token shape inside the message', () => {
+    const diagnostic = {
+      severity: 'warning' as const,
+      code: 'example',
+      message: `could not read key sk-ant-abcdefghijklmnop from file`,
+    };
+
+    const redacted = redactDiagnostic(diagnostic, 'export', { home: HOME });
+
+    expect(redacted.message).not.toContain('sk-ant-abcdefghijklmnop');
   });
 });
 

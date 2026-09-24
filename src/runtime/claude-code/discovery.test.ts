@@ -843,7 +843,7 @@ describe('duplicate catalog names', () => {
       (d) =>
         d.code === 'duplicate-element-name' &&
         d.message.includes('"foo"') &&
-        !d.message.includes('plugin'),
+        !d.message.startsWith('plugin '),
     );
     expect(nonPluginDuplicate).toBeDefined();
     expect(nonPluginDuplicate?.message).toContain('.claude/skills/foo/SKILL.md');
@@ -985,7 +985,7 @@ describe('duplicate catalog names', () => {
       (d) =>
         d.code === 'duplicate-element-name' &&
         d.message.includes('"reviewer"') &&
-        !d.message.includes('plugin'),
+        !d.message.startsWith('plugin '),
     );
     expect(nonPluginDuplicate).toBeDefined();
   });
