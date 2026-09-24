@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -8,6 +8,8 @@ import type { ObservedSnapshot } from '../core/observed.js';
 import type { ResolvedSnapshot } from '../core/resolved.js';
 import { resolveProjectContext } from '../discovery/project-identity.js';
 import {
+  observationsDir,
+  snapshotsDir,
   writeLatestPointer,
   writeObservedSnapshot,
   writeResolvedSnapshot,
@@ -119,5 +121,49 @@ describe('loadInterpretation --runtime', () => {
       exitCode: EXIT_CODES.CONFIG_ERROR,
       message: expect.stringContaining('claude-code'),
     });
+  });
+
+  it('fails rather than serving an older run when the newest resolved artifact is unreadable', async () => {
+    const projectRoot = await tempDir('pfl-read-project-');
+    const home = await tempDir('pfl-read-home-');
+    await seedRun(projectRoot, home, 'codex', '2026-09-20T00:00:00.000Z', 'res_codex_old');
+    await seedRun(projectRoot, home, 'codex', '2026-09-21T00:00:00.000Z', 'res_codex_new');
+    // Corrupt the newest resolved artifact: the scan records it and the run
+    // keeps a null resolvedId.
+    const projectId = (await resolveProjectContext(projectRoot)).id;
+    await writeFile(join(snapshotsDir(projectId, home), 'res_codex_new.json'), 'not json');
+
+    await expect(loadInterpretation(projectRoot, undefined, home, 'codex')).rejects.toMatchObject({
+      exitCode: EXIT_CODES.CONFIG_ERROR,
+      message: expect.stringContaining('codex'),
+    });
+  });
+
+  it('exits as a store failure when the observations directory cannot be read', async () => {
+    const projectRoot = await tempDir('pfl-read-project-');
+    const home = await tempDir('pfl-read-home-');
+    await seedRun(projectRoot, home, 'codex', '2026-09-20T00:00:00.000Z', 'res_codex');
+    // A regular file in place of the directory makes the scan fail rather
+    // than return an empty list, so "no snapshots" must not be the answer.
+    const dir = observationsDir((await resolveProjectContext(projectRoot)).id, home);
+    await rm(dir, { recursive: true });
+    await writeFile(dir, 'not a directory');
+
+    await expect(loadInterpretation(projectRoot, undefined, home, 'codex')).rejects.toMatchObject({
+      exitCode: EXIT_CODES.SNAPSHOT_STORE_FAILED,
+    });
+  });
+
+  it('breaks a captured-at tie between same-runtime runs with the latest pointer', async () => {
+    const projectRoot = await tempDir('pfl-read-project-');
+    const home = await tempDir('pfl-read-home-');
+    const at = '2026-09-21T00:00:00.000Z';
+    await seedRun(projectRoot, home, 'codex', at, 'res_codex_first');
+    // Seeding last moves the `latest` pointer to the second run, which is the
+    // answer a scoped read must give regardless of directory order.
+    await seedRun(projectRoot, home, 'codex', at, 'res_codex_second');
+
+    const run = await loadInterpretation(projectRoot, undefined, home, 'codex');
+    expect(run.resolved.snapshotId).toBe('res_codex_second');
   });
 });

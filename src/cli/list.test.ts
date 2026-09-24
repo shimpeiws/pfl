@@ -189,16 +189,16 @@ describe('runList', () => {
 
     const single = fakeLogger();
     await runList(projectRoot, { home, kind: ['skills'] }, single.logger);
-    expect(single.lines).toHaveLength(1);
-    expect(single.lines[0]).toContain(ids.skills ?? '');
+    expect(single.lines).toHaveLength(3);
+    expect(single.lines.at(-1)).toContain(ids.skills ?? '');
 
     const multiple = fakeLogger();
     await runList(projectRoot, { home, kind: ['skills', 'memory'] }, multiple.logger);
-    expect(multiple.lines).toHaveLength(2);
+    expect(multiple.lines).toHaveLength(4);
 
     const none = fakeLogger();
     await runList(projectRoot, { home, kind: ['subagents', 'commands'] }, none.logger);
-    expect(none.lines).toEqual(['No elements match.']);
+    expect(none.lines.at(-1)).toBe('No elements match.');
   });
 
   it('bounds output with --limit and keeps the matched total', async () => {
@@ -214,8 +214,9 @@ describe('runList', () => {
     expect(outcome.data.count).toBe(1);
     expect(outcome.data.total).toBe(2);
     expect(outcome.data.elements).toHaveLength(1);
-    expect(lines).toHaveLength(2);
-    expect(lines[1]).toContain('1 more element(s) match');
+    // Runtime header, one row, then the truncation note.
+    expect(lines).toHaveLength(4);
+    expect(lines.at(-1)).toContain('1 more element(s) match');
   });
 
   it('limits JSON elements after the id sort, not before it', async () => {
@@ -237,10 +238,11 @@ describe('runList', () => {
     expect(outcome.data.elements.map((element) => element.id)).toEqual([smallest]);
     expect(outcome.data.total).toBe(3);
 
-    // The human listing deliberately keeps discovery order.
+    // The human listing deliberately keeps discovery order; rows follow the
+    // Runtime header.
     const human = fakeLogger();
     await runList(projectRoot, { home, limit: 1 }, human.logger);
-    expect(human.lines[0]).toContain(pairs[0]?.observed.id ?? '');
+    expect(human.lines[2]).toContain(pairs[0]?.observed.id ?? '');
     expect(lines).toHaveLength(0);
   });
 
