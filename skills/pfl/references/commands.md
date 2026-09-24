@@ -24,7 +24,9 @@ pfl report [--snapshot <id>] [--json]
 ```
 
 Interprets the latest (or named) snapshot. Summary: effective element count,
-shadowed count, conditional count, opaque layers, semantic facets.
+shadowed count, conditional count, opaque layers, semantic facets. Each finding
+carries `elements` — the redacted source path and kind of every cited element —
+so `--json` readers do not need a `show` call per id.
 
 ## `list`
 

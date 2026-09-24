@@ -168,6 +168,39 @@ describe('runReport', () => {
     expect(outcome.completeness).toBe('partial');
   });
 
+  it('carries source path and kind for cited elements on each finding (#181)', async () => {
+    const projectRoot = await tempDir('pfl-report-project-');
+    const home = await tempDir('pfl-report-home-');
+    const shadowed = pair('permissions', '.claude/settings.json#permissions', 'shadowed');
+    const userShadowed = pair('permissions', '~/.claude/settings.json#permissions', 'shadowed');
+    await seedSnapshot(projectRoot, home, [
+      pair('instructions', 'CLAUDE.md'),
+      shadowed,
+      userShadowed,
+    ]);
+    const { logger } = fakeLogger();
+
+    const outcome = await runReport(projectRoot, { home, json: true }, logger);
+
+    const finding = outcome.data.findings.find(
+      (entry: { rule: string }) => entry.rule === 'shadowed-element',
+    );
+    const expected = [
+      {
+        id: shadowed.observed.id,
+        path: '.claude/settings.json#permissions',
+        kind: 'permissions',
+      },
+      {
+        id: userShadowed.observed.id,
+        path: '~/.claude/settings.json#permissions',
+        kind: 'permissions',
+      },
+    ].sort((a, b) => (a.id < b.id ? -1 : 1));
+    expect(finding?.elementIds).toEqual(expected.map((entry) => entry.id));
+    expect(finding?.elements).toEqual(expected);
+  });
+
   it('fails clearly on an unknown snapshot id', async () => {
     const projectRoot = await tempDir('pfl-report-project-');
     const home = await tempDir('pfl-report-home-');
