@@ -156,7 +156,10 @@ describe('runList', () => {
 
     await runList(projectRoot, { home }, logger);
 
-    expect(lines).toHaveLength(4);
+    // Header names the runtime and snapshot so a consumer can assert which
+    // run answered (#180); the four element rows follow it.
+    expect(lines[0]).toContain('Runtime: claude-code');
+    expect(lines).toHaveLength(6);
     // Skill row shows the derived label (parent dir), not the raw SKILL.md path.
     const skillLine = lines.find((l) => l.includes(ids.skills ?? '')) ?? '';
     expect(skillLine).toMatch(/^\.claude\/skills\/a\s+el_\w+\s+skills\s/);
@@ -172,13 +175,13 @@ describe('runList', () => {
 
     const byStatus = fakeLogger();
     await runList(projectRoot, { home, status: 'shadowed' }, byStatus.logger);
-    expect(byStatus.lines).toHaveLength(1);
-    expect(byStatus.lines[0]).toContain(ids.permissions ?? '');
+    expect(byStatus.lines).toHaveLength(3);
+    expect(byStatus.lines.at(-1)).toContain(ids.permissions ?? '');
 
     const byOrigin = fakeLogger();
     await runList(projectRoot, { home, origin: 'user' }, byOrigin.logger);
-    expect(byOrigin.lines).toHaveLength(1);
-    expect(byOrigin.lines[0]).toContain(ids.memory ?? '');
+    expect(byOrigin.lines).toHaveLength(3);
+    expect(byOrigin.lines.at(-1)).toContain(ids.memory ?? '');
   });
 
   it('filters by kind, and ORs repeated kinds', async () => {
@@ -269,11 +272,11 @@ describe('runList', () => {
 
     const byResolved = fakeLogger();
     await runList(projectRoot, { home, snapshot: 'res_test' }, byResolved.logger);
-    expect(byResolved.lines).toHaveLength(1);
+    expect(byResolved.lines).toHaveLength(3);
 
     const byObserved = fakeLogger();
     await runList(projectRoot, { home, snapshot: observedSnapshotId }, byObserved.logger);
-    expect(byObserved.lines).toHaveLength(1);
+    expect(byObserved.lines).toHaveLength(3);
   });
 
   it('emits JSON with elements ordered by id', async () => {
@@ -282,6 +285,7 @@ describe('runList', () => {
 
     const outcome = await runList(projectRoot, { home, json: true }, logger);
 
+    expect(outcome.data.runtime).toBe('claude-code');
     expect(outcome.data.count).toBe(4);
     expect(outcome.data.elements[0]).toHaveProperty('facets');
     const ids = outcome.data.elements.map((element) => element.id);
@@ -303,8 +307,8 @@ describe('runList', () => {
 
     const { lines, logger: humanLogger } = fakeLogger();
     await runList(projectRoot, { home }, humanLogger);
-    expect(lines).toHaveLength(1);
-    expect(lines[0]).toMatch(/^\(none\)\s/);
+    expect(lines).toHaveLength(3);
+    expect(lines.at(-1)).toMatch(/^\(none\)\s/);
 
     const { logger: jsonLogger } = fakeLogger();
     const outcome = await runList(projectRoot, { home, json: true }, jsonLogger);

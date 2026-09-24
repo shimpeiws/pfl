@@ -12,12 +12,18 @@ import { detectTreeStyle, renderGraph } from './tree.js';
 
 export interface GraphOptions {
   snapshot?: string;
+  /** Scope `latest` to this runtime's newest run (#180). */
+  runtime?: string;
   json?: boolean;
   /** Injected for tests; defaults to the current user's home. */
   home?: string;
 }
 
-export type GraphData = GraphModel & { interpretation: InterpretationProvenance };
+export type GraphData = GraphModel & {
+  /** The runtime the answered snapshot belongs to (#180). */
+  runtime: string;
+  interpretation: InterpretationProvenance;
+};
 
 /**
  * `pfl graph [--snapshot <id>]` (design doc §14, §27): render provenance and
@@ -32,7 +38,7 @@ export async function runGraph(
 ): Promise<CommandOutcome<GraphData>> {
   const home = options.home ?? homedir();
   const out = redactingLogger(logger, options.json ? 'export' : 'display', { home });
-  const run = await loadInterpretation(cwd, options.snapshot, home);
+  const run = await loadInterpretation(cwd, options.snapshot, home, options.runtime);
   const { observed, resolved, interpretation, diagnostics } = run;
   for (const diagnostic of diagnostics) {
     out.warn(diagnostic.message, { code: diagnostic.code, path: diagnostic.path ?? undefined });
@@ -48,17 +54,20 @@ export async function runGraph(
       .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
       .map((node) => ({ ...node, path: redactPath(node.path, { home }) }));
     return {
-      data: { ...model, nodes, interpretation: provenance },
+      data: { ...model, nodes, runtime: observed.runtime.id, interpretation: provenance },
       diagnostics,
       completeness: observed.completeness,
     };
   }
 
+  // The runtime stays prominent so an agent can assert which snapshot answered.
+  out.info(`Runtime: ${observed.runtime.id} (${resolved.snapshotId})`);
+  out.info('');
   for (const line of renderGraph(model, detectTreeStyle())) {
     out.info(line);
   }
   return {
-    data: { ...model, interpretation: provenance },
+    data: { ...model, runtime: observed.runtime.id, interpretation: provenance },
     diagnostics,
     completeness: observed.completeness,
   };

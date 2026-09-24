@@ -15,12 +15,16 @@ import {
 
 export interface ShowOptions {
   snapshot?: string;
+  /** Scope `latest` to this runtime's newest run (#180). */
+  runtime?: string;
   json?: boolean;
   /** Injected for tests; defaults to the current user's home. */
   home?: string;
 }
 
 export interface ShowData {
+  /** The runtime the answered snapshot belongs to (#180). */
+  runtime: string;
   observed: ObservedElement;
   resolved: ResolvedElement | null;
   interpretation: Interpretation['elements'][number] | null;
@@ -48,7 +52,7 @@ export async function runShow(
 ): Promise<CommandOutcome<ShowData>> {
   const home = options.home ?? homedir();
   const out = redactingLogger(logger, options.json ? 'export' : 'display', { home });
-  const run = await loadInterpretation(cwd, options.snapshot, home);
+  const run = await loadInterpretation(cwd, options.snapshot, home, options.runtime);
   const { observed, resolved, interpretation, diagnostics } = run;
   for (const diagnostic of diagnostics) {
     out.warn(diagnostic.message, { code: diagnostic.code, path: diagnostic.path ?? undefined });
@@ -70,6 +74,7 @@ export async function runShow(
   );
 
   const data: ShowData = {
+    runtime: observed.runtime.id,
     // Re-assert the export redaction at the boundary: the element comes from a
     // stored artifact, and an artifact that predates redaction (or was tampered
     // with) must not print a raw path through `--json`.
@@ -85,6 +90,7 @@ export async function runShow(
   }
 
   out.info(`Element ${elementId}`);
+  out.info(`  runtime         ${observed.runtime.id}`);
   out.info(`  kind            ${observedElement.native.kind}`);
   out.info(
     `  origin          ${observedElement.native.origin}${

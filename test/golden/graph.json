@@ -28,6 +28,7 @@
       }
     ],
     "edges": [],
+    "runtime": "claude-code",
     "interpretation": {
       "classifierVersion": "5",
       "origin": "stored"

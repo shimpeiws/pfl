@@ -60,6 +60,7 @@ export async function loadInterpretation(
   cwd: string,
   requestedId: string | undefined,
   home: string = homedir(),
+  runtime?: string,
 ): Promise<InterpretedRun> {
   const context = await resolveProjectContext(cwd, {
     allowExternalGit: await hasAnyUserConsent(home),
@@ -67,7 +68,12 @@ export async function loadInterpretation(
   // A read does not mutate the store; it computes the same id an `inspect`
   // would persist (roadmap #86).
   const storedProject = await resolveStoredProjectId(context, home, { write: false });
-  const { resolvedId, diagnostics } = await resolveResolvedId(storedProject.id, requestedId, home);
+  const { resolvedId, diagnostics } = await resolveResolvedId(
+    storedProject.id,
+    requestedId,
+    home,
+    runtime,
+  );
   diagnostics.unshift(...storedProject.diagnostics);
   const resolved = await readResolvedSnapshot(storedProject.id, resolvedId, home);
   const observed = await readObservedSnapshot(storedProject.id, resolved.observedSnapshotId, home);
@@ -115,8 +121,37 @@ async function resolveResolvedId(
   projectId: string,
   requestedId: string | undefined,
   home: string,
+  runtime?: string,
 ): Promise<{ resolvedId: string; diagnostics: Diagnostic[] }> {
   if (requestedId === undefined || requestedId === 'latest') {
+    if (runtime !== undefined) {
+      // The `latest` pointer names whichever runtime was inspected last, so a
+      // runtime-scoped read scans the run list for the newest matching
+      // resolved run instead (#180).
+      const { runs, diagnostics } = await listRuns(projectId, home);
+      const context = diagnostics.length > 0 ? { diagnostics } : {};
+      const scoped = runs.filter((entry) => entry.runtime.id === runtime);
+      // `runs` is newest first: the first entry with a readable resolved
+      // snapshot is the runtime's latest usable run.
+      const resolvedId = scoped.map((entry) => entry.resolvedId).find((id) => id !== null);
+      if (resolvedId === undefined) {
+        // Runs exist but every resolved artifact failed to read: say so
+        // rather than claiming nothing is stored.
+        if (scoped.length > 0) {
+          throw new PflError(
+            `could not read a resolved snapshot for runtime ${runtime}`,
+            EXIT_CODES.CONFIG_ERROR,
+            context,
+          );
+        }
+        throw new PflError(
+          `no snapshots stored for runtime ${runtime}; run \`pfl inspect --runtime ${runtime}\` first`,
+          EXIT_CODES.CONFIG_ERROR,
+          context,
+        );
+      }
+      return { resolvedId, diagnostics };
+    }
     const pointer = await readLatestPointer(projectId, home);
     if (pointer === null) {
       throw new PflError(
@@ -152,6 +187,13 @@ async function resolveResolvedId(
       );
     }
     throw new PflError(`unknown snapshot: ${requestedId}`, EXIT_CODES.CONFIG_ERROR, context);
+  }
+  if (runtime !== undefined && run.runtime.id !== runtime) {
+    throw new PflError(
+      `snapshot ${requestedId} is a ${run.runtime.id} snapshot, not ${runtime}`,
+      EXIT_CODES.CONFIG_ERROR,
+      context,
+    );
   }
   if (run.resolvedId === null) {
     // A resolved snapshot that failed to read cannot be attributed to one
