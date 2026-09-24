@@ -47,11 +47,14 @@ export function renderGraph(model: GraphModel, style: TreeStyle = UTF8_STYLE): s
 
   const effective = model.nodes.filter((node) => node.status === 'effective');
   lines.push('effective');
+  // Each effective node appears exactly once (#161): grouped under its primary
+  // facet (the first the classifier assigned), with any further facets listed
+  // inline instead of repeating the line once per facet.
   const groups: TreeNode[] = HARNESS_FACETS.map((facet) => ({
     label: facet,
     children: effective
-      .filter((node) => node.facets.includes(facet))
-      .map((node) => ({ label: nodeLabel(node) })),
+      .filter((node) => node.facets[0] === facet)
+      .map((node) => ({ label: effectiveLabel(node) })),
   })).filter((group) => (group.children?.length ?? 0) > 0);
   const unclassified = effective.filter((node) => node.facets.length === 0);
   if (unclassified.length > 0) {
@@ -63,6 +66,12 @@ export function renderGraph(model: GraphModel, style: TreeStyle = UTF8_STYLE): s
   lines.push(...(groups.length === 0 ? ['  (none)'] : renderTree(groups, style)));
 
   return trimTrailingBlank(lines);
+}
+
+function effectiveLabel(node: GraphNode): string {
+  const label = nodeLabel(node);
+  const extra = node.facets.slice(1);
+  return extra.length === 0 ? label : `${label}  [${node.facets.join(', ')}]`;
 }
 
 function nodeToTree(

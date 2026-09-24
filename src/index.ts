@@ -255,17 +255,34 @@ cli
   .command('graph', 'Render provenance and resolution for a snapshot')
   .option('--snapshot <id>', 'Snapshot id (default: latest)')
   .option('--runtime <id>', `Scope 'latest' to a runtime: ${RUNTIME_CHOICES}`)
+  .option('--origin <origin>', 'Filter by native origin (repeatable)')
+  .option('--facet <facet>', 'Filter by semantic facet (repeatable)')
+  .option('--kind <kind>', 'Filter by element kind (repeatable)')
+  .option('--status <status>', 'Filter by resolved status (repeatable)')
   .option('--json', 'Output as JSON')
   .action(
     withErrorHandling(
       'graph',
-      async (flags: { snapshot?: string; runtime?: string } & CommonFlags) => {
+      async (
+        flags: {
+          snapshot?: string;
+          runtime?: string;
+          origin?: string | string[];
+          facet?: string | string[];
+          kind?: string | string[];
+          status?: string | string[];
+        } & CommonFlags,
+      ) => {
         const runtime = parseRuntimeFlag(flags.runtime);
         return runGraph(
           process.cwd(),
           {
             ...(flags.snapshot !== undefined ? { snapshot: flags.snapshot } : {}),
             ...(runtime !== undefined ? { runtime } : {}),
+            ...(flags.origin !== undefined ? { origin: [flags.origin].flat() } : {}),
+            ...(flags.facet !== undefined ? { facet: [flags.facet].flat() } : {}),
+            ...(flags.kind !== undefined ? { kind: [flags.kind].flat() } : {}),
+            ...(flags.status !== undefined ? { status: [flags.status].flat() } : {}),
             json: flags.json ?? false,
           },
           loggerForFlags(flags),

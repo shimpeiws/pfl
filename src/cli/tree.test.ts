@@ -54,4 +54,35 @@ describe('renderGraph', () => {
 
     expect(lines.filter((line) => line.includes('(opaque)'))).toHaveLength(2);
   });
+
+  it('renders a multi-facet element once, with its facets inline (#161)', () => {
+    const multi: GraphModel = {
+      observedSnapshotId: 'obs_x',
+      resolvedSnapshotId: 'res_x',
+      nodes: [
+        {
+          id: 'el_multi',
+          path: '~/.claude/skills/x/SKILL.md',
+          kind: 'skills',
+          origin: 'user',
+          scope: 'user',
+          status: 'effective',
+          inspectability: 'observable',
+          facets: ['knowledge', 'actions'],
+        },
+      ],
+      edges: [],
+    };
+
+    const output = renderGraph(multi).join('\n');
+
+    const appearances = output
+      .split('\n')
+      .filter((line) => line.includes('~/.claude/skills/x/SKILL.md'));
+    expect(appearances).toHaveLength(2); // once in `user` sources, once in `effective`
+    expect(output).toContain('[knowledge, actions]');
+    // It groups under its primary facet only — no `actions` group header.
+    const lines = output.split('\n');
+    expect(lines.some((line) => /─ actions$/.test(line))).toBe(false);
+  });
 });
