@@ -20,13 +20,16 @@ Exits 5 when the user scope is required and not granted.
 ## `report`
 
 ```sh
-pfl report [--snapshot <id>] [--runtime <id>] [--json]
+pfl report [--snapshot <id>] [--runtime <id>] [--explain] [--json]
 ```
 
 Interprets the latest (or named) snapshot. Summary: effective element count,
 shadowed count, conditional count, opaque layers, semantic facets. Each finding
 carries `elements` — the redacted source path and kind of every cited element —
-so `--json` readers do not need a `show` call per id.
+so `--json` readers do not need a `show` call per id. When the snapshot is
+`partial`, the report lists the elements (`status` + `reason`) and
+warning/error diagnostics that made it so; `--explain` additionally dumps the
+stored observed diagnostics in full (in `--json`, as `data.explanation`).
 
 ## `list`
 
@@ -97,7 +100,9 @@ snapshot answered.
 pfl snapshots [--json]
 ```
 
-Lists stored snapshots for the current project, newest first.
+Lists stored snapshots for the current project, newest first. A `partial` run
+carries its causes — `partialCauses` in `--json`, a parenthesized summary in
+human output — so the listing answers why without opening the snapshot.
 
 ## `gc`
 

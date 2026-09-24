@@ -65,5 +65,18 @@ export async function runSnapshots(
 function formatRun(run: StoredRunSummary): string {
   const version = run.runtime.version ?? 'unknown';
   const resolved = run.resolvedId ?? 'unresolved';
-  return `${run.observedId}  ${resolved}  ${run.capturedAt}  ${run.runtime.id}@${version}  ${run.completeness}`;
+  const causes = formatPartialCauses(run);
+  return `${run.observedId}  ${resolved}  ${run.capturedAt}  ${run.runtime.id}@${version}  ${run.completeness}${causes}`;
+}
+
+function formatPartialCauses(run: StoredRunSummary): string {
+  if (run.partialCauses === undefined) return '';
+  const parts: string[] = [];
+  for (const [status, count] of Object.entries(run.partialCauses.elements)) {
+    if (count > 0) parts.push(`${count} ${status}`);
+  }
+  for (const [severity, count] of Object.entries(run.partialCauses.diagnostics)) {
+    if (count > 0) parts.push(`${count} ${severity} diagnostic(s)`);
+  }
+  return parts.length > 0 ? ` (${parts.join(', ')})` : '';
 }

@@ -149,6 +149,32 @@ describe('pfl CLI end to end', () => {
     expect(result.stderr).toContain('instructions');
   });
 
+  it('explains why a snapshot is partial in report and snapshots (#169)', async () => {
+    const m = await fixture();
+    await runCli(m, ['inspect', '--runtime', 'claude-code']);
+
+    // The fixture's project-escaping symlink is recorded `skipped`, so the run
+    // is partial — and now the commands say why instead of just "partial".
+    const snapshots = await runCli(m, ['snapshots']);
+    expect(snapshots.stdout).toContain('partial (');
+    expect(snapshots.stdout).toContain('skipped');
+
+    const report = await runCli(m, ['report']);
+    expect(report.stdout).toContain('scan completeness: partial');
+    expect(report.stdout).toContain('symlink-not-followed');
+    expect(report.stdout).toContain('--explain');
+
+    const explained = await runCli(m, ['report', '--explain', '--json']);
+    const data = JSON.parse(explained.stdout).data;
+    expect(
+      data.explanation.causes.elements.some(
+        (entry: { status: string; reason: string }) =>
+          entry.status === 'skipped' && entry.reason === 'symlink-not-followed',
+      ),
+    ).toBe(true);
+    expect(data.explanation.diagnostics).toBeInstanceOf(Array);
+  });
+
   it('filters list by --kind (repeatable) and bounds it with --limit', async () => {
     const m = await fixture();
     await runCli(m, ['inspect', '--runtime', 'claude-code']);
