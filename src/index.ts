@@ -259,6 +259,7 @@ cli
   .option('--facet <facet>', 'Filter by semantic facet (repeatable)')
   .option('--kind <kind>', 'Filter by element kind (repeatable)')
   .option('--status <status>', 'Filter by resolved status (repeatable)')
+  .option('--scope <scope>', 'Filter by compat scope, e.g. claude-compat (repeatable)')
   .option('--json', 'Output as JSON')
   .action(
     withErrorHandling(
@@ -271,6 +272,7 @@ cli
           facet?: string | string[];
           kind?: string | string[];
           status?: string | string[];
+          scope?: string | string[];
         } & CommonFlags,
       ) => {
         const runtime = parseRuntimeFlag(flags.runtime);
@@ -283,6 +285,7 @@ cli
             ...(flags.facet !== undefined ? { facet: [flags.facet].flat() } : {}),
             ...(flags.kind !== undefined ? { kind: [flags.kind].flat() } : {}),
             ...(flags.status !== undefined ? { status: [flags.status].flat() } : {}),
+            ...(flags.scope !== undefined ? { scope: [flags.scope].flat() } : {}),
             json: flags.json ?? false,
           },
           loggerForFlags(flags),

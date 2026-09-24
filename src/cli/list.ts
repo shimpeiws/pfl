@@ -1,6 +1,6 @@
 import { homedir } from 'node:os';
 import type { HarnessFacet } from '../core/facets.js';
-import type { NativeOrigin } from '../core/observed.js';
+import { isCompatScope, type NativeOrigin } from '../core/observed.js';
 import type { ResolvedStatus } from '../core/resolved.js';
 import { redactPath, redactingLogger } from '../redact/output.js';
 import type { Logger } from '../util/logger.js';
@@ -33,6 +33,8 @@ interface ListRow {
   path?: string;
   kind: string;
   origin: NativeOrigin;
+  /** Compat scope such as `claude-compat` (#165); null for the runtime's own reads. */
+  scope: string | null;
   status: ResolvedStatus;
   facets: HarnessFacet[];
 }
@@ -85,6 +87,7 @@ export async function runList(
         ...(path !== undefined && { path }),
         kind: element.native.kind,
         origin: element.native.origin,
+        scope: element.native.scope,
         status: resolvedById.get(element.id)?.status ?? ('unknown' as ResolvedStatus),
         facets: interpretationById.get(element.id)?.facets ?? [],
       };
@@ -124,7 +127,7 @@ export async function runList(
   }
   for (const row of limited) {
     out.info(
-      `${displayPath(row.path, row.kind)}  ${row.id}  ${row.kind}  ${row.origin}  ${row.status}  ${row.facets.join(',')}`,
+      `${displayPath(row.path, row.kind)}  ${row.id}  ${row.kind}  ${row.origin}${isCompatScope(row.scope) ? ` (${row.scope})` : ''}  ${row.status}  ${row.facets.join(',')}`,
     );
   }
   if (limited.length < rows.length) {

@@ -32,6 +32,7 @@ export function pair(
   options: {
     origin?: NativeOrigin;
     status?: ResolvedStatus;
+    scope?: string;
     inspectability?: ObservedElement['inspectability'];
   } = {},
 ): Pair {
@@ -40,7 +41,7 @@ export function pair(
   return {
     observed: {
       id,
-      native: { kind, origin, scope: origin },
+      native: { kind, origin, scope: options.scope ?? origin },
       source: { path },
       inspectability: options.inspectability ?? 'observable',
       metadata: {},
@@ -354,5 +355,23 @@ describe('runList', () => {
     await expect(runList(projectRoot, { home, status: 'zombie' }, logger)).rejects.toMatchObject({
       exitCode: EXIT_CODES.CONFIG_ERROR,
     });
+  });
+
+  it('marks compat-scope rows in the human listing (#165)', async () => {
+    const projectRoot = await tempDir('pfl-list-project-');
+    const home = await tempDir('pfl-list-home-');
+    await seed(projectRoot, home, [
+      pair('instructions', 'CLAUDE.md'),
+      pair('skills', '~/.claude/skills/x/SKILL.md', { scope: 'claude-compat' }),
+    ]);
+    const { lines, logger } = fakeLogger();
+
+    const outcome = await runList(projectRoot, { home }, logger);
+
+    const output = lines.join('\n');
+    expect(output).toContain('user (claude-compat)');
+    // Plain consent scopes render bare — `user (user)` would be noise.
+    expect(output).not.toContain('(user)');
+    expect(outcome.data.elements.find((e) => e.scope === 'claude-compat')).toBeDefined();
   });
 });

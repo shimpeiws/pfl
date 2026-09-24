@@ -26,7 +26,10 @@ pfl report [--snapshot <id>] [--runtime <id>] [--json]
 Interprets the latest (or named) snapshot. Summary: effective element count,
 shadowed count, conditional count, opaque layers, semantic facets. Each finding
 carries `elements` — the redacted source path and kind of every cited element —
-so `--json` readers do not need a `show` call per id.
+so `--json` readers do not need a `show` call per id. Elements read through a
+cross-runtime compatibility surface (`*-compat` scopes such as `claude-compat`)
+are counted in Notable so the cross-runtime origin is stated rather than
+inferred from paths (#165).
 
 ## `list`
 
@@ -51,7 +54,8 @@ Valid statuses: `effective`, `shadowed`, `conditional`, `unresolved`, `unknown`.
 many elements matched before truncation.
 
 Elements are ordered by `id`. Each row shows the source path (or `(none)` when
-none), id, kind, origin, status, and facets.
+none), id, kind, origin, status, and facets. Compat-scope rows carry the scope
+after the origin — `user (claude-compat)` (#165).
 
 ## `show`
 
@@ -65,7 +69,7 @@ findings, and provenance.
 ## `graph`
 
 ```sh
-pfl graph [--snapshot <id>] [--runtime <id>] [--origin <o>] [--facet <f>] [--kind <k>] [--status <s>] [--json]
+pfl graph [--snapshot <id>] [--runtime <id>] [--origin <o>] [--facet <f>] [--kind <k>] [--status <s>] [--scope <c>] [--json]
 ```
 
 Renders the provenance graph (observed sources → resolved elements) and
@@ -73,7 +77,9 @@ resolution graph (inter-layer relations: accumulates, shadows, conditionally
 activates). Each effective element prints once under its primary facet, with
 any further facets inline (`path [knowledge, actions]`). The filters are
 repeatable, combine with AND, apply to `--json` too, and drop edges whose
-endpoints were filtered out.
+endpoints were filtered out. `--scope` filters by consent scope — e.g.
+`--scope claude-compat` shows only the cross-runtime compat reads (#165) —
+and compat nodes print their scope inline (`path (claude-compat)`).
 
 ## `diff`
 

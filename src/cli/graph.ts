@@ -2,7 +2,13 @@ import { homedir } from 'node:os';
 import { redactPath, redactingLogger } from '../redact/output.js';
 import type { Logger } from '../util/logger.js';
 import { type CommandOutcome } from './document.js';
-import { validateFacets, validateKinds, validateOrigins, validateStatuses } from './filters.js';
+import {
+  validateFacets,
+  validateKinds,
+  validateOrigins,
+  validateScopes,
+  validateStatuses,
+} from './filters.js';
 import { buildGraphModel, filterGraphModel, type GraphModel } from './graph-model.js';
 import {
   interpretationProvenance,
@@ -20,6 +26,8 @@ export interface GraphOptions {
   facet?: readonly string[];
   kind?: readonly string[];
   status?: readonly string[];
+  /** Repeatable compat-scope filter (#165), e.g. `claude-compat`. */
+  scope?: readonly string[];
   json?: boolean;
   /** Injected for tests; defaults to the current user's home. */
   home?: string;
@@ -44,9 +52,10 @@ export async function runGraph(
 ): Promise<CommandOutcome<GraphData>> {
   const home = options.home ?? homedir();
   const out = redactingLogger(logger, options.json ? 'export' : 'display', { home });
-  // Validate filters before touching the store: an invalid value is a
+  // Validate the enum filters before touching the store: an invalid value is a
   // configuration error and must not be masked by a missing-snapshot error
-  // (the same order `runList` applies).
+  // (the same order `runList` applies). `--scope` values come from the model,
+  // so that filter validates after loading.
   const filter = {
     origins: validateOrigins(options.origin),
     facets: validateFacets(options.facet),
@@ -58,17 +67,24 @@ export async function runGraph(
   for (const diagnostic of diagnostics) {
     out.warn(diagnostic.message, { code: diagnostic.code, path: diagnostic.path ?? undefined });
   }
-  const model = filterGraphModel(buildGraphModel(observed, resolved, interpretation), filter);
+  const model = buildGraphModel(observed, resolved, interpretation);
+  const filtered = filterGraphModel(model, {
+    ...filter,
+    scopes: validateScopes(
+      options.scope,
+      new Set(model.nodes.flatMap((node) => (node.scope !== null ? [node.scope] : []))),
+    ),
+  });
   const provenance = interpretationProvenance(run);
   if (options.json) {
     // Nodes are ordered by id, as the document contract states; the human tree
     // keeps its path order. Paths are re-redacted at the export boundary, so a
     // stored artifact that predates redaction cannot leak a raw path.
-    const nodes = [...model.nodes]
+    const nodes = [...filtered.nodes]
       .sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0))
       .map((node) => ({ ...node, path: redactPath(node.path, { home }) }));
     return {
-      data: { ...model, nodes, runtime: observed.runtime.id, interpretation: provenance },
+      data: { ...filtered, nodes, runtime: observed.runtime.id, interpretation: provenance },
       diagnostics,
       completeness: observed.completeness,
     };
@@ -77,11 +93,11 @@ export async function runGraph(
   // The runtime stays prominent so an agent can assert which snapshot answered.
   out.info(`Runtime: ${observed.runtime.id} (${resolved.snapshotId})`);
   out.info('');
-  for (const line of renderGraph(model, detectTreeStyle())) {
+  for (const line of renderGraph(filtered, detectTreeStyle())) {
     out.info(line);
   }
   return {
-    data: { ...model, runtime: observed.runtime.id, interpretation: provenance },
+    data: { ...filtered, runtime: observed.runtime.id, interpretation: provenance },
     diagnostics,
     completeness: observed.completeness,
   };

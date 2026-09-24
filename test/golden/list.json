@@ -20,6 +20,7 @@
         "path": "CLAUDE.md",
         "kind": "instructions",
         "origin": "project",
+        "scope": "project",
         "status": "effective",
         "facets": [
           "instructions"

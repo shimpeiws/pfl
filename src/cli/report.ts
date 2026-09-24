@@ -4,6 +4,7 @@ import type { ElementId } from '../core/ids.js';
 import type { Finding, HarnessStats } from '../core/interpretation.js';
 import type { ObservedElement } from '../core/observed.js';
 import { getRuntimeName } from '../runtime/registry.js';
+import { isCompatScope } from '../core/observed.js';
 import { redactPath, redactingLogger } from '../redact/output.js';
 import type { Logger } from '../util/logger.js';
 import { type CommandOutcome } from './document.js';
@@ -46,6 +47,12 @@ export interface ReportData {
   confidence: string;
   stats: HarnessStats;
   findings: ReportFinding[];
+  /**
+   * Compat-scope read counts (#165): OpenCode deliberately reads other agents'
+   * config (`claude-compat`, `agents-compat`). The scopes are adapter-defined
+   * strings, so they are surfaced as observed counts, never enumerated here.
+   */
+  compatScopes: { scope: string; count: number }[];
   /** Which classifier produced the interpretation, and where it came from (#84). */
   interpretation: InterpretationProvenance;
 }
@@ -84,6 +91,7 @@ export async function runReport(
     confidence: resolved.resolution.confidence,
     stats,
     findings,
+    compatScopes: compatScopeCounts(observed.elements),
     interpretation: interpretationProvenance(run),
   };
 
@@ -105,9 +113,12 @@ export async function runReport(
   }
   out.info('');
   out.info('Notable');
-  if (interpretation.findings.length === 0) {
+  if (interpretation.findings.length === 0 && data.compatScopes.length === 0) {
     out.info('  (none)');
   } else {
+    for (const { scope, count } of data.compatScopes) {
+      out.info(`  ${count} element(s) are read through the ${scope} compatibility surface`);
+    }
     for (const finding of interpretation.findings) {
       out.info(`  ${finding.message}`);
     }
@@ -131,6 +142,21 @@ export async function runReport(
   }
 
   return { data, diagnostics, completeness: observed.completeness };
+}
+
+function compatScopeCounts(
+  elements: readonly { native: { scope: string | null } }[],
+): { scope: string; count: number }[] {
+  const counts = new Map<string, number>();
+  for (const element of elements) {
+    const scope = element.native.scope;
+    if (scope !== null && isCompatScope(scope)) {
+      counts.set(scope, (counts.get(scope) ?? 0) + 1);
+    }
+  }
+  return [...counts.entries()]
+    .map(([scope, count]) => ({ scope, count }))
+    .sort((a, b) => (a.scope < b.scope ? -1 : a.scope > b.scope ? 1 : 0));
 }
 
 function capitalize(value: string): string {

@@ -111,6 +111,7 @@ add `missingScopes`:
       ]
     }
   ],
+  "compatScopes": [{ "scope": "claude-compat", "count": 3 }],
   "interpretation": { "classifierVersion": "…", "origin": "stored" }
 }
 ```
@@ -119,6 +120,10 @@ add `missingScopes`:
 `path` and `kind`, so readers do not need a `pfl show` call per id. `path` is
 absent when the element has no source path; both are absent when the cited id
 is not in the observed snapshot.
+
+`compatScopes` (#165) counts observed elements whose consent scope marks a
+cross-runtime compatibility read (`*-compat`); it is empty when the runtime
+read only its own surfaces.
 
 ### list
 
@@ -132,6 +137,7 @@ is not in the observed snapshot.
       "id": "el_…",
       "kind": "instructions",
       "origin": "project",
+      "scope": "project",
       "status": "effective",
       "facets": ["instructions"]
     }

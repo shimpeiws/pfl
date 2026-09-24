@@ -1,4 +1,5 @@
 import { HARNESS_FACETS } from '../core/facets.js';
+import { isCompatScope } from '../core/observed.js';
 import { ORIGIN_ORDER, type GraphModel, type GraphNode } from './graph-model.js';
 
 /**
@@ -105,7 +106,13 @@ function nodeToTree(
 }
 
 function nodeLabel(node: GraphNode): string {
-  return node.inspectability === 'opaque' ? `${node.path} (opaque)` : node.path;
+  // A `-compat` scope marks a cross-runtime read (#165); the origin stays
+  // `user`, so the scope is what explains a `~/.claude/...` path in an
+  // OpenCode graph.
+  const scope = isCompatScope(node.scope) ? ` (${node.scope})` : '';
+  return node.inspectability === 'opaque'
+    ? `${node.path} (opaque)${scope}`
+    : `${node.path}${scope}`;
 }
 
 function edgeLabel(type: string): string {

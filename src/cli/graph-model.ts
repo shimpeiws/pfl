@@ -58,6 +58,12 @@ export interface GraphFilter {
   facets?: ReadonlySet<HarnessFacet> | undefined;
   kinds?: ReadonlySet<string> | undefined;
   statuses?: ReadonlySet<ResolvedStatus> | undefined;
+  /**
+   * Compat-scope filter (#165): `native.scope` is adapter-defined
+   * (`claude-compat`, `agents-compat`), so the valid values come from the
+   * model itself rather than an enum. Unscoped nodes never match.
+   */
+  scopes?: ReadonlySet<string> | undefined;
 }
 
 export function filterGraphModel(model: GraphModel, filter: GraphFilter): GraphModel {
@@ -66,7 +72,8 @@ export function filterGraphModel(model: GraphModel, filter: GraphFilter): GraphM
       (filter.origins === undefined || filter.origins.has(node.origin)) &&
       (filter.facets === undefined || node.facets.some((facet) => filter.facets?.has(facet))) &&
       (filter.kinds === undefined || filter.kinds.has(node.kind)) &&
-      (filter.statuses === undefined || filter.statuses.has(node.status)),
+      (filter.statuses === undefined || filter.statuses.has(node.status)) &&
+      (filter.scopes === undefined || (node.scope !== null && filter.scopes.has(node.scope))),
   );
   const present = new Set(nodes.map((node) => node.id));
   const edges = model.edges.filter((edge) => present.has(edge.from) && present.has(edge.to));
