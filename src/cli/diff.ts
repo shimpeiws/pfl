@@ -111,6 +111,9 @@ export async function runDiff(
     ({ a: runA, b: runB, pairDiagnostics } = await resolveDefaultPair(cwd, home, options.runtime));
   } else {
     runA = await loadInterpretation(cwd, snapshotA, home, options.runtime);
+    // The second operand defaults to `latest`, consistently with every other
+    // read command, so `pfl diff <a>` compares a snapshot against the current
+    // one.
     runB = await loadInterpretation(cwd, snapshotB ?? 'latest', home, options.runtime);
   }
   const diagnostics = [...pairDiagnostics, ...runA.diagnostics, ...runB.diagnostics];

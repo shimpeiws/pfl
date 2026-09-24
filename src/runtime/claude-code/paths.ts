@@ -85,9 +85,9 @@ export function userConfigDir(home: string): string {
   return join(home, PROJECT_CONFIG_DIR);
 }
 
-/** Encodes an absolute project path the way Claude Code names per-project dirs (`/` -> `-`). */
+/** Encodes an absolute project path the way Claude Code names per-project dirs (`/` and `.` -> `-`). */
 export function encodeProjectDir(root: string): string {
-  return root.replaceAll('/', '-');
+  return root.replaceAll(/[/.]/g, '-');
 }
 
 /** Known element kinds inside the project/user scopes (design doc §31.1). */

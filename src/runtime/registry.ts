@@ -18,10 +18,20 @@ import {
 } from './codex/classify.js';
 import { ClaudeCodeAdapter } from './claude-code/index.js';
 import {
+  FALLBACK_ELEMENT_KINDS as CLAUDE_CODE_FALLBACK_KINDS,
+  KNOWN_ELEMENT_KINDS as CLAUDE_CODE_KINDS,
+  UNKNOWN_ELEMENT_KIND as CLAUDE_CODE_UNKNOWN_KIND,
+} from './claude-code/paths.js';
+import {
   CONSENT_GROUPS as CLAUDE_CODE_CONSENT_GROUPS,
   RUNTIME_NAME as CLAUDE_CODE_RUNTIME_NAME,
 } from './claude-code/consent.js';
 import { CodexAdapter } from './codex/index.js';
+import {
+  FALLBACK_ELEMENT_KINDS as CODEX_FALLBACK_KINDS,
+  KNOWN_ELEMENT_KINDS as CODEX_KINDS,
+  UNKNOWN_ELEMENT_KIND as CODEX_UNKNOWN_KIND,
+} from './codex/paths.js';
 import {
   CONSENT_GROUPS as CODEX_CONSENT_GROUPS,
   RUNTIME_NAME as CODEX_RUNTIME_NAME,
@@ -35,6 +45,11 @@ import {
   RUNTIME_NAME as OPENCODE_RUNTIME_NAME,
 } from './opencode/consent.js';
 import { OpencodeAdapter } from './opencode/index.js';
+import {
+  FALLBACK_ELEMENT_KINDS as OPENCODE_FALLBACK_KINDS,
+  KNOWN_ELEMENT_KINDS as OPENCODE_KINDS,
+  UNKNOWN_ELEMENT_KIND as OPENCODE_UNKNOWN_KIND,
+} from './opencode/paths.js';
 import type { RuntimeAdapter } from './types.js';
 
 /**
@@ -63,6 +78,12 @@ interface RuntimeRegistration {
   facetMappings: FacetMappings;
   /** The kinds the adapter's findings rules key on (roadmap M9 #91). */
   findingKinds: Partial<FindingKinds>;
+  /**
+   * Every element kind the adapter may record: its known kinds, the explicit
+   * fallback kind, and `unknown`. `list --kind` validates against this set
+   * (#178); keeping it on the registration means a new adapter cannot forget it.
+   */
+  recordedKinds: readonly string[];
 }
 
 const REGISTRY: Record<string, RuntimeRegistration> = {
@@ -72,6 +93,7 @@ const REGISTRY: Record<string, RuntimeRegistration> = {
     consentGroups: CLAUDE_CODE_CONSENT_GROUPS,
     facetMappings: CLAUDE_CODE_FACET_MAPPINGS,
     findingKinds: CLAUDE_CODE_FINDING_KINDS,
+    recordedKinds: [...CLAUDE_CODE_KINDS, ...CLAUDE_CODE_FALLBACK_KINDS, CLAUDE_CODE_UNKNOWN_KIND],
   },
   codex: {
     create: () => new CodexAdapter(),
@@ -79,6 +101,7 @@ const REGISTRY: Record<string, RuntimeRegistration> = {
     consentGroups: CODEX_CONSENT_GROUPS,
     facetMappings: CODEX_FACET_MAPPINGS,
     findingKinds: CODEX_FINDING_KINDS,
+    recordedKinds: [...CODEX_KINDS, ...CODEX_FALLBACK_KINDS, CODEX_UNKNOWN_KIND],
   },
   opencode: {
     create: () => new OpencodeAdapter(),
@@ -86,6 +109,7 @@ const REGISTRY: Record<string, RuntimeRegistration> = {
     consentGroups: OPENCODE_CONSENT_GROUPS,
     facetMappings: OPENCODE_FACET_MAPPINGS,
     findingKinds: OPENCODE_FINDING_KINDS,
+    recordedKinds: [...OPENCODE_KINDS, ...OPENCODE_FALLBACK_KINDS, OPENCODE_UNKNOWN_KIND],
   },
 };
 
@@ -119,6 +143,16 @@ export function getClassifierContribution(): {
     ),
     findingKinds: mergeFindingKinds(...registrations.map((entry) => entry.findingKinds)),
   };
+}
+
+/**
+ * Every element kind a registered adapter may record, deduplicated: the union
+ * of each adapter's known kinds, explicit fallback kinds, and `unknown` (#178).
+ * Fallback kinds are deliberately absent from the facet mappings, so this — not
+ * the mapping keys — is the closed set `--kind` can validly name.
+ */
+export function listElementKinds(): readonly string[] {
+  return [...new Set(Object.values(REGISTRY).flatMap((entry) => entry.recordedKinds))];
 }
 
 /** Human-readable runtime name for rendering (design doc §26); falls back to the id. */

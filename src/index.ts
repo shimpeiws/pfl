@@ -90,6 +90,24 @@ function parseKeep(value: string | number | boolean | undefined): number | undef
 }
 
 /**
+ * Parses `list --limit`. A value-less option arrives as `true` (and
+ * `--no-limit` as `false`), and a non-positive or fractional count is
+ * meaningless, so each is refused rather than clamped (same stance as
+ * `parseKeep`).
+ */
+function parseLimit(value: string | number | boolean | undefined): number | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value === 'boolean' || (typeof value === 'string' && value.trim() === '')) {
+    throw new PflError('--limit requires a positive integer', EXIT_CODES.CONFIG_ERROR);
+  }
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 1) {
+    throw new PflError('--limit requires a positive integer', EXIT_CODES.CONFIG_ERROR);
+  }
+  return parsed;
+}
+
+/**
  * Wraps a command so a `--json` run emits exactly one document — the success
  * envelope on completion, or the failure envelope on any exit. The exit code is
  * set on every failure, exactly when `ok` is false. Human runs are unchanged.
@@ -170,8 +188,10 @@ cli
   .option('--snapshot <id>', 'Snapshot id (default: latest)')
   .option('--runtime <id>', `Scope 'latest' to a runtime: ${RUNTIME_CHOICES}`)
   .option('--facet <facet>', 'Filter by semantic facet')
+  .option('--kind <kind>', 'Filter by element kind (repeatable)')
   .option('--origin <origin>', 'Filter by native origin')
   .option('--status <status>', 'Filter by resolved status')
+  .option('--limit <n>', 'Maximum number of elements to print')
   .option('--json', 'Output as JSON')
   .action(
     withErrorHandling(
@@ -181,10 +201,13 @@ cli
           snapshot?: string;
           runtime?: string;
           facet?: string;
+          kind?: string | string[];
           origin?: string;
           status?: string;
+          limit?: string | number | boolean;
         } & CommonFlags,
       ) => {
+        const limit = parseLimit(flags.limit);
         const runtime = parseRuntimeFlag(flags.runtime);
         return runList(
           process.cwd(),
@@ -192,8 +215,10 @@ cli
             ...(flags.snapshot !== undefined ? { snapshot: flags.snapshot } : {}),
             ...(runtime !== undefined ? { runtime } : {}),
             ...(flags.facet !== undefined ? { facet: flags.facet } : {}),
+            ...(flags.kind !== undefined ? { kind: [flags.kind].flat() } : {}),
             ...(flags.origin !== undefined ? { origin: flags.origin } : {}),
             ...(flags.status !== undefined ? { status: flags.status } : {}),
+            ...(limit !== undefined ? { limit } : {}),
             json: flags.json ?? false,
           },
           loggerForFlags(flags),

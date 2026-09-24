@@ -182,17 +182,20 @@ nested under `data`.
 ### `list`
 
 ```text
-{ count, elements: [{ id, path?, kind, origin, status, facets }], interpretation: { classifierVersion, origin } }
+{ runtime, count, total, elements: [{ id, path?, kind, origin, status, facets }], interpretation: { classifierVersion, origin } }
 ```
 
-`elements` is ordered by `id`. `path` is the redacted source path (absent for
-elements without one); human output strips the trailing `SKILL.md` segment to
-show the skill directory name. `path` is an additive field added in #167.
+`elements` is ordered by `id`. `count` is the number of returned elements;
+`total` is how many elements matched the filters before `--limit` truncated
+the list, so `total` >= `count` always. `path` is the redacted source path
+(absent for elements without one); human output strips the trailing `SKILL.md`
+segment to show the skill directory name. `path` is an additive field added in
+#167; `total` is an additive field added in #178.
 
 ### `show`
 
 ```text
-{ observed, resolved, interpretation, relations, findings, interpretationProvenance: { classifierVersion, origin } }
+{ runtime, observed, resolved, interpretation, relations, findings, interpretationProvenance: { classifierVersion, origin } }
 ```
 
 `resolved` and `interpretation` are `null` when the element has no such layer.
@@ -202,10 +205,14 @@ command already uses for the element's interpretation.
 ### `graph`
 
 ```text
-{ observedSnapshotId, resolvedSnapshotId, nodes, edges, interpretation: { classifierVersion, origin } }
+{ observedSnapshotId, resolvedSnapshotId, nodes, edges, runtime, interpretation: { classifierVersion, origin } }
 ```
 
 `nodes` is ordered by `id`; `edges` carry `{ type, from, to }`.
+
+`runtime` on `list`, `show`, and `graph` is the runtime id of the snapshot
+that answered, so a consumer can assert which runtime's run `latest` selected
+under `--runtime` (#180, additive). `report` and `diff` already carry it.
 
 ### `snapshots`
 

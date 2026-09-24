@@ -130,27 +130,37 @@ async function resolveResolvedId(
       // resolved run instead (#180).
       const { runs, diagnostics } = await listRuns(projectId, home);
       const context = diagnostics.length > 0 ? { diagnostics } : {};
+      throwOnStoreFailure(diagnostics);
       const scoped = runs.filter((entry) => entry.runtime.id === runtime);
-      // `runs` is newest first: the first entry with a readable resolved
-      // snapshot is the runtime's latest usable run.
-      const resolvedId = scoped.map((entry) => entry.resolvedId).find((id) => id !== null);
-      if (resolvedId === undefined) {
-        // Runs exist but every resolved artifact failed to read: say so
-        // rather than claiming nothing is stored.
-        if (scoped.length > 0) {
-          throw new PflError(
-            `could not read a resolved snapshot for runtime ${runtime}`,
-            EXIT_CODES.CONFIG_ERROR,
-            context,
-          );
-        }
+      const first = scoped.at(0);
+      if (first === undefined) {
         throw new PflError(
           `no snapshots stored for runtime ${runtime}; run \`pfl inspect --runtime ${runtime}\` first`,
           EXIT_CODES.CONFIG_ERROR,
           context,
         );
       }
-      return { resolvedId, diagnostics };
+      // `runs` is newest first, but `capturedAt` has millisecond precision and
+      // a tie keeps directory order, which does not track inspection order.
+      // The `latest` pointer names the run that finished last, so it breaks a
+      // tie among matching-runtime runs at the newest timestamp.
+      let newest = first;
+      const tied = scoped.filter((entry) => entry.capturedAt === first.capturedAt);
+      if (tied.length > 1) {
+        const pointer = await readLatestPointer(projectId, home);
+        const pointed = tied.find((entry) => entry.observedId === pointer?.observed);
+        if (pointed !== undefined) newest = pointed;
+      }
+      if (newest.resolvedId === null) {
+        // The newest matching run is unusable; answering with an older one
+        // would silently serve a stale harness as `latest`.
+        throw new PflError(
+          `could not read a resolved snapshot for the newest ${runtime} run`,
+          EXIT_CODES.CONFIG_ERROR,
+          context,
+        );
+      }
+      return { resolvedId: newest.resolvedId, diagnostics };
     }
     const pointer = await readLatestPointer(projectId, home);
     if (pointer === null) {
@@ -163,6 +173,7 @@ async function resolveResolvedId(
   }
 
   const { runs, diagnostics } = await listRuns(projectId, home);
+  throwOnStoreFailure(diagnostics);
   const run = runs.find(
     (entry) => entry.resolvedId === requestedId || entry.observedId === requestedId,
   );
@@ -206,4 +217,16 @@ async function resolveResolvedId(
     );
   }
   return { resolvedId: run.resolvedId, diagnostics };
+}
+
+/**
+ * A scan that could not read a store directory is a store failure, not an
+ * empty history: propagating it keeps a broken store from masquerading as
+ * "no snapshots" (exit 2) when the contract reserves exit 6 for it (#180).
+ */
+function throwOnStoreFailure(diagnostics: Diagnostic[]): void {
+  const failure = diagnostics.find((entry) => entry.code === 'snapshot-store-unreadable');
+  if (failure !== undefined) {
+    throw new PflError(failure.message, EXIT_CODES.SNAPSHOT_STORE_FAILED, { diagnostics });
+  }
 }

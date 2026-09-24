@@ -238,6 +238,47 @@ describe('collectClaudeCodeHarness', () => {
     expect(pluginSkill?.native.kind).toBe('skills');
   });
 
+  it('encodes dots in the project root the way Claude Code does', () => {
+    // Verified against a real ~/.claude/projects listing: Claude Code stores
+    // /Users/shin/.claude as -Users-shin--claude — '.' maps to '-' like '/'.
+    expect(encodeProjectDir('/Users/shin/.claude')).toBe('-Users-shin--claude');
+  });
+
+  it('discovers project memory for a dotted project root', async () => {
+    const base = await tempDir('pfl-claude-dotted-');
+    const root = join(base, 'pro.ject');
+    const home = join(base, 'home');
+    const managed = join(base, 'managed');
+
+    await mkdir(join(root, '.claude'), { recursive: true });
+    await writeFile(join(root, 'CLAUDE.md'), '# project instructions\n');
+    await writeFile(
+      join(root, '.claude', 'settings.json'),
+      JSON.stringify({ permissions: { allow: ['Bash(ls:*)'] } }),
+    );
+    // The memory dir is created at Claude Code's real encoded name: the base
+    // carries no dot so encodeProjectDir covers it, and the dotted component's
+    // literal `-pro-ject` pins the mapping — a slash-only encoder looks for
+    // `-pro.ject` and finds nothing.
+    const encoded = `${encodeProjectDir(base)}-pro-ject`;
+    await mkdir(join(userConfigDir(home), 'projects', encoded, 'memory'), { recursive: true });
+    await writeFile(
+      join(userConfigDir(home), 'projects', encoded, 'memory', 'MEMORY.md'),
+      '# Memory\n',
+    );
+    await mkdir(managed, { recursive: true });
+
+    const snapshot = await collectClaudeCodeHarness(
+      { id: 'proj', displayName: 'owner/repo', root, remote: 'github.com/owner/repo' },
+      CONSENTED,
+      home,
+      managed,
+    );
+
+    const memory = snapshot.elements.find((element) => element.native.kind === 'memory');
+    expect(memory?.source.path).toBe(`~/.claude/projects/${encoded}/memory/MEMORY.md`);
+  });
+
   it('derives ids from display paths, independent of where home and project sit', async () => {
     // The id digests the display path, never an absolute one: the user scope
     // renders as `~/.claude/...` and project paths are project-relative. Two

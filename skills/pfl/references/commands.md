@@ -29,15 +29,24 @@ shadowed count, conditional count, opaque layers, semantic facets.
 ## `list`
 
 ```sh
-pfl list [--snapshot <id>] [--runtime <id>] [--facet <f>] [--origin <o>] [--status <s>] [--json]
+pfl list [--snapshot <id>] [--runtime <id>] [--facet <f>] [--kind <k>] [--origin <o>] [--status <s>] [--limit <n>] [--json]
 ```
 
 Valid facets: `instructions`, `knowledge`, `memory`, `actions`, `delegation`,
 `controls`.
 
+Valid kinds: every element kind a registered runtime adapter can record —
+`instructions`, `rules`, `skills`, `commands`, `subagents`, `hooks`,
+`permissions`, `memory`, `plugin`, `mcp-configuration`, and more. An unknown
+kind fails and lists the valid set. `--kind` is repeatable and ORs:
+`--kind subagents --kind commands` matches either.
+
 Valid origins: `project`, `user`, `managed`, `plugin`, `builtin`, `unknown`.
 
 Valid statuses: `effective`, `shadowed`, `conditional`, `unresolved`, `unknown`.
+
+`--limit <n>` prints at most `n` elements; the JSON `total` still reports how
+many elements matched before truncation.
 
 Elements are ordered by `id`. Each row shows the source path (or `(none)` when
 none), id, kind, origin, status, and facets.
@@ -74,6 +83,15 @@ operands the pair is previous vs latest within one runtime — `latest` resolves
 first (scoped by `--runtime` when given), then the newest other run of the same
 runtime becomes `snapshot-a`. A runtime with only one stored run fails with
 exit 2.
+
+## `--runtime` on read commands
+
+`report`, `list`, `show`, `graph`, and `diff` accept `--runtime <id>`. Without
+it, `latest` means whichever runtime was inspected last; with it, `latest`
+means the newest stored run for that runtime. A named `--snapshot` (or a `diff`
+operand) from another runtime is refused with exit 2. The runtime is also in
+every human header and JSON `data.runtime`, so a consumer can assert which
+snapshot answered.
 
 ## `--runtime` on read commands
 

@@ -1101,8 +1101,10 @@ pfl report --snapshot <id>
 
 pfl list
 pfl list --facet actions
+pfl list --kind hooks --kind commands
 pfl list --origin user
 pfl list --status shadowed
+pfl list --kind skills --limit 10
 
 pfl show <element-id>
 

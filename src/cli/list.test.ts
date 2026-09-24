@@ -184,6 +184,88 @@ describe('runList', () => {
     expect(byOrigin.lines.at(-1)).toContain(ids.memory ?? '');
   });
 
+  it('filters by kind, and ORs repeated kinds', async () => {
+    const { projectRoot, home, ids } = await fixture();
+
+    const single = fakeLogger();
+    await runList(projectRoot, { home, kind: ['skills'] }, single.logger);
+    expect(single.lines).toHaveLength(3);
+    expect(single.lines.at(-1)).toContain(ids.skills ?? '');
+
+    const multiple = fakeLogger();
+    await runList(projectRoot, { home, kind: ['skills', 'memory'] }, multiple.logger);
+    expect(multiple.lines).toHaveLength(4);
+
+    const none = fakeLogger();
+    await runList(projectRoot, { home, kind: ['subagents', 'commands'] }, none.logger);
+    expect(none.lines.at(-1)).toBe('No elements match.');
+  });
+
+  it('bounds output with --limit and keeps the matched total', async () => {
+    const { projectRoot, home } = await fixture();
+    const { lines, logger } = fakeLogger();
+
+    const outcome = await runList(
+      projectRoot,
+      { home, kind: ['skills', 'memory'], limit: 1 },
+      logger,
+    );
+
+    expect(outcome.data.count).toBe(1);
+    expect(outcome.data.total).toBe(2);
+    expect(outcome.data.elements).toHaveLength(1);
+    // Runtime header, one row, then the truncation note.
+    expect(lines).toHaveLength(4);
+    expect(lines.at(-1)).toContain('1 more element(s) match');
+  });
+
+  it('limits JSON elements after the id sort, not before it', async () => {
+    const projectRoot = await tempDir('pfl-list-project-');
+    const home = await tempDir('pfl-list-home-');
+    // Seed in descending id order so discovery order is the reverse of the
+    // document order; a limit applied before sorting would keep the largest id.
+    const pairs = [
+      pair('instructions', 'CLAUDE.md'),
+      pair('skills', '.claude/skills/a/SKILL.md'),
+      pair('memory', '~/.claude/projects/x/memory/MEMORY.md'),
+    ].sort((a, b) => (a.observed.id < b.observed.id ? 1 : -1));
+    await seed(projectRoot, home, pairs);
+    const smallest = pairs.at(-1)?.observed.id;
+
+    const { lines, logger } = fakeLogger();
+    const outcome = await runList(projectRoot, { home, json: true, limit: 1 }, logger);
+
+    expect(outcome.data.elements.map((element) => element.id)).toEqual([smallest]);
+    expect(outcome.data.total).toBe(3);
+
+    // The human listing deliberately keeps discovery order; rows follow the
+    // Runtime header.
+    const human = fakeLogger();
+    await runList(projectRoot, { home, limit: 1 }, human.logger);
+    expect(human.lines[2]).toContain(pairs[0]?.observed.id ?? '');
+    expect(lines).toHaveLength(0);
+  });
+
+  it('reports total equal to count when --limit is absent', async () => {
+    const { projectRoot, home } = await fixture();
+    const { logger } = fakeLogger();
+
+    const outcome = await runList(projectRoot, { home, json: true }, logger);
+
+    expect(outcome.data.count).toBe(4);
+    expect(outcome.data.total).toBe(4);
+  });
+
+  it('fails on an invalid kind and lists valid values', async () => {
+    const { projectRoot, home } = await fixture();
+    const { logger } = fakeLogger();
+
+    await expect(runList(projectRoot, { home, kind: ['hoks'] }, logger)).rejects.toMatchObject({
+      exitCode: EXIT_CODES.CONFIG_ERROR,
+      message: expect.stringContaining('hooks'),
+    });
+  });
+
   it('accepts an explicit snapshot id, observation or resolved', async () => {
     const projectRoot = await tempDir('pfl-list-project-');
     const home = await tempDir('pfl-list-home-');
