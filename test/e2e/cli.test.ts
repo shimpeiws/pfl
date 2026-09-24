@@ -209,6 +209,22 @@ describe('pfl CLI end to end', () => {
     expect(result.stderr).toContain('only one');
   });
 
+  it('honours --runtime and --json on a bare diff (#186)', async () => {
+    const m = await fixture('codex');
+    await runCli(m, ['inspect', '--runtime', 'codex']);
+    await runCli(m, ['inspect', '--runtime', 'codex']);
+
+    const result = await runCli(m, ['diff', '--runtime', 'codex', '--json']);
+
+    expect(result.code, result.stderr).toBe(EXIT_CODES.SUCCESS);
+    const document = JSON.parse(result.stdout) as {
+      command: string;
+      data: { runtime: string };
+    };
+    expect(document.command).toBe('diff');
+    expect(document.data.runtime).toBe('codex');
+  });
+
   it('inspects a Codex harness and reads back Codex-specific content', async () => {
     const m = await fixture('codex');
 

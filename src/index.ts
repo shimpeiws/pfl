@@ -301,11 +301,16 @@ cli
         snapshotBOrFlags: string | CommonFlags | undefined,
         maybeFlags: CommonFlags | undefined,
       ) => {
-        // `cac` always passes one slot per declared positional (`undefined`
-        // when absent) and the options object last.
+        // `cac` passes the options object right after the positionals actually
+        // supplied: two operands put it in `maybeFlags`, one in
+        // `snapshotBOrFlags`, none in `snapshotAOrFlags`.
         const snapshotA = typeof snapshotAOrFlags === 'string' ? snapshotAOrFlags : undefined;
         const snapshotB = typeof snapshotBOrFlags === 'string' ? snapshotBOrFlags : undefined;
-        const flags = (maybeFlags ?? {}) as CommonFlags & { runtime?: string };
+        const flags =
+          [maybeFlags, snapshotBOrFlags, snapshotAOrFlags].find(
+            (arg): arg is CommonFlags & { runtime?: string } =>
+              typeof arg === 'object' && arg !== null,
+          ) ?? {};
         const runtime = parseRuntimeFlag(flags.runtime);
         return runDiff(
           process.cwd(),
