@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import type { HarnessFacet } from '../core/facets.js';
 import type { GraphModel } from './graph-model.js';
 import { detectTreeStyle, renderGraph } from './tree.js';
 
@@ -84,5 +85,46 @@ describe('renderGraph', () => {
     // It groups under its primary facet only — no `actions` group header.
     const lines = output.split('\n');
     expect(lines.some((line) => /─ actions$/.test(line))).toBe(false);
+  });
+
+  it('groups by the first recognized facet and falls back for unknown ones (#161)', () => {
+    // Stored interpretations tolerate facets a newer classifier added; such a
+    // node must still appear in the effective section.
+    const future: GraphModel = {
+      observedSnapshotId: 'obs_x',
+      resolvedSnapshotId: 'res_x',
+      nodes: [
+        {
+          id: 'el_future',
+          path: 'a.md',
+          kind: 'instructions',
+          origin: 'project',
+          scope: 'project',
+          status: 'effective',
+          inspectability: 'observable',
+          facets: ['planning' as HarnessFacet, 'actions'],
+        },
+        {
+          id: 'el_alien',
+          path: 'b.md',
+          kind: 'instructions',
+          origin: 'project',
+          scope: 'project',
+          status: 'effective',
+          inspectability: 'observable',
+          facets: ['planning' as HarnessFacet],
+        },
+      ],
+      edges: [],
+    };
+
+    const output = renderGraph(future).join('\n');
+
+    // 'planning' is unknown to this binary: el_future groups under 'actions',
+    // its first recognized facet; el_alien lands in the fallback group.
+    expect(output).toMatch(/─ actions\n/);
+    expect(output).toContain('a.md  [planning, actions]');
+    expect(output).toContain('(unclassified)');
+    expect(output).toContain('b.md  [planning]');
   });
 });

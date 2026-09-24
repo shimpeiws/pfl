@@ -44,18 +44,20 @@ export async function runGraph(
 ): Promise<CommandOutcome<GraphData>> {
   const home = options.home ?? homedir();
   const out = redactingLogger(logger, options.json ? 'export' : 'display', { home });
-  const run = await loadInterpretation(cwd, options.snapshot, home, options.runtime);
-  const { observed, resolved, interpretation, diagnostics } = run;
-  for (const diagnostic of diagnostics) {
-    out.warn(diagnostic.message, { code: diagnostic.code, path: diagnostic.path ?? undefined });
-  }
-
+  // Validate filters before touching the store: an invalid value is a
+  // configuration error and must not be masked by a missing-snapshot error
+  // (the same order `runList` applies).
   const filter = {
     origins: validateOrigins(options.origin),
     facets: validateFacets(options.facet),
     kinds: validateKinds(options.kind),
     statuses: validateStatuses(options.status),
   };
+  const run = await loadInterpretation(cwd, options.snapshot, home, options.runtime);
+  const { observed, resolved, interpretation, diagnostics } = run;
+  for (const diagnostic of diagnostics) {
+    out.warn(diagnostic.message, { code: diagnostic.code, path: diagnostic.path ?? undefined });
+  }
   const model = filterGraphModel(buildGraphModel(observed, resolved, interpretation), filter);
   const provenance = interpretationProvenance(run);
   if (options.json) {
