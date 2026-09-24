@@ -15,6 +15,7 @@ import { resolveElement } from '../../src/resolution/resolver.js';
 import { getClassifierContribution } from '../../src/runtime/registry.js';
 import { EXIT_CODES, PflError } from '../../src/cli/exit-codes.js';
 import { runDiff } from '../../src/cli/diff.js';
+import { runExport } from '../../src/cli/export.js';
 import { runGc } from '../../src/cli/gc.js';
 import { runGraph } from '../../src/cli/graph.js';
 import { runInspect } from '../../src/cli/inspect.js';
@@ -208,6 +209,11 @@ describe('frozen CLI documents', () => {
   it('captures graph', async () => {
     const outcome = await runGraph(projectRoot, { home }, silent);
     await golden('graph', normalize(buildDocument('graph', outcome, ctx())));
+  });
+
+  it('captures export', async () => {
+    const outcome = await runExport(projectRoot, { home }, silent);
+    await golden('export', normalize(buildDocument('export', outcome, ctx())));
   });
 
   it('captures snapshots', async () => {

@@ -1,0 +1,93 @@
+{
+  "pflVersion": "VERSION",
+  "command": "export",
+  "ok": true,
+  "completeness": "partial",
+  "diagnostics": [
+    {
+      "severity": "info",
+      "code": "adopted-legacy-history",
+      "message": "adopted the existing history under PROJECT_ID"
+    },
+    {
+      "code": "example",
+      "message": "example",
+      "severity": "warning"
+    }
+  ],
+  "data": {
+    "project": {
+      "id": "path-0123456789abcdef",
+      "displayName": "owner/repo"
+    },
+    "runtime": {
+      "id": "claude-code",
+      "version": "2.1.272",
+      "adapter": {
+        "id": "claude-code",
+        "runtimeCompatibility": "verified",
+        "version": "0.1.1"
+      }
+    },
+    "snapshot": {
+      "observedSnapshotId": "obs_0123456789ab",
+      "resolvedSnapshotId": "res_0123456789ab",
+      "capturedAt": "2026-09-18T00:00:00.000Z",
+      "schemaVersion": "1"
+    },
+    "resolution": {
+      "confidence": "verified",
+      "semanticsVersion": "2"
+    },
+    "elements": [
+      {
+        "id": "el_0fc92802d8f84176",
+        "observed": {
+          "id": "el_0fc92802d8f84176",
+          "inspectability": "observable",
+          "metadata": {},
+          "native": {
+            "kind": "instructions",
+            "origin": "project",
+            "scope": "project"
+          },
+          "source": {
+            "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+            "path": "CLAUDE.md",
+            "sizeBytes": 12
+          },
+          "status": "observed"
+        },
+        "resolved": {
+          "activation": "always",
+          "applicability": {
+            "type": "project"
+          },
+          "id": "el_0fc92802d8f84176",
+          "resolution": {
+            "reason": "accumulates with the other layers",
+            "strategy": "accumulate"
+          },
+          "status": "effective"
+        },
+        "interpretation": {
+          "confidence": "high",
+          "elementId": "el_0fc92802d8f84176",
+          "facets": [
+            "instructions"
+          ],
+          "reason": "defines agent behavior"
+        }
+      }
+    ],
+    "relations": [],
+    "findings": [],
+    "interpretation": {
+      "classifier": {
+        "id": "pfl-native",
+        "version": "5"
+      },
+      "origin": "stored"
+    }
+  }
+}

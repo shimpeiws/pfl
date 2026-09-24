@@ -9,6 +9,7 @@ import {
   type CommandOutcome,
 } from './cli/document.js';
 import { EXIT_CODES, PflError } from './cli/exit-codes.js';
+import { runExport } from './cli/export.js';
 import { runGc } from './cli/gc.js';
 import { runGraph } from './cli/graph.js';
 import { runInspect } from './cli/inspect.js';
@@ -288,6 +289,32 @@ cli
             ...(flags.kind !== undefined ? { kind: [flags.kind].flat() } : {}),
             ...(flags.status !== undefined ? { status: [flags.status].flat() } : {}),
             ...(flags.scope !== undefined ? { scope: [flags.scope].flat() } : {}),
+            json: flags.json ?? false,
+          },
+          loggerForFlags(flags),
+        );
+      },
+    ),
+  );
+
+cli
+  .command('export', 'Export the full sanitized IR of a snapshot in one document')
+  .option('--snapshot <id>', 'Snapshot id (default: latest)')
+  .option('--runtime <id>', `Scope 'latest' to a runtime: ${RUNTIME_CHOICES}`)
+  .option(
+    '--json',
+    'Output the full IR document as JSON (the canonical interface; without it, a human-readable summary is printed instead)',
+  )
+  .action(
+    withErrorHandling(
+      'export',
+      async (flags: { snapshot?: string; runtime?: string } & CommonFlags) => {
+        const runtime = parseRuntimeFlag(flags.runtime);
+        return runExport(
+          process.cwd(),
+          {
+            ...(flags.snapshot !== undefined ? { snapshot: flags.snapshot } : {}),
+            ...(runtime !== undefined ? { runtime } : {}),
             json: flags.json ?? false,
           },
           loggerForFlags(flags),

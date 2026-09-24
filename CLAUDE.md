@@ -13,9 +13,11 @@ disagree, the design doc is right.
 v0.1. Static inspection is implemented end to end for `claude-code`, `codex`,
 and `opencode`: discovery, four-dimension resolution, the deterministic facet
 classifier and descriptive findings, immutable snapshot storage, and rendering
-(`inspect`, `report`, `list`, `show`, `graph`, `diff`, `snapshots`). M4b
-(inferred graph) and M5 (Analyzer integration) remain deferred; see
-`docs/design/pfl-design-v0.1.md`.
+(`inspect`, `report`, `list`, `show`, `graph`, `diff`, `snapshots`). `export`
+(roadmap #203) composes the same Observed/Resolved/Interpretation read path
+into one sanitized full-IR document, fulfilling M5's single-document-export
+prerequisite. M4b (inferred graph) and the M5 body (Analyzer integration
+itself) remain deferred; see `docs/design/pfl-design-v0.1.md`.
 
 v1.0's security-hardening milestone (**M6**) is complete: reads outside the
 project are consent-gated and fail closed, symlinks and hardlinks are never
