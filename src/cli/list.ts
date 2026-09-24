@@ -3,6 +3,7 @@ import { HARNESS_FACETS, isHarnessFacet, type HarnessFacet } from '../core/facet
 import type { NativeOrigin } from '../core/observed.js';
 import type { ResolvedStatus } from '../core/resolved.js';
 import { redactPath, redactingLogger } from '../redact/output.js';
+import { listElementKinds } from '../runtime/registry.js';
 import type { Logger } from '../util/logger.js';
 import { type CommandOutcome } from './document.js';
 import { EXIT_CODES, PflError } from './exit-codes.js';
@@ -15,8 +16,12 @@ import {
 export interface ListOptions {
   snapshot?: string;
   facet?: string;
+  /** Repeatable at the CLI; an element matches when its kind is any of these. */
+  kind?: readonly string[];
   origin?: string;
   status?: string;
+  /** Maximum number of elements returned; the matched total stays in `total`. */
+  limit?: number;
   json?: boolean;
   /** Injected for tests; defaults to the current user's home. */
   home?: string;
@@ -50,16 +55,18 @@ interface ListRow {
 
 export interface ListData {
   count: number;
+  /** Elements matching the filters before `--limit` truncates (#178). */
+  total: number;
   elements: ListRow[];
   /** Which classifier produced the interpretation, and where it came from (#84). */
   interpretation: InterpretationProvenance;
 }
 
 /**
- * `pfl list [--facet <f>] [--origin <o>] [--status <s>]` (design doc §23): list
- * the elements of the default `latest` snapshot. Filters combine with AND; an
- * invalid filter value fails and lists the valid ones instead of silently
- * returning nothing.
+ * `pfl list [--facet <f>] [--kind <k>] [--origin <o>] [--status <s>] [--limit
+ * <n>]` (design doc §23): list the elements of the default `latest` snapshot.
+ * Filters combine with AND (`--kind` is an OR within itself); an invalid filter
+ * value fails and lists the valid ones instead of silently returning nothing.
  */
 export async function runList(
   cwd: string,
@@ -67,6 +74,7 @@ export async function runList(
   logger: Logger,
 ): Promise<CommandOutcome<ListData>> {
   const facet = validateFacet(options.facet);
+  const kinds = validateKinds(options.kind);
   const origin = validateOrigin(options.origin);
   const status = validateStatus(options.status);
   const home = options.home ?? homedir();
@@ -98,29 +106,35 @@ export async function runList(
     .filter(
       (row) =>
         (facet === undefined || row.facets.includes(facet)) &&
+        (kinds === undefined || kinds.has(row.kind)) &&
         (origin === undefined || row.origin === origin) &&
         (status === undefined || row.status === status),
     );
 
+  const limited = options.limit === undefined ? rows : rows.slice(0, options.limit);
   // Elements are ordered by id, as the document contract states; the human
   // listing keeps discovery order.
-  const elements = [...rows].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const elements = [...limited].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   const data: ListData = {
     count: elements.length,
+    total: rows.length,
     elements,
     interpretation: interpretationProvenance(run),
   };
   const outcome = { data, diagnostics, completeness: observed.completeness };
 
   if (options.json) return outcome;
-  if (rows.length === 0) {
+  if (limited.length === 0) {
     out.info('No elements match.');
     return outcome;
   }
-  for (const row of rows) {
+  for (const row of limited) {
     out.info(
       `${displayPath(row.path, row.kind)}  ${row.id}  ${row.kind}  ${row.origin}  ${row.status}  ${row.facets.join(',')}`,
     );
+  }
+  if (limited.length < rows.length) {
+    out.info(`… ${rows.length - limited.length} more element(s) match; raise --limit to see them.`);
   }
   return outcome;
 }
@@ -149,6 +163,20 @@ function validateFacet(value: string | undefined): HarnessFacet | undefined {
     );
   }
   return value;
+}
+
+function validateKinds(values: readonly string[] | undefined): ReadonlySet<string> | undefined {
+  if (values === undefined || values.length === 0) return undefined;
+  const valid = listElementKinds();
+  for (const value of values) {
+    if (!valid.includes(value)) {
+      throw new PflError(
+        `unknown kind: ${value}; valid kinds: ${valid.join(', ')}`,
+        EXIT_CODES.CONFIG_ERROR,
+      );
+    }
+  }
+  return new Set(values);
 }
 
 function validateOrigin(value: string | undefined): NativeOrigin | undefined {

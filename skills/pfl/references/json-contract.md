@@ -111,6 +111,7 @@ add `missingScopes`:
 ```json
 {
   "count": 4,
+  "total": 4,
   "elements": [
     {
       "id": "el_…",
@@ -124,7 +125,8 @@ add `missingScopes`:
 }
 ```
 
-Elements ordered by `id`.
+Elements ordered by `id`. `count` is the number of returned elements; `total`
+is how many elements matched before `--limit` truncated the list.
 
 ### show
 

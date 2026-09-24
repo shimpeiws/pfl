@@ -29,15 +29,24 @@ shadowed count, conditional count, opaque layers, semantic facets.
 ## `list`
 
 ```sh
-pfl list [--snapshot <id>] [--facet <f>] [--origin <o>] [--status <s>] [--json]
+pfl list [--snapshot <id>] [--facet <f>] [--kind <k>] [--origin <o>] [--status <s>] [--limit <n>] [--json]
 ```
 
 Valid facets: `instructions`, `knowledge`, `memory`, `actions`, `delegation`,
 `controls`.
 
+Valid kinds: every element kind a registered runtime adapter can record —
+`instructions`, `rules`, `skills`, `commands`, `subagents`, `hooks`,
+`permissions`, `memory`, `plugin`, `mcp-configuration`, and more. An unknown
+kind fails and lists the valid set. `--kind` is repeatable and ORs:
+`--kind subagents --kind commands` matches either.
+
 Valid origins: `project`, `user`, `managed`, `plugin`, `builtin`, `unknown`.
 
 Valid statuses: `effective`, `shadowed`, `conditional`, `unresolved`, `unknown`.
+
+`--limit <n>` prints at most `n` elements; the JSON `total` still reports how
+many elements matched before truncation.
 
 Elements are ordered by `id`. Each row shows the source path (or `(none)` when
 none), id, kind, origin, status, and facets.

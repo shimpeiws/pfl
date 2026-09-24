@@ -181,6 +181,60 @@ describe('runList', () => {
     expect(byOrigin.lines[0]).toContain(ids.memory ?? '');
   });
 
+  it('filters by kind, and ORs repeated kinds', async () => {
+    const { projectRoot, home, ids } = await fixture();
+
+    const single = fakeLogger();
+    await runList(projectRoot, { home, kind: ['skills'] }, single.logger);
+    expect(single.lines).toHaveLength(1);
+    expect(single.lines[0]).toContain(ids.skills ?? '');
+
+    const multiple = fakeLogger();
+    await runList(projectRoot, { home, kind: ['skills', 'memory'] }, multiple.logger);
+    expect(multiple.lines).toHaveLength(2);
+
+    const none = fakeLogger();
+    await runList(projectRoot, { home, kind: ['subagents', 'commands'] }, none.logger);
+    expect(none.lines).toEqual(['No elements match.']);
+  });
+
+  it('bounds output with --limit and keeps the matched total', async () => {
+    const { projectRoot, home } = await fixture();
+    const { lines, logger } = fakeLogger();
+
+    const outcome = await runList(
+      projectRoot,
+      { home, kind: ['skills', 'memory'], limit: 1 },
+      logger,
+    );
+
+    expect(outcome.data.count).toBe(1);
+    expect(outcome.data.total).toBe(2);
+    expect(outcome.data.elements).toHaveLength(1);
+    expect(lines).toHaveLength(2);
+    expect(lines[1]).toContain('1 more element(s) match');
+  });
+
+  it('reports total equal to count when --limit is absent', async () => {
+    const { projectRoot, home } = await fixture();
+    const { logger } = fakeLogger();
+
+    const outcome = await runList(projectRoot, { home, json: true }, logger);
+
+    expect(outcome.data.count).toBe(4);
+    expect(outcome.data.total).toBe(4);
+  });
+
+  it('fails on an invalid kind and lists valid values', async () => {
+    const { projectRoot, home } = await fixture();
+    const { logger } = fakeLogger();
+
+    await expect(runList(projectRoot, { home, kind: ['hoks'] }, logger)).rejects.toMatchObject({
+      exitCode: EXIT_CODES.CONFIG_ERROR,
+      message: expect.stringContaining('hooks'),
+    });
+  });
+
   it('accepts an explicit snapshot id, observation or resolved', async () => {
     const projectRoot = await tempDir('pfl-list-project-');
     const home = await tempDir('pfl-list-home-');
