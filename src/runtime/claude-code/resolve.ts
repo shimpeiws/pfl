@@ -87,7 +87,12 @@ export async function resolveClaudeCode(
       id: element.id,
       ...axes,
       ...(by !== undefined ? { shadowedBy: by } : {}),
-      ...(isMarketplaceCatalog(element) ? { unresolvedReason: MARKETPLACE_CATALOG_REASON } : {}),
+      // A skipped or unreadable catalog file keeps its own cause (unknown
+      // applicability) — the marketplace diagnosis only replaces it for a file
+      // that was actually observed.
+      ...(element.status === 'observed' && isMarketplaceCatalog(element)
+        ? { unresolvedReason: MARKETPLACE_CATALOG_REASON }
+        : {}),
     };
   });
 

@@ -132,6 +132,45 @@ describe('resolveClaudeCode', () => {
     expect(resolved.effectiveElementIds).toContain(installed.id);
   });
 
+  it('does not accumulate catalog rules with effective rules (#176)', async () => {
+    const catalogRule = element(
+      '~/.claude/plugins/marketplaces/official/plug/rules/format.md',
+      'rules',
+      'plugin',
+    );
+    const activeRule = element('.claude/rules/style.md', 'rules', 'project');
+
+    const resolved = await resolveClaudeCode(snapshot([catalogRule, activeRule]));
+
+    expect(find(resolved.elements, catalogRule).status).toBe('unresolved');
+    expect(find(resolved.elements, activeRule).status).toBe('effective');
+    expect(resolved.relations).not.toContainEqual({
+      type: 'accumulates-with',
+      from: activeRule.id,
+      to: catalogRule.id,
+    });
+    expect(resolved.relations).not.toContainEqual({
+      type: 'accumulates-with',
+      from: catalogRule.id,
+      to: activeRule.id,
+    });
+  });
+
+  it('keeps the unreadable cause for a catalog file that was never read (#176)', async () => {
+    const skippedCatalog = element(
+      '~/.claude/plugins/marketplaces/official/plug/skills/x/SKILL.md',
+      'skills',
+      'plugin',
+      { status: 'skipped', reason: 'symlink-not-followed' },
+    );
+
+    const resolved = await resolveClaudeCode(snapshot([skippedCatalog]));
+
+    const entry = find(resolved.elements, skippedCatalog);
+    expect(entry.status).toBe('unresolved');
+    expect(entry.resolution.reason).not.toBe(MARKETPLACE_CATALOG_REASON);
+  });
+
   it('derives instruction applicability from the file directory', async () => {
     const root = element('CLAUDE.md', 'instructions', 'project');
     const nested = element('docs/CLAUDE.md', 'instructions', 'project');

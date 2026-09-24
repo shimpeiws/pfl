@@ -25,7 +25,7 @@ import { deepFreeze } from '../util/freeze.js';
  * unverified version downgrades confidence and attaches a visible warning, but
  * never blocks — the resolved facts are still produced best-effort.
  */
-export const RESOLUTION_SEMANTICS_VERSION = '1';
+export const RESOLUTION_SEMANTICS_VERSION = '2';
 
 export interface ResolvedSnapshotInput {
   /** The observed snapshot this resolution is derived from (design doc §15). */
@@ -123,12 +123,18 @@ function accumulatesWithRelations(
   observed: ObservedSnapshot,
   elements: readonly ResolvedElement[],
 ): Relation[] {
-  const strategyById = new Map(
-    elements.map((element) => [element.id, element.resolution.strategy]),
-  );
+  const byId = new Map(elements.map((element) => [element.id, element] as const));
   const groups = new Map<string, ElementId[]>();
   for (const element of observed.elements) {
-    if (strategyById.get(element.id) !== 'accumulate') continue;
+    const resolved = byId.get(element.id);
+    // Only an element in force actually combines: an unresolved, unknown, or
+    // shadowed one (e.g. a marketplace catalog clone, #176) is not applicable,
+    // so an edge claiming it accumulates would be wrong.
+    if (
+      (resolved?.status !== 'effective' && resolved?.status !== 'conditional') ||
+      resolved.resolution.strategy !== 'accumulate'
+    )
+      continue;
     const list = groups.get(element.native.kind) ?? [];
     list.push(element.id);
     groups.set(element.native.kind, list);
