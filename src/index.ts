@@ -191,7 +191,7 @@ cli
   .option('--runtime <id>', `Scope 'latest' to a runtime: ${RUNTIME_CHOICES}`)
   .option('--facet <facet>', 'Filter by semantic facet')
   .option('--kind <kind>', 'Filter by element kind (repeatable)')
-  .option('--origin <origin>', 'Filter by native origin')
+  .option('--origin <origin>', 'Filter by native origin (repeatable)')
   .option('--status <status>', 'Filter by resolved status')
   .option('--limit <n>', 'Maximum number of elements to print')
   .option('--json', 'Output as JSON')
@@ -204,7 +204,7 @@ cli
           runtime?: string;
           facet?: string;
           kind?: string | string[];
-          origin?: string;
+          origin?: string | string[];
           status?: string;
           limit?: string | number | boolean;
         } & CommonFlags,
@@ -218,7 +218,7 @@ cli
             ...(runtime !== undefined ? { runtime } : {}),
             ...(flags.facet !== undefined ? { facet: flags.facet } : {}),
             ...(flags.kind !== undefined ? { kind: [flags.kind].flat() } : {}),
-            ...(flags.origin !== undefined ? { origin: flags.origin } : {}),
+            ...(flags.origin !== undefined ? { origin: [flags.origin].flat() } : {}),
             ...(flags.status !== undefined ? { status: flags.status } : {}),
             ...(limit !== undefined ? { limit } : {}),
             json: flags.json ?? false,
@@ -261,6 +261,7 @@ cli
   .option('--facet <facet>', 'Filter by semantic facet (repeatable)')
   .option('--kind <kind>', 'Filter by element kind (repeatable)')
   .option('--status <status>', 'Filter by resolved status (repeatable)')
+  .option('--scope <scope>', 'Filter by compat scope, e.g. claude-compat (repeatable)')
   .option('--json', 'Output as JSON')
   .action(
     withErrorHandling(
@@ -273,6 +274,7 @@ cli
           facet?: string | string[];
           kind?: string | string[];
           status?: string | string[];
+          scope?: string | string[];
         } & CommonFlags,
       ) => {
         const runtime = parseRuntimeFlag(flags.runtime);
@@ -285,6 +287,7 @@ cli
             ...(flags.facet !== undefined ? { facet: [flags.facet].flat() } : {}),
             ...(flags.kind !== undefined ? { kind: [flags.kind].flat() } : {}),
             ...(flags.status !== undefined ? { status: [flags.status].flat() } : {}),
+            ...(flags.scope !== undefined ? { scope: [flags.scope].flat() } : {}),
             json: flags.json ?? false,
           },
           loggerForFlags(flags),

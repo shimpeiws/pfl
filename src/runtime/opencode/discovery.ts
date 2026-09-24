@@ -433,7 +433,10 @@ async function addInstructionTree(
       builders,
       entry,
       origin: 'project',
-      scope: 'project',
+      // The `CLAUDE.md` fallback is another agent's config that OpenCode reads:
+      // the compat scope marks that cross-runtime origin while `origin` stays
+      // `project` (#165).
+      scope: name === INSTRUCTION_FALLBACK_FILE ? 'claude-compat' : 'project',
       kind: 'instructions',
       displayPath: entry.relativePath,
       metadataForPath,
@@ -478,11 +481,13 @@ async function collectInstructionInDir(
     );
     return;
   }
+  // The `CLAUDE.md` fallback is another agent's config read compatibly, so it
+  // carries the compat scope regardless of the caller's own scope (#165).
   await addKnownFile(
     join(directory, INSTRUCTION_FALLBACK_FILE),
     `${prefix}${INSTRUCTION_FALLBACK_FILE}`,
     origin,
-    scope,
+    'claude-compat',
     'instructions',
     directory,
     elements,

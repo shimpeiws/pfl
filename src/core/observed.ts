@@ -134,3 +134,12 @@ export interface ObservedSnapshot {
     observed: string;
   };
 }
+
+/**
+ * Cross-runtime compat reads carry a `-compat` consent scope (`claude-compat`,
+ * `agents-compat`) while `origin` stays `user` (#165). Only those scopes get a
+ * marker in the views — `user (user)` would be noise.
+ */
+export function isCompatScope(scope: string | null): boolean {
+  return scope !== null && scope.endsWith('-compat');
+}

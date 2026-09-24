@@ -65,19 +65,26 @@ function pair(
   kind: string,
   path: string,
   resolvedStatus: ResolvedStatus = 'effective',
-  observed: { status?: ObservedElement['status']; reason?: ObservedElement['reason'] } = {},
+  options: {
+    scope?: string;
+    status?: ObservedElement['status'];
+    reason?: ObservedElement['reason'];
+  } = {},
 ): Pair {
   const origin = path.startsWith('~/') ? 'user' : 'project';
   const id = elementIdFor({ runtimeId: rid, origin, path, kind });
+  const status = options.status ?? 'observed';
   return {
     observed: {
       id,
-      native: { kind, origin, scope: origin },
+      native: { kind, origin, scope: options.scope ?? origin },
       source: { path },
       inspectability: 'observable',
       metadata: {},
-      status: observed.status ?? 'observed',
-      ...(observed.reason !== undefined && { reason: observed.reason }),
+      status,
+      ...(options.reason !== undefined || status === 'skipped'
+        ? { reason: options.reason ?? ('symlink-not-followed' as const) }
+        : {}),
     },
     resolved: {
       id,
@@ -336,5 +343,38 @@ describe('runReport', () => {
     await expect(runReport(projectRoot, { home }, logger)).rejects.toMatchObject({
       exitCode: EXIT_CODES.CONFIG_ERROR,
     });
+  });
+
+  it('surfaces cross-runtime compat scopes as a notable (#165)', async () => {
+    const projectRoot = await tempDir('pfl-report-project-');
+    const home = await tempDir('pfl-report-home-');
+    await seedSnapshot(projectRoot, home, [
+      pair('instructions', 'CLAUDE.md'),
+      pair('skills', '~/.claude/skills/uclaude/SKILL.md', 'effective', { scope: 'claude-compat' }),
+      pair('skills', '~/.agents/skills/a/SKILL.md', 'effective', { scope: 'agents-compat' }),
+      pair('skills', '~/.agents/skills/b/SKILL.md', 'effective', { scope: 'agents-compat' }),
+      // A skipped compat entry was discovered but not read; it must not count.
+      pair('skills', '~/.claude/skills/link/SKILL.md', 'effective', {
+        scope: 'claude-compat',
+        status: 'skipped',
+      }),
+    ]);
+    const { lines, logger } = fakeLogger();
+
+    const outcome = await runReport(projectRoot, { home }, logger);
+
+    const output = lines.join('\n');
+    expect(output).toContain(
+      '1 element(s) are read through the claude-compat compatibility surface',
+    );
+    expect(output).toContain(
+      '2 element(s) are read through the agents-compat compatibility surface',
+    );
+    // Plain consent scopes (`project`, `user`, …) are not compat reads.
+    expect(output).not.toContain('project compatibility surface');
+    expect(outcome.data.compatScopes).toEqual([
+      { scope: 'agents-compat', count: 2 },
+      { scope: 'claude-compat', count: 1 },
+    ]);
   });
 });

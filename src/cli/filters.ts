@@ -77,3 +77,15 @@ export function validateStatuses(
 ): ReadonlySet<ResolvedStatus> | undefined {
   return validate(values, RESOLVED_STATUSES, 'status', 'statuses');
 }
+
+/**
+ * `--scope` (#165): compat scopes are adapter-defined strings, not an enum,
+ * so the valid set is whatever the snapshot actually observed. An unknown
+ * scope fails with the observed list, like the enum-backed filters.
+ */
+export function validateScopes(
+  values: readonly string[] | undefined,
+  present: ReadonlySet<string>,
+): ReadonlySet<string> | undefined {
+  return validate(values, [...present].sort(), 'scope', 'scopes');
+}

@@ -175,9 +175,15 @@ nested under `data`.
   observedSnapshotId, resolvedSnapshotId,
   confidence,
   stats, findings,
+  compatScopes: [{ scope, count }],
   interpretation: { classifierVersion, origin }
 }
 ```
+
+`compatScopes` (#165) counts elements with `status: "observed"` whose consent
+scope marks a cross-runtime compat read (a scope ending in `-compat`), grouped
+by scope and sorted by `scope`. Scopes are adapter-defined, so the JSON
+enumerates observed values rather than a fixed list.
 
 With `--explain`, `data` additionally carries `explanation` (#169, additive):
 
@@ -198,7 +204,7 @@ the stored observed diagnostics in full, including `info`.
 ### `list`
 
 ```text
-{ runtime, count, total, elements: [{ id, path?, kind, origin, status, facets }], interpretation: { classifierVersion, origin } }
+{ runtime, count, total, elements: [{ id, path?, kind, origin, scope, status, facets }], interpretation: { classifierVersion, origin } }
 ```
 
 `elements` is ordered by `id`. `count` is the number of returned elements;
@@ -206,7 +212,10 @@ the stored observed diagnostics in full, including `info`.
 the list, so `total` >= `count` always. `path` is the redacted source path
 (absent for elements without one); human output strips the trailing `SKILL.md`
 segment to show the skill directory name. `path` is an additive field added in
-#167; `total` is an additive field added in #178.
+#167; `total` is an additive field added in #178. `scope` is the recorded
+consent scope (`project`, `user`, `managed`, or an adapter-defined compat
+scope such as `claude-compat`); it is `null` when the element carries none.
+`scope` is an additive field added in #165.
 
 ### `show`
 

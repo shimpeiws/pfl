@@ -30,6 +30,9 @@ so `--json` readers do not need a `show` call per id. When the snapshot is
 `partial`, the report lists the elements (`status` + `reason`) and
 warning/error diagnostics that made it so; `--explain` additionally dumps the
 stored observed diagnostics in full (in `--json`, as `data.explanation`).
+Elements read through a cross-runtime compatibility surface (`*-compat`
+scopes such as `claude-compat`) are counted in Notable so the cross-runtime
+origin is stated rather than inferred from paths (#165).
 
 ## `list`
 
@@ -47,6 +50,8 @@ kind fails and lists the valid set. `--kind` is repeatable and ORs:
 `--kind subagents --kind commands` matches either.
 
 Valid origins: `project`, `user`, `managed`, `plugin`, `builtin`, `unknown`.
+`--origin` is repeatable and ORs, like `--kind`:
+`--origin project --origin user` matches either.
 
 Valid statuses: `effective`, `shadowed`, `conditional`, `unresolved`, `unknown`.
 
@@ -54,7 +59,8 @@ Valid statuses: `effective`, `shadowed`, `conditional`, `unresolved`, `unknown`.
 many elements matched before truncation.
 
 Elements are ordered by `id`. Each row shows the source path (or `(none)` when
-none), id, kind, origin, status, and facets.
+none), id, kind, origin, status, and facets. Compat-scope rows carry the scope
+after the origin — `user (claude-compat)` (#165).
 
 ## `show`
 
@@ -68,7 +74,7 @@ findings, and provenance.
 ## `graph`
 
 ```sh
-pfl graph [--snapshot <id>] [--runtime <id>] [--origin <o>] [--facet <f>] [--kind <k>] [--status <s>] [--json]
+pfl graph [--snapshot <id>] [--runtime <id>] [--origin <o>] [--facet <f>] [--kind <k>] [--status <s>] [--scope <c>] [--json]
 ```
 
 Renders the provenance graph (observed sources → resolved elements) and
@@ -76,7 +82,9 @@ resolution graph (inter-layer relations: accumulates, shadows, conditionally
 activates). Each effective element prints once under its primary facet, with
 any further facets inline (`path [knowledge, actions]`). The filters are
 repeatable, combine with AND, apply to `--json` too, and drop edges whose
-endpoints were filtered out.
+endpoints were filtered out. `--scope` filters by consent scope — e.g.
+`--scope claude-compat` shows only the cross-runtime compat reads (#165) —
+and compat nodes print their scope inline (`path (claude-compat)`).
 
 ## `diff`
 

@@ -281,6 +281,12 @@ describe('collectOpencodeHarness instructions', () => {
     expect(found).toContain('AGENTS.md');
     expect(found).toContain('docs/AGENTS.md');
     expect(found).toContain('sub/CLAUDE.md');
+    // The `CLAUDE.md` fallback is a cross-runtime read: the compat scope marks
+    // that origin while `origin` stays `project` (#165).
+    expect(byPath(observed.elements, 'sub/CLAUDE.md').native).toMatchObject({
+      origin: 'project',
+      scope: 'claude-compat',
+    });
     expect(found).toContain('../AGENTS.md');
     expect(found).toContain('~/.config/opencode/AGENTS.md');
     // A CLAUDE.md beside an AGENTS.md is not a second element.

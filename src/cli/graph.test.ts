@@ -42,6 +42,7 @@ function pair(
   options: {
     origin?: NativeOrigin;
     status?: ResolvedStatus;
+    scope?: string;
     inspectability?: ObservedElement['inspectability'];
   } = {},
 ): Pair {
@@ -50,7 +51,7 @@ function pair(
   return {
     observed: {
       id,
-      native: { kind, origin, scope: origin },
+      native: { kind, origin, scope: options.scope ?? origin },
       source: { path },
       inspectability: options.inspectability ?? 'observable',
       metadata: {},
@@ -223,5 +224,39 @@ describe('runGraph', () => {
     await expect(
       runGraph(projectRoot, { home, json: true, status: ['bogus'] }, logger),
     ).rejects.toThrow('valid statuses');
+  });
+
+  it('filters by scope and marks compat nodes in the tree (#165)', async () => {
+    const projectRoot = await tempDir('pfl-graph-project-');
+    const home = await tempDir('pfl-graph-home-');
+    await seed(
+      projectRoot,
+      home,
+      [
+        pair('instructions', 'CLAUDE.md'),
+        pair('skills', '~/.claude/skills/x/SKILL.md', { scope: 'claude-compat' }),
+        pair('skills', '~/.config/opencode/skill/y/SKILL.md'),
+      ],
+      [],
+    );
+    const { logger, lines } = fakeLogger();
+
+    const byScope = await runGraph(
+      projectRoot,
+      { home, json: true, scope: ['claude-compat'] },
+      logger,
+    );
+    expect(byScope.data.nodes).toHaveLength(1);
+    expect(byScope.data.nodes[0]?.scope).toBe('claude-compat');
+
+    await expect(
+      runGraph(projectRoot, { home, json: true, scope: ['bogus'] }, logger),
+    ).rejects.toThrow('valid scopes');
+
+    await runGraph(projectRoot, { home }, logger);
+    const output = lines.join('\n');
+    // Only `*-compat` scopes render a marker — `user (user)` would be noise.
+    expect(output).toContain('~/.claude/skills/x/SKILL.md (claude-compat)');
+    expect(output).not.toContain('(user)');
   });
 });

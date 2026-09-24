@@ -1,6 +1,6 @@
 import { homedir } from 'node:os';
 import type { HarnessFacet } from '../core/facets.js';
-import type { NativeOrigin } from '../core/observed.js';
+import { isCompatScope, type NativeOrigin } from '../core/observed.js';
 import type { ResolvedStatus } from '../core/resolved.js';
 import { redactPath, redactingLogger } from '../redact/output.js';
 import type { Logger } from '../util/logger.js';
@@ -19,7 +19,8 @@ export interface ListOptions {
   facet?: string;
   /** Repeatable at the CLI; an element matches when its kind is any of these. */
   kind?: readonly string[];
-  origin?: string;
+  /** Repeatable at the CLI; an element matches when its origin is any of these. */
+  origin?: readonly string[];
   status?: string;
   /** Maximum number of elements returned; the matched total stays in `total`. */
   limit?: number;
@@ -33,6 +34,8 @@ interface ListRow {
   path?: string;
   kind: string;
   origin: NativeOrigin;
+  /** Compat scope such as `claude-compat` (#165); null for the runtime's own reads. */
+  scope: string | null;
   status: ResolvedStatus;
   facets: HarnessFacet[];
 }
@@ -61,7 +64,7 @@ export async function runList(
 ): Promise<CommandOutcome<ListData>> {
   const facets = validateFacets(options.facet === undefined ? undefined : [options.facet]);
   const kinds = validateKinds(options.kind);
-  const origins = validateOrigins(options.origin === undefined ? undefined : [options.origin]);
+  const origins = validateOrigins(options.origin);
   const statuses = validateStatuses(options.status === undefined ? undefined : [options.status]);
   const home = options.home ?? homedir();
   const out = redactingLogger(logger, options.json ? 'export' : 'display', { home });
@@ -85,6 +88,7 @@ export async function runList(
         ...(path !== undefined && { path }),
         kind: element.native.kind,
         origin: element.native.origin,
+        scope: element.native.scope,
         status: resolvedById.get(element.id)?.status ?? ('unknown' as ResolvedStatus),
         facets: interpretationById.get(element.id)?.facets ?? [],
       };
@@ -124,7 +128,7 @@ export async function runList(
   }
   for (const row of limited) {
     out.info(
-      `${displayPath(row.path, row.kind)}  ${row.id}  ${row.kind}  ${row.origin}  ${row.status}  ${row.facets.join(',')}`,
+      `${displayPath(row.path, row.kind)}  ${row.id}  ${row.kind}  ${row.origin}${isCompatScope(row.scope) ? ` (${row.scope})` : ''}  ${row.status}  ${row.facets.join(',')}`,
     );
   }
   if (limited.length < rows.length) {

@@ -32,6 +32,7 @@ export function pair(
   options: {
     origin?: NativeOrigin;
     status?: ResolvedStatus;
+    scope?: string;
     inspectability?: ObservedElement['inspectability'];
   } = {},
 ): Pair {
@@ -40,7 +41,7 @@ export function pair(
   return {
     observed: {
       id,
-      native: { kind, origin, scope: origin },
+      native: { kind, origin, scope: options.scope ?? origin },
       source: { path },
       inspectability: options.inspectability ?? 'observable',
       metadata: {},
@@ -179,9 +180,16 @@ describe('runList', () => {
     expect(byStatus.lines.at(-1)).toContain(ids.permissions ?? '');
 
     const byOrigin = fakeLogger();
-    await runList(projectRoot, { home, origin: 'user' }, byOrigin.logger);
+    await runList(projectRoot, { home, origin: ['user'] }, byOrigin.logger);
     expect(byOrigin.lines).toHaveLength(3);
     expect(byOrigin.lines.at(-1)).toContain(ids.memory ?? '');
+
+    // Repeated --origin flags OR, matching --kind and `pfl graph --origin`.
+    const byOrigins = fakeLogger();
+    await runList(projectRoot, { home, origin: ['user', 'project'] }, byOrigins.logger);
+    expect(byOrigins.lines).toHaveLength(6);
+    expect(byOrigins.lines.join('\n')).toContain(ids.memory ?? '');
+    expect(byOrigins.lines.join('\n')).toContain(ids.skills ?? '');
   });
 
   it('filters by kind, and ORs repeated kinds', async () => {
@@ -346,13 +354,31 @@ describe('runList', () => {
     const { projectRoot, home } = await fixture();
     const { logger } = fakeLogger();
 
-    await expect(runList(projectRoot, { home, origin: 'elsewhere' }, logger)).rejects.toMatchObject(
-      {
-        exitCode: EXIT_CODES.CONFIG_ERROR,
-      },
-    );
+    await expect(
+      runList(projectRoot, { home, origin: ['elsewhere'] }, logger),
+    ).rejects.toMatchObject({
+      exitCode: EXIT_CODES.CONFIG_ERROR,
+    });
     await expect(runList(projectRoot, { home, status: 'zombie' }, logger)).rejects.toMatchObject({
       exitCode: EXIT_CODES.CONFIG_ERROR,
     });
+  });
+
+  it('marks compat-scope rows in the human listing (#165)', async () => {
+    const projectRoot = await tempDir('pfl-list-project-');
+    const home = await tempDir('pfl-list-home-');
+    await seed(projectRoot, home, [
+      pair('instructions', 'CLAUDE.md'),
+      pair('skills', '~/.claude/skills/x/SKILL.md', { scope: 'claude-compat' }),
+    ]);
+    const { lines, logger } = fakeLogger();
+
+    const outcome = await runList(projectRoot, { home }, logger);
+
+    const output = lines.join('\n');
+    expect(output).toContain('user (claude-compat)');
+    // Plain consent scopes render bare — `user (user)` would be noise.
+    expect(output).not.toContain('(user)');
+    expect(outcome.data.elements.find((e) => e.scope === 'claude-compat')).toBeDefined();
   });
 });
