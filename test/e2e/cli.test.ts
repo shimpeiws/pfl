@@ -108,6 +108,36 @@ describe('pfl CLI end to end', () => {
     expect(result.stderr).toContain('instructions');
   });
 
+  it('filters list by --kind (repeatable) and bounds it with --limit', async () => {
+    const m = await fixture();
+    await runCli(m, ['inspect', '--runtime', 'claude-code']);
+
+    const commandsOnly = await runCli(m, ['list', '--kind', 'commands', '--json']);
+    expect(commandsOnly.code, commandsOnly.stderr).toBe(EXIT_CODES.SUCCESS);
+    const commands = JSON.parse(commandsOnly.stdout).data;
+    expect(commands.total).toBeGreaterThan(0);
+    for (const element of commands.elements) {
+      expect(element.kind).toBe('commands');
+    }
+
+    // A repeated --kind must OR, not collapse to the last value.
+    const union = await runCli(m, ['list', '--kind', 'commands', '--kind', 'skills', '--json']);
+    const unionData = JSON.parse(union.stdout).data;
+    expect(unionData.total).toBeGreaterThan(commands.total);
+
+    const limited = await runCli(m, ['list', '--limit', '1', '--json']);
+    const limitedData = JSON.parse(limited.stdout).data;
+    expect(limitedData.count).toBe(1);
+    expect(limitedData.total).toBeGreaterThan(1);
+
+    const truncated = await runCli(m, ['list', '--limit', '1']);
+    expect(truncated.stdout).toContain('more element(s) match');
+
+    const invalid = await runCli(m, ['list', '--kind', 'hoks']);
+    expect(invalid.code).toBe(EXIT_CODES.CONFIG_ERROR);
+    expect(invalid.stderr).toContain('hooks');
+  });
+
   it('diffs a snapshot against itself as an all-zero diff', async () => {
     const m = await fixture();
     await runCli(m, ['inspect', '--runtime', 'claude-code']);
