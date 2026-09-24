@@ -104,6 +104,9 @@ export async function runShow(
   );
   out.info(`  inspectability  ${observedElement.inspectability}`);
   out.info(`  status          ${resolvedElement?.status ?? 'unknown'}`);
+  if (observedElement.reason !== undefined) {
+    out.info(`  reason          ${observedElement.reason}`);
+  }
   if (resolvedElement !== undefined) {
     out.info(`  activation      ${resolvedElement.activation}`);
     out.info(

@@ -1,11 +1,13 @@
 import { homedir } from 'node:os';
 import { HARNESS_FACETS } from '../core/facets.js';
+import type { Diagnostic } from '../core/diagnostics.js';
 import type { ElementId } from '../core/ids.js';
 import type { Finding, HarnessStats } from '../core/interpretation.js';
 import type { ObservedElement } from '../core/observed.js';
+import { partialCauses } from '../discovery/assemble.js';
 import { getRuntimeName } from '../runtime/registry.js';
 import { isCompatScope } from '../core/observed.js';
-import { redactPath, redactingLogger } from '../redact/output.js';
+import { redactDiagnostic, redactPath, redactingLogger } from '../redact/output.js';
 import type { Logger } from '../util/logger.js';
 import { type CommandOutcome } from './document.js';
 import {
@@ -16,8 +18,10 @@ import {
 
 export interface ReportOptions {
   snapshot?: string;
-  /** Scope `latest` to this runtime's newest run (#180). */
+  /** Scope `latest` to a runtime's newest run (#180). */
   runtime?: string;
+  /** Dump the stored observed diagnostics in full (#169). */
+  explain?: boolean;
   json?: boolean;
   /** Injected for tests; defaults to the current user's home. */
   home?: string;
@@ -38,6 +42,23 @@ export interface FindingElement {
 
 export type ReportFinding = Finding & { elements: FindingElement[] };
 
+/** An element whose status made the snapshot `partial` (#169). */
+export interface PartialCauseElement {
+  id: string;
+  path?: string;
+  kind: string;
+  status: ObservedElement['status'];
+  reason?: string;
+}
+
+/** Why a snapshot is not `complete`, plus the full stored diagnostics (#169). */
+export interface ReportExplanation {
+  /** The elements and warning/error diagnostics that make it `partial`. */
+  causes: { elements: PartialCauseElement[]; diagnostics: Diagnostic[] };
+  /** The stored observed diagnostics in full, including `info`. */
+  diagnostics: Diagnostic[];
+}
+
 export interface ReportData {
   runtime: string;
   runtimeName: string;
@@ -55,6 +76,8 @@ export interface ReportData {
   compatScopes: { scope: string; count: number }[];
   /** Which classifier produced the interpretation, and where it came from (#84). */
   interpretation: InterpretationProvenance;
+  /** Present only under `--explain` (#169). */
+  explanation?: ReportExplanation;
 }
 
 /**
@@ -81,6 +104,7 @@ export async function runReport(
     ...finding,
     elements: finding.elementIds.map((id) => findingElement(id, elementById, home)),
   }));
+  const causes = partialCauses(observed.elements, observed.diagnostics);
 
   const data: ReportData = {
     runtime: observed.runtime.id,
@@ -93,6 +117,15 @@ export async function runReport(
     findings,
     compatScopes: compatScopeCounts(observed.elements),
     interpretation: interpretationProvenance(run),
+    ...(options.explain === true && {
+      explanation: {
+        causes: {
+          elements: causes.elements.map((element) => partialCauseElement(element, home)),
+          diagnostics: causes.diagnostics.map((d) => redactDiagnostic(d, 'export', { home })),
+        },
+        diagnostics: observed.diagnostics.map((d) => redactDiagnostic(d, 'export', { home })),
+      },
+    }),
   };
 
   if (options.json) {
@@ -139,6 +172,49 @@ export async function runReport(
   if (observed.completeness !== 'complete') {
     out.info('');
     out.warn(`⚠ scan completeness: ${observed.completeness}`);
+    if (causes.elements.length > 0) {
+      out.info(`  ${causes.elements.length} element(s) not fully observed:`);
+      for (const element of causes.elements) {
+        out.info(
+          `    ${element.status}  ${element.reason ?? 'unknown'}  ${element.native.kind}  ${element.source.path ?? '(none)'}`,
+        );
+      }
+    }
+    if (causes.diagnostics.length > 0) {
+      out.info(`  ${causes.diagnostics.length} warning/error diagnostic(s):`);
+      // A handful of causes are listed verbatim; past that, group by
+      // severity+code so a flood (e.g. 79 duplicate-name warnings) collapses
+      // into counts and `--explain` stays the full dump.
+      if (causes.diagnostics.length <= 5) {
+        for (const d of causes.diagnostics) {
+          out.info(
+            `    ${d.severity} ${d.code}${d.path !== undefined ? `  ${d.path}` : ''}  ${d.message}`,
+          );
+        }
+      } else {
+        const byKey = new Map<string, number>();
+        for (const d of causes.diagnostics) {
+          const key = `${d.severity} ${d.code}`;
+          byKey.set(key, (byKey.get(key) ?? 0) + 1);
+        }
+        for (const [key, count] of byKey) {
+          out.info(`    ${count}× ${key}`);
+        }
+      }
+      if (options.explain !== true) {
+        out.info('    (use --explain to dump the stored diagnostics)');
+      }
+    }
+  }
+
+  if (options.explain === true && observed.diagnostics.length > 0) {
+    out.info('');
+    out.info('Observed diagnostics');
+    for (const d of observed.diagnostics) {
+      out.info(
+        `  ${d.severity}  ${d.code}${d.path !== undefined ? `  ${d.path}` : ''}  ${d.message}`,
+      );
+    }
   }
 
   return { data, diagnostics, completeness: observed.completeness };
@@ -178,5 +254,17 @@ function findingElement(
       path: redactPath(element.source.path, { home }),
     }),
     kind: element.native.kind,
+  };
+}
+
+function partialCauseElement(element: ObservedElement, home: string): PartialCauseElement {
+  return {
+    id: element.id,
+    ...(element.source.path !== undefined && {
+      path: redactPath(element.source.path, { home }),
+    }),
+    kind: element.native.kind,
+    status: element.status,
+    ...(element.reason !== undefined && { reason: element.reason }),
   };
 }

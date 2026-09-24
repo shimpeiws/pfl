@@ -13,6 +13,7 @@ import {
 import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { EXIT_CODES, PflError } from '../cli/exit-codes.js';
+import { partialCauses } from '../discovery/assemble.js';
 import {
   COMPLETENESS_VALUES as CORE_COMPLETENESS_VALUES,
   DIAGNOSTIC_SEVERITY_VALUES as CORE_DIAGNOSTIC_SEVERITY_VALUES,
@@ -153,6 +154,12 @@ export async function listProjectIds(home: string = homedir()): Promise<string[]
   return ids;
 }
 
+/** Per-run counts of what made a snapshot `partial` (#169). */
+export interface PartialCauseSummary {
+  elements: { skipped: number; unreadable: number; unsupported: number };
+  diagnostics: { warning: number; error: number };
+}
+
 /** A run's stable facts: one observation event and its resolved snapshot (§23). */
 export interface StoredRunSummary {
   observedId: string;
@@ -167,6 +174,8 @@ export interface StoredRunSummary {
   capturedAt: string;
   runtime: { id: string; version: string | null };
   completeness: Completeness;
+  /** Present only when `completeness` is `partial`: what made it so (#169). */
+  partialCauses?: PartialCauseSummary;
 }
 
 export interface RunListResult {
@@ -427,6 +436,7 @@ export async function listRuns(
         'observations',
       );
       const resolvedId = resolvedByObserved.get(observed.snapshotId) ?? null;
+      const causes = partialCauses(observed.elements, observed.diagnostics);
       runs.push({
         observedId: observed.snapshotId,
         resolvedId,
@@ -435,6 +445,19 @@ export async function listRuns(
         capturedAt: observed.capturedAt,
         runtime: { id: observed.runtime.id, version: observed.runtime.version },
         completeness: observed.completeness,
+        ...(observed.completeness === 'partial' && {
+          partialCauses: {
+            elements: {
+              skipped: causes.elements.filter((e) => e.status === 'skipped').length,
+              unreadable: causes.elements.filter((e) => e.status === 'unreadable').length,
+              unsupported: causes.elements.filter((e) => e.status === 'unsupported').length,
+            },
+            diagnostics: {
+              warning: causes.diagnostics.filter((d) => d.severity === 'warning').length,
+              error: causes.diagnostics.filter((d) => d.severity === 'error').length,
+            },
+          },
+        }),
       });
     } catch (error) {
       diagnostics.push(

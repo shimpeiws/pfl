@@ -85,18 +85,33 @@ function redactProject(project: ObservedProject, ctx: RedactionContext): Observe
   };
 }
 
-export function completenessOf(
+/**
+ * The elements and diagnostics that make a snapshot `partial` (#169): elements
+ * that are `unreadable`/`unsupported`/`skipped`, and diagnostics at `warning`
+ * or `error`. `completenessOf` derives from this so a report can name the same
+ * causes the rule counted, instead of re-deriving the condition.
+ */
+export function partialCauses(
   elements: readonly ObservedElement[],
   diagnostics: readonly Diagnostic[] = [],
-): Completeness {
-  const incomplete =
-    elements.some(
+): { elements: ObservedElement[]; diagnostics: Diagnostic[] } {
+  return {
+    elements: elements.filter(
       (element) =>
         element.status === 'unreadable' ||
         element.status === 'unsupported' ||
         element.status === 'skipped',
-    ) || diagnostics.some((d) => d.severity === 'warning' || d.severity === 'error');
-  if (incomplete) return 'partial';
+    ),
+    diagnostics: diagnostics.filter((d) => d.severity === 'warning' || d.severity === 'error'),
+  };
+}
+
+export function completenessOf(
+  elements: readonly ObservedElement[],
+  diagnostics: readonly Diagnostic[] = [],
+): Completeness {
+  const causes = partialCauses(elements, diagnostics);
+  if (causes.elements.length > 0 || causes.diagnostics.length > 0) return 'partial';
   if (elements.some((element) => element.status === 'unknown')) return 'unknown';
   return 'complete';
 }

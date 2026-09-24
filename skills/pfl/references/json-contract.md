@@ -125,6 +125,24 @@ is not in the observed snapshot.
 cross-runtime compatibility read (`*-compat`); it is empty when the runtime
 read only its own surfaces.
 
+With `--explain`, `data` additionally carries `explanation`:
+
+```json
+"explanation": {
+  "causes": {
+    "elements": [
+      { "id": "el_…", "path": "…", "kind": "…", "status": "skipped", "reason": "…" }
+    ],
+    "diagnostics": [{ "severity": "warning", "code": "…", "message": "…" }]
+  },
+  "diagnostics": [{ "severity": "…", "code": "…", "message": "…" }]
+}
+```
+
+`causes` holds the elements (`unreadable`/`unsupported`/`skipped`) and
+warning/error diagnostics that made the snapshot `partial`; `diagnostics` is
+the stored observed diagnostics in full, including `info`.
+
 ### list
 
 ```json
@@ -192,13 +210,18 @@ Nodes ordered by `id`. Edges carry `{ type, from, to }`. With `--origin` /
       "interpretationId": null,
       "capturedAt": "…",
       "runtime": "…",
-      "completeness": "…"
+      "completeness": "…",
+      "partialCauses": {
+        "elements": { "skipped": 0, "unreadable": 0, "unsupported": 0 },
+        "diagnostics": { "warning": 0, "error": 0 }
+      }
     }
   ]
 }
 ```
 
-Runs newest first.
+Runs newest first. `partialCauses` is present only when `completeness` is
+`partial` and counts what made it so.
 
 ### diff
 

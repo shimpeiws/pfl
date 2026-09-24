@@ -9,7 +9,7 @@ import {
   runtimeId,
   type ResolvedSnapshotId,
 } from '../core/ids.js';
-import type { ObservedElement, ObservedSnapshot, ObservedStatus } from '../core/observed.js';
+import type { ObservedElement, ObservedSnapshot } from '../core/observed.js';
 import type { ResolvedElement, ResolvedSnapshot, ResolvedStatus } from '../core/resolved.js';
 import { resolveProjectContext } from '../discovery/project-identity.js';
 import {
@@ -65,20 +65,26 @@ function pair(
   kind: string,
   path: string,
   resolvedStatus: ResolvedStatus = 'effective',
-  scope?: string,
-  observedStatus: ObservedStatus = 'observed',
+  options: {
+    scope?: string;
+    status?: ObservedElement['status'];
+    reason?: ObservedElement['reason'];
+  } = {},
 ): Pair {
   const origin = path.startsWith('~/') ? 'user' : 'project';
   const id = elementIdFor({ runtimeId: rid, origin, path, kind });
+  const status = options.status ?? 'observed';
   return {
     observed: {
       id,
-      native: { kind, origin, scope: scope ?? origin },
+      native: { kind, origin, scope: options.scope ?? origin },
       source: { path },
       inspectability: 'observable',
       metadata: {},
-      status: observedStatus,
-      ...(observedStatus === 'skipped' ? { reason: 'symlink-not-followed' as const } : {}),
+      status,
+      ...(options.reason !== undefined || status === 'skipped'
+        ? { reason: options.reason ?? ('symlink-not-followed' as const) }
+        : {}),
     },
     resolved: {
       id,
@@ -90,7 +96,12 @@ function pair(
   };
 }
 
-async function seedSnapshot(projectRoot: string, home: string, pairs: Pair[]): Promise<void> {
+async function seedSnapshot(
+  projectRoot: string,
+  home: string,
+  pairs: Pair[],
+  diagnostics: ObservedSnapshot['diagnostics'] = [],
+): Promise<void> {
   const projectId = (await resolveProjectContext(projectRoot)).id;
   const observed: ObservedSnapshot = {
     schemaVersion: '1',
@@ -100,7 +111,7 @@ async function seedSnapshot(projectRoot: string, home: string, pairs: Pair[]): P
     runtime: { id: rid, version: '2.1.272' },
     adapter: { id: 'claude-code', version: '0.1.0', runtimeCompatibility: 'verified' },
     elements: pairs.map((p) => p.observed),
-    diagnostics: [],
+    diagnostics: [...diagnostics],
     completeness: 'partial',
     digests: { observed: 'sha256:x' },
   };
@@ -208,6 +219,95 @@ describe('runReport', () => {
     expect(finding?.elements).toEqual(expected);
   });
 
+  it('explains why the snapshot is partial, and --explain dumps stored diagnostics (#169)', async () => {
+    const projectRoot = await tempDir('pfl-report-project-');
+    const home = await tempDir('pfl-report-home-');
+    const skipped = pair('skills', '~/.claude/skills/linked/SKILL.md', 'unresolved', {
+      status: 'skipped',
+      reason: 'symlink-not-followed',
+    });
+    await seedSnapshot(
+      projectRoot,
+      home,
+      [pair('instructions', 'CLAUDE.md'), skipped],
+      [
+        {
+          severity: 'warning',
+          code: 'duplicate-element-name',
+          message: 'duplicate name "reviewer"',
+          path: '~/.claude/plugins/market/plug/agents/reviewer.md',
+        },
+        { severity: 'info', code: 'path-not-found', message: 'no memory dir' },
+      ],
+    );
+    const { lines, warns, logger } = fakeLogger();
+
+    await runReport(projectRoot, { home }, logger);
+
+    const output = [...lines, ...warns].join('\n');
+    expect(output).toContain('⚠ scan completeness: partial');
+    expect(output).toContain('1 element(s) not fully observed');
+    expect(output).toContain(
+      'skipped  symlink-not-followed  skills  ~/.claude/skills/linked/SKILL.md',
+    );
+    expect(output).toContain('1 warning/error diagnostic(s)');
+    expect(output).toContain('warning duplicate-element-name');
+    expect(output).toContain('--explain');
+    // The info diagnostic stays out of the cause summary.
+    expect(output).not.toContain('path-not-found');
+  });
+
+  it('emits the full stored diagnostics under --explain --json (#169)', async () => {
+    const projectRoot = await tempDir('pfl-report-project-');
+    const home = await tempDir('pfl-report-home-');
+    const skipped = pair('skills', '~/.claude/skills/linked/SKILL.md', 'unresolved', {
+      status: 'skipped',
+      reason: 'symlink-not-followed',
+    });
+    await seedSnapshot(
+      projectRoot,
+      home,
+      [skipped],
+      [
+        { severity: 'warning', code: 'w', message: 'warned' },
+        { severity: 'info', code: 'i', message: 'noted' },
+      ],
+    );
+    const { logger } = fakeLogger();
+
+    const outcome = await runReport(projectRoot, { home, json: true, explain: true }, logger);
+
+    expect(outcome.data.explanation).toMatchObject({
+      causes: {
+        elements: [
+          {
+            id: skipped.observed.id,
+            path: '~/.claude/skills/linked/SKILL.md',
+            kind: 'skills',
+            status: 'skipped',
+            reason: 'symlink-not-followed',
+          },
+        ],
+        diagnostics: [{ severity: 'warning', code: 'w' }],
+      },
+      diagnostics: [
+        { severity: 'warning', code: 'w' },
+        { severity: 'info', code: 'i' },
+      ],
+    });
+  });
+
+  it('omits explanation without --explain', async () => {
+    const projectRoot = await tempDir('pfl-report-project-');
+    const home = await tempDir('pfl-report-home-');
+    await seedSnapshot(projectRoot, home, [pair('instructions', 'CLAUDE.md')]);
+    const { logger } = fakeLogger();
+
+    const outcome = await runReport(projectRoot, { home, json: true }, logger);
+
+    expect(outcome.data.explanation).toBeUndefined();
+  });
+
   it('fails clearly on an unknown snapshot id', async () => {
     const projectRoot = await tempDir('pfl-report-project-');
     const home = await tempDir('pfl-report-home-');
@@ -250,11 +350,14 @@ describe('runReport', () => {
     const home = await tempDir('pfl-report-home-');
     await seedSnapshot(projectRoot, home, [
       pair('instructions', 'CLAUDE.md'),
-      pair('skills', '~/.claude/skills/uclaude/SKILL.md', 'effective', 'claude-compat'),
-      pair('skills', '~/.agents/skills/a/SKILL.md', 'effective', 'agents-compat'),
-      pair('skills', '~/.agents/skills/b/SKILL.md', 'effective', 'agents-compat'),
+      pair('skills', '~/.claude/skills/uclaude/SKILL.md', 'effective', { scope: 'claude-compat' }),
+      pair('skills', '~/.agents/skills/a/SKILL.md', 'effective', { scope: 'agents-compat' }),
+      pair('skills', '~/.agents/skills/b/SKILL.md', 'effective', { scope: 'agents-compat' }),
       // A skipped compat entry was discovered but not read; it must not count.
-      pair('skills', '~/.claude/skills/link/SKILL.md', 'effective', 'claude-compat', 'skipped'),
+      pair('skills', '~/.claude/skills/link/SKILL.md', 'effective', {
+        scope: 'claude-compat',
+        status: 'skipped',
+      }),
     ]);
     const { lines, logger } = fakeLogger();
 
