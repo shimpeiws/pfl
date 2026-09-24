@@ -52,6 +52,7 @@ The binary is `pfl`. Supported runtimes: `claude-code`, `codex`, `opencode`.
 3. **Compare** — structural, effective, and facet-level diff:
 
    ```sh
+   pfl diff                        # previous vs latest, same runtime
    pfl diff <snapshot-a> [snapshot-b]
    ```
 

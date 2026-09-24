@@ -19,6 +19,7 @@ import {
   writeObservedSnapshot,
   writeResolvedSnapshot,
 } from '../snapshot/store.js';
+import { EXIT_CODES } from './exit-codes.js';
 import { computeDiff, runDiff } from './diff.js';
 import type { InterpretedRun } from './read.js';
 
@@ -468,8 +469,10 @@ describe('computeDiff', () => {
 });
 
 interface SeedOptions {
+  runtime?: string;
   runtimeVersion?: string;
   semanticsVersion?: string;
+  capturedAt?: string;
   statuses?: Map<string, ResolvedStatus>;
 }
 
@@ -480,16 +483,20 @@ async function seedRun(
   options: SeedOptions = {},
 ): Promise<{ observedId: string; resolvedId: string }> {
   const projectId = (await resolveProjectContext(projectRoot)).id;
-  const rid = runtimeId('claude-code');
+  const rid = runtimeId(options.runtime ?? 'claude-code');
   const observedSnapshotId = generateObservedSnapshotId();
   const resolvedSnapshotId = generateResolvedSnapshotId();
   const observed: ObservedSnapshot = {
     schemaVersion: '1',
     snapshotId: observedSnapshotId,
-    capturedAt: '2026-09-16T00:00:00.000Z',
+    capturedAt: options.capturedAt ?? '2026-09-16T00:00:00.000Z',
     project: { id: projectId, displayName: 'owner/repo', root: projectRoot },
     runtime: { id: rid, version: options.runtimeVersion ?? '2.1.272' },
-    adapter: { id: 'claude-code', version: '0.1.0', runtimeCompatibility: 'verified' },
+    adapter: {
+      id: options.runtime ?? 'claude-code',
+      version: '0.1.0',
+      runtimeCompatibility: 'verified',
+    },
     elements: pairs.map((p) => p.observed),
     diagnostics: [],
     completeness: 'complete',
@@ -586,5 +593,75 @@ describe('runDiff', () => {
     expect(outcome.data.relations).toEqual({ added: [], removed: [] });
     expect(outcome.data.findings).toEqual({ added: [], removed: [] });
     expect(outcome.completeness).toBe('complete');
+  });
+
+  it('with no operands diffs previous vs latest within the latest runtime (#186)', async () => {
+    const projectRoot = await tempDir('pfl-diff-project-');
+    const home = await tempDir('pfl-diff-home-');
+    const rid = runtimeId('claude-code');
+    const a = await seedRun(projectRoot, home, [pair(rid, 'instructions', 'CLAUDE.md')], {
+      capturedAt: '2026-09-16T00:00:00.000Z',
+    });
+    // A codex run lands between the two claude-code runs and must be skipped.
+    await seedRun(projectRoot, home, [], {
+      runtime: 'codex',
+      capturedAt: '2026-09-17T00:00:00.000Z',
+    });
+    const b = await seedRun(projectRoot, home, [pair(rid, 'instructions', 'CLAUDE.md')], {
+      capturedAt: '2026-09-18T00:00:00.000Z',
+    });
+    const { logger } = fakeLogger();
+
+    const outcome = await runDiff(projectRoot, undefined, undefined, { home, json: true }, logger);
+
+    expect(outcome.data.resolvedSnapshotIdA).toBe(a.resolvedId);
+    expect(outcome.data.resolvedSnapshotIdB).toBe(b.resolvedId);
+  });
+
+  it('scopes the default pair to --runtime', async () => {
+    const projectRoot = await tempDir('pfl-diff-project-');
+    const home = await tempDir('pfl-diff-home-');
+    const rid = runtimeId('claude-code');
+    const cx = await seedRun(projectRoot, home, [], {
+      runtime: 'codex',
+      capturedAt: '2026-09-16T00:00:00.000Z',
+    });
+    await seedRun(projectRoot, home, [pair(rid, 'instructions', 'CLAUDE.md')], {
+      capturedAt: '2026-09-17T00:00:00.000Z',
+    });
+    const cx2 = await seedRun(projectRoot, home, [], {
+      runtime: 'codex',
+      capturedAt: '2026-09-18T00:00:00.000Z',
+    });
+    const { logger } = fakeLogger();
+
+    // The latest pointer names claude-code, but --runtime codex must pair the
+    // two codex runs.
+    const outcome = await runDiff(
+      projectRoot,
+      undefined,
+      undefined,
+      { home, json: true, runtime: 'codex' },
+      logger,
+    );
+
+    expect(outcome.data.resolvedSnapshotIdA).toBe(cx.resolvedId);
+    expect(outcome.data.resolvedSnapshotIdB).toBe(cx2.resolvedId);
+    expect(outcome.data.runtime).toBe('codex');
+  });
+
+  it('fails when the runtime has only one stored run', async () => {
+    const projectRoot = await tempDir('pfl-diff-project-');
+    const home = await tempDir('pfl-diff-home-');
+    const rid = runtimeId('claude-code');
+    await seedRun(projectRoot, home, [pair(rid, 'instructions', 'CLAUDE.md')]);
+    const { logger } = fakeLogger();
+
+    await expect(
+      runDiff(projectRoot, undefined, undefined, { home }, logger),
+    ).rejects.toMatchObject({
+      exitCode: EXIT_CODES.CONFIG_ERROR,
+      message: expect.stringContaining('only one'),
+    });
   });
 });

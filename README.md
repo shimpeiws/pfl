@@ -71,7 +71,7 @@ pfl graph --snapshot <id>
 
 pfl snapshots
 
-pfl diff <snapshot-a> [snapshot-b]
+pfl diff [snapshot-a] [snapshot-b]
 
 pfl gc --dry-run
 pfl gc --keep 10
@@ -79,7 +79,8 @@ pfl gc --prune-orphans
 ```
 
 The default snapshot for read commands is `latest`; `diff`'s second operand
-defaults to it, and the literal `latest` is accepted anywhere an id is.
+defaults to it, and the literal `latest` is accepted anywhere an id is. A bare
+`pfl diff` compares previous vs latest within one runtime.
 
 `pfl gc` reclaims old runs (the twenty most recent are kept by default) and
 orphaned histories. It is never a side effect of `inspect`; `--dry-run` lists
