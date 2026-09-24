@@ -101,10 +101,24 @@ add `missingScopes`:
   "resolvedSnapshotId": "res_…",
   "confidence": "…",
   "stats": { "…" },
-  "findings": [],
+  "findings": [
+    {
+      "rule": "shadowed-element",
+      "message": "…",
+      "elementIds": ["el_…"],
+      "elements": [
+        { "id": "el_…", "path": ".claude/settings.json#permissions", "kind": "permissions" }
+      ]
+    }
+  ],
   "interpretation": { "classifierVersion": "…", "origin": "stored" }
 }
 ```
+
+`findings[].elements` resolves each cited `elementId` to its redacted source
+`path` and `kind`, so readers do not need a `pfl show` call per id. `path` is
+absent when the element has no source path; both are absent when the cited id
+is not in the observed snapshot.
 
 ### list
 

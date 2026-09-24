@@ -1,8 +1,10 @@
 import { homedir } from 'node:os';
 import { HARNESS_FACETS } from '../core/facets.js';
+import type { ElementId } from '../core/ids.js';
 import type { Finding, HarnessStats } from '../core/interpretation.js';
+import type { ObservedElement } from '../core/observed.js';
 import { getRuntimeName } from '../runtime/registry.js';
-import { redactingLogger } from '../redact/output.js';
+import { redactPath, redactingLogger } from '../redact/output.js';
 import type { Logger } from '../util/logger.js';
 import { type CommandOutcome } from './document.js';
 import {
@@ -18,6 +20,21 @@ export interface ReportOptions {
   home?: string;
 }
 
+/**
+ * What a finding cites, resolved for the reader (#181): the redacted source
+ * path and kind of each referenced element, so `report --json` consumers do
+ * not need a `pfl show` call per id. `path` is absent when the element has no
+ * source path (e.g. an opaque runtime layer); `path` and `kind` are both
+ * absent when the cited id is not in the observed snapshot (store corruption).
+ */
+export interface FindingElement {
+  id: ElementId;
+  path?: string;
+  kind?: string;
+}
+
+export type ReportFinding = Finding & { elements: FindingElement[] };
+
 export interface ReportData {
   runtime: string;
   runtimeName: string;
@@ -26,7 +43,7 @@ export interface ReportData {
   resolvedSnapshotId: string;
   confidence: string;
   stats: HarnessStats;
-  findings: Finding[];
+  findings: ReportFinding[];
   /** Which classifier produced the interpretation, and where it came from (#84). */
   interpretation: InterpretationProvenance;
 }
@@ -50,6 +67,11 @@ export async function runReport(
   }
   const stats = interpretation.stats;
   const runtimeName = getRuntimeName(observed.runtime.id);
+  const elementById = new Map(observed.elements.map((element) => [element.id, element]));
+  const findings: ReportFinding[] = interpretation.findings.map((finding) => ({
+    ...finding,
+    elements: finding.elementIds.map((id) => findingElement(id, elementById, home)),
+  }));
 
   const data: ReportData = {
     runtime: observed.runtime.id,
@@ -59,7 +81,7 @@ export async function runReport(
     resolvedSnapshotId: resolved.snapshotId,
     confidence: resolved.resolution.confidence,
     stats,
-    findings: interpretation.findings,
+    findings,
     interpretation: interpretationProvenance(run),
   };
 
@@ -111,4 +133,20 @@ export async function runReport(
 
 function capitalize(value: string): string {
   return `${value.charAt(0).toUpperCase()}${value.slice(1)}`;
+}
+
+function findingElement(
+  id: ElementId,
+  elementById: Map<ElementId, ObservedElement>,
+  home: string,
+): FindingElement {
+  const element = elementById.get(id);
+  if (element === undefined) return { id };
+  return {
+    id,
+    ...(element.source.path !== undefined && {
+      path: redactPath(element.source.path, { home }),
+    }),
+    kind: element.native.kind,
+  };
 }
