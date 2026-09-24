@@ -110,6 +110,7 @@ add `missingScopes`:
 
 ```json
 {
+  "runtime": "claude-code",
   "count": 4,
   "elements": [
     {
@@ -130,6 +131,7 @@ Elements ordered by `id`.
 
 ```json
 {
+  "runtime": "claude-code",
   "observed": { "…" },
   "resolved": { "…" },
   "interpretation": { "…" },
@@ -147,6 +149,7 @@ Elements ordered by `id`.
   "resolvedSnapshotId": "res_…",
   "nodes": [],
   "edges": [],
+  "runtime": "claude-code",
   "interpretation": { "classifierVersion": "…", "origin": "stored" }
 }
 ```

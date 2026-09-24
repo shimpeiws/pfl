@@ -98,6 +98,47 @@ describe('pfl CLI end to end', () => {
     }
   });
 
+  it('scopes latest to --runtime so a later inspect of another runtime does not hijack reads', async () => {
+    const m = await fixture();
+    // grantConsent writes the whole permissions file, so both runtime scopes
+    // are granted in one write rather than by a second call.
+    await writeFile(
+      join(m.home, '.pfl', 'permissions.json'),
+      JSON.stringify({ grantedScopes: ['claude-code:user', 'codex:user'] }),
+    );
+    const claude = await runCli(m, ['inspect', '--runtime', 'claude-code']);
+    expect(claude.code, claude.stderr).toBe(EXIT_CODES.SUCCESS);
+    // Inspecting codex last moves the `latest` pointer to the codex run.
+    const codex = await runCli(m, ['inspect', '--runtime', 'codex']);
+    expect(codex.code, codex.stderr).toBe(EXIT_CODES.SUCCESS);
+
+    const unscoped = await runCli(m, ['report', '--json']);
+    expect(JSON.parse(unscoped.stdout).data.runtime).toBe('codex');
+
+    const scoped = await runCli(m, ['report', '--runtime', 'claude-code', '--json']);
+    expect(scoped.code, scoped.stderr).toBe(EXIT_CODES.SUCCESS);
+    expect(JSON.parse(scoped.stdout).data.runtime).toBe('claude-code');
+    expect(scoped.stdout).toContain('Claude Code');
+
+    // A named snapshot from another runtime is refused, exit 2.
+    const snapshots = await runCli(m, ['snapshots', '--json']);
+    const claudeRun = JSON.parse(snapshots.stdout).data.runs.find(
+      (r: { runtime: { id: string } }) => r.runtime.id === 'claude-code',
+    );
+    const mismatched = await runCli(m, [
+      'report',
+      '--snapshot',
+      claudeRun.resolvedId,
+      '--runtime',
+      'codex',
+    ]);
+    expect(mismatched.code).toBe(EXIT_CODES.CONFIG_ERROR);
+
+    // An unknown runtime id fails with exit 3, like inspect's --runtime.
+    const bogus = await runCli(m, ['report', '--runtime', 'bogus']);
+    expect(bogus.code).toBe(EXIT_CODES.RUNTIME_UNSUPPORTED);
+  });
+
   it('rejects an invalid filter with exit 2 and lists the valid values', async () => {
     const m = await fixture();
     await runCli(m, ['inspect', '--runtime', 'claude-code']);

@@ -13,6 +13,8 @@ import {
 
 export interface ReportOptions {
   snapshot?: string;
+  /** Scope `latest` to this runtime's newest run (#180). */
+  runtime?: string;
   json?: boolean;
   /** Injected for tests; defaults to the current user's home. */
   home?: string;
@@ -43,7 +45,7 @@ export async function runReport(
 ): Promise<CommandOutcome<ReportData>> {
   const home = options.home ?? homedir();
   const out = redactingLogger(logger, options.json ? 'export' : 'display', { home });
-  const run = await loadInterpretation(cwd, options.snapshot, home);
+  const run = await loadInterpretation(cwd, options.snapshot, home, options.runtime);
   const { observed, resolved, interpretation, diagnostics } = run;
   for (const diagnostic of diagnostics) {
     out.warn(diagnostic.message, { code: diagnostic.code, path: diagnostic.path ?? undefined });

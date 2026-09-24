@@ -14,6 +14,8 @@ import {
 
 export interface ListOptions {
   snapshot?: string;
+  /** Scope `latest` to this runtime's newest run (#180). */
+  runtime?: string;
   facet?: string;
   origin?: string;
   status?: string;
@@ -49,6 +51,8 @@ interface ListRow {
 }
 
 export interface ListData {
+  /** The runtime the answered snapshot belongs to (#180). */
+  runtime: string;
   count: number;
   elements: ListRow[];
   /** Which classifier produced the interpretation, and where it came from (#84). */
@@ -72,7 +76,7 @@ export async function runList(
   const home = options.home ?? homedir();
   const out = redactingLogger(logger, options.json ? 'export' : 'display', { home });
 
-  const run = await loadInterpretation(cwd, options.snapshot, home);
+  const run = await loadInterpretation(cwd, options.snapshot, home, options.runtime);
   const { observed, resolved, interpretation, diagnostics } = run;
   for (const diagnostic of diagnostics) {
     out.warn(diagnostic.message, { code: diagnostic.code, path: diagnostic.path ?? undefined });
@@ -106,6 +110,7 @@ export async function runList(
   // listing keeps discovery order.
   const elements = [...rows].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   const data: ListData = {
+    runtime: observed.runtime.id,
     count: elements.length,
     elements,
     interpretation: interpretationProvenance(run),
@@ -113,6 +118,9 @@ export async function runList(
   const outcome = { data, diagnostics, completeness: observed.completeness };
 
   if (options.json) return outcome;
+  // The runtime stays prominent so an agent can assert which snapshot answered.
+  out.info(`Runtime: ${observed.runtime.id} (${resolved.snapshotId})`);
+  out.info('');
   if (rows.length === 0) {
     out.info('No elements match.');
     return outcome;

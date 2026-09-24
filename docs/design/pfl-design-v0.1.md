@@ -1114,7 +1114,9 @@ pfl snapshots
 pfl diff <snapshot-a> <snapshot-b>
 ```
 
-Default snapshot for read commands is `latest`.
+Default snapshot for read commands is `latest`. `--runtime <id>` scopes
+`latest` to the newest stored run for that runtime and refuses a named
+snapshot from another runtime (exit 2).
 
 ---
 

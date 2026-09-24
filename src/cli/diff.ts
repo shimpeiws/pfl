@@ -16,6 +16,8 @@ import {
 } from './read.js';
 
 export interface DiffOptions {
+  /** Scope a `latest` operand to this runtime's newest run (#180). */
+  runtime?: string;
   json?: boolean;
   /** Injected for tests; defaults to the current user's home. */
   home?: string;
@@ -94,10 +96,10 @@ export async function runDiff(
 ): Promise<CommandOutcome<DiffData>> {
   const home = options.home ?? homedir();
   const out = redactingLogger(logger, options.json ? 'export' : 'display', { home });
-  const runA = await loadInterpretation(cwd, snapshotA, home);
+  const runA = await loadInterpretation(cwd, snapshotA, home, options.runtime);
   // The second operand defaults to `latest`, consistently with every other read
   // command, so `pfl diff <a>` compares a snapshot against the current one.
-  const runB = await loadInterpretation(cwd, snapshotB ?? 'latest', home);
+  const runB = await loadInterpretation(cwd, snapshotB ?? 'latest', home, options.runtime);
   const diagnostics = [...runA.diagnostics, ...runB.diagnostics];
   for (const diagnostic of diagnostics) {
     out.warn(diagnostic.message, { code: diagnostic.code, path: diagnostic.path ?? undefined });
@@ -130,6 +132,7 @@ export async function runDiff(
   if (options.json) return outcome;
 
   out.info('Harness Diff');
+  out.info(`Runtime: ${result.runtimeId}`);
   out.info(`Snapshot ${result.resolvedSnapshotIdA} → ${result.resolvedSnapshotIdB}`);
   out.info('');
   out.info('Changes');
