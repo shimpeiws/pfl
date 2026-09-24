@@ -179,6 +179,19 @@ describe('pfl CLI end to end', () => {
     expect(invalid.stderr).toContain('hooks');
   });
 
+  it('makes the unknown-element-id error actionable (#168)', async () => {
+    const m = await fixture();
+    await runCli(m, ['inspect', '--runtime', 'claude-code']);
+
+    const malformed = await runCli(m, ['show', 'nope']);
+    expect(malformed.code).toBe(EXIT_CODES.CONFIG_ERROR);
+    expect(malformed.stderr).toContain('not an element id');
+
+    const unknown = await runCli(m, ['show', 'el_0000000000000000']);
+    expect(unknown.code).toBe(EXIT_CODES.CONFIG_ERROR);
+    expect(unknown.stderr).toContain('`pfl list`');
+  });
+
   it('diffs a snapshot against itself as an all-zero diff', async () => {
     const m = await fixture();
     await runCli(m, ['inspect', '--runtime', 'claude-code']);

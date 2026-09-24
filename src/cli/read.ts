@@ -197,7 +197,11 @@ async function resolveResolvedId(
         context,
       );
     }
-    throw new PflError(`unknown snapshot: ${requestedId}`, EXIT_CODES.CONFIG_ERROR, context);
+    throw new PflError(
+      `unknown snapshot: ${requestedId}; run \`pfl snapshots\` to list stored runs`,
+      EXIT_CODES.CONFIG_ERROR,
+      context,
+    );
   }
   if (runtime !== undefined && run.runtime.id !== runtime) {
     throw new PflError(
@@ -224,7 +228,7 @@ async function resolveResolvedId(
  * empty history: propagating it keeps a broken store from masquerading as
  * "no snapshots" (exit 2) when the contract reserves exit 6 for it (#180).
  */
-function throwOnStoreFailure(diagnostics: Diagnostic[]): void {
+export function throwOnStoreFailure(diagnostics: Diagnostic[]): void {
   const failure = diagnostics.find((entry) => entry.code === 'snapshot-store-unreadable');
   if (failure !== undefined) {
     throw new PflError(failure.message, EXIT_CODES.SNAPSHOT_STORE_FAILED, { diagnostics });

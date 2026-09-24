@@ -80,3 +80,10 @@ export function limitExceededDiagnostic(limit: LimitName, value: number, path: s
     path,
   };
 }
+
+/**
+ * Other stored runs an unknown-element error scans for the id (#168). Each
+ * candidate means reading one observed artifact, so the lookup is bounded like
+ * every other store walk.
+ */
+export const MAX_ELEMENT_LOOKUP_RUNS = 20;
