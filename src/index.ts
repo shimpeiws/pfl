@@ -164,17 +164,19 @@ cli
   .command('report', 'Interpret the latest (or named) snapshot')
   .option('--snapshot <id>', 'Snapshot id (default: latest)')
   .option('--runtime <id>', `Scope 'latest' to a runtime: ${RUNTIME_CHOICES}`)
+  .option('--explain', 'Dump the stored diagnostics that make the snapshot partial')
   .option('--json', 'Output as JSON')
   .action(
     withErrorHandling(
       'report',
-      async (flags: { snapshot?: string; runtime?: string } & CommonFlags) => {
+      async (flags: { snapshot?: string; runtime?: string; explain?: boolean } & CommonFlags) => {
         const runtime = parseRuntimeFlag(flags.runtime);
         return runReport(
           process.cwd(),
           {
             ...(flags.snapshot !== undefined ? { snapshot: flags.snapshot } : {}),
             ...(runtime !== undefined ? { runtime } : {}),
+            explain: flags.explain ?? false,
             json: flags.json ?? false,
           },
           loggerForFlags(flags),

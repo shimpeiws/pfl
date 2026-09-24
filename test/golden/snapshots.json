@@ -22,7 +22,18 @@
           "id": "claude-code",
           "version": "2.1.272"
         },
-        "completeness": "partial"
+        "completeness": "partial",
+        "partialCauses": {
+          "elements": {
+            "skipped": 0,
+            "unreadable": 0,
+            "unsupported": 0
+          },
+          "diagnostics": {
+            "warning": 1,
+            "error": 0
+          }
+        }
       }
     ]
   }
