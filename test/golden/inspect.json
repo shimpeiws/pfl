@@ -67,7 +67,7 @@
     "store": "~/.pfl/projects/FIXTURE_PROJECT",
     "observed": {
       "snapshotId": "obs_ID",
-      "elements": 25,
+      "elements": 27,
       "opaqueLayers": 1,
       "completeness": "partial"
     },

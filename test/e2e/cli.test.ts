@@ -410,6 +410,21 @@ describe('pfl CLI end to end', () => {
     );
     expect(pluginAgent.observed.native.kind).toBe('subagents');
 
+    // Marketplace catalog clones are observed but never effective: the runtime
+    // loads installed plugins from plugins/cache/, not the catalogs (#176).
+    const catalogSkill = await show(
+      'plugin',
+      '~/.claude/plugins/marketplaces/official/hookify/skills/x/SKILL.md',
+      'skills',
+    );
+    expect(catalogSkill.resolved.status).toBe('unresolved');
+    const catalogHook = await show(
+      'plugin',
+      '~/.claude/plugins/marketplaces/official/hookify/hooks/pretooluse.py',
+      'hooks',
+    );
+    expect(catalogHook.resolved.status).toBe('unresolved');
+
     // The CLAUDE.md tree: the same-directory local file shadows the base, the
     // nested file governs its subtree, and the parent read is global.
     const root = await show('project', 'CLAUDE.md', 'instructions');
