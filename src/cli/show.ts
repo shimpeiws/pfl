@@ -180,6 +180,10 @@ async function unknownElementError(
     );
   }
 
+  // The candidate list comes from a full run scan — the same store walk
+  // `pfl snapshots` performs, so the extra work is the resource strategy the
+  // store already accepts (gc keeps run counts small). `MAX_ELEMENT_LOOKUP_RUNS`
+  // bounds only the second pass of observation re-reads.
   const { runs, diagnostics } = await listRuns(run.observed.project.id, home);
   // An unreadable store directory is a store failure (exit 6), not a silent
   // "id not found" — the same propagation the read path applies (#180).
@@ -218,6 +222,17 @@ function foundInOtherRunError(
   options: ShowOptions,
   context: { diagnostics?: Diagnostic[] },
 ): PflError {
+  // An observation-only run (an interrupted inspection) has no resolved
+  // snapshot to show: suggesting `--snapshot` with its id would fail at the
+  // resolution step, so the message says where the element is without
+  // promising a runnable command.
+  if (located.resolvedId === null) {
+    return new PflError(
+      `element ${elementId} is in ${located.observedId} (${located.runtime.id}, ${located.capturedAt.slice(0, 10)}), but that run has no readable resolved snapshot, so it cannot be shown`,
+      EXIT_CODES.CONFIG_ERROR,
+      context,
+    );
+  }
   // A `--runtime` scope that differs from the located run's runtime would
   // reject `--snapshot`, so the hint has to carry it too.
   const runtimeFlag =

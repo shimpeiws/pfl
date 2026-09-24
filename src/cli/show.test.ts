@@ -13,6 +13,8 @@ import type { NativeOrigin, ObservedElement, ObservedSnapshot } from '../core/ob
 import type { ResolvedElement, ResolvedSnapshot, ResolvedStatus } from '../core/resolved.js';
 import { resolveProjectContext } from '../discovery/project-identity.js';
 import {
+  artifactFilePath,
+  snapshotsDir,
   writeLatestPointer,
   writeObservedSnapshot,
   writeResolvedSnapshot,
@@ -244,6 +246,32 @@ describe('runShow', () => {
       exitCode: EXIT_CODES.CONFIG_ERROR,
       message: expect.stringContaining(
         `is in ${older.observedId} (claude-code, 2026-09-15), not the selected snapshot; re-run with --snapshot ${older.observedId}`,
+      ),
+    });
+  });
+
+  it('does not suggest --snapshot for a run with no readable resolved snapshot (#168)', async () => {
+    const projectRoot = await tempDir('pfl-show-project-');
+    const home = await tempDir('pfl-show-home-');
+    const target = pair('skills', '~/.claude/skills/difit/SKILL.md');
+    const older = await seedRun(projectRoot, home, [target], {
+      capturedAt: '2026-09-15T00:00:00.000Z',
+      resolvedId: 'res_older',
+      latest: false,
+    });
+    // Simulate an interrupted inspection: the observation is stored but its
+    // resolved snapshot cannot be read.
+    const projectId = (await resolveProjectContext(projectRoot)).id;
+    await rm(artifactFilePath(snapshotsDir(projectId, home), older.resolvedId));
+    await seedRun(projectRoot, home, [pair('instructions', 'CLAUDE.md')], {
+      capturedAt: '2026-09-16T00:00:00.000Z',
+    });
+    const { logger } = fakeLogger();
+
+    await expect(runShow(projectRoot, target.observed.id, { home }, logger)).rejects.toMatchObject({
+      exitCode: EXIT_CODES.CONFIG_ERROR,
+      message: expect.stringContaining(
+        `is in ${older.observedId} (claude-code, 2026-09-15), but that run has no readable resolved snapshot`,
       ),
     });
   });
