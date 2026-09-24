@@ -20,6 +20,15 @@ describe('redactHomePath', () => {
       '~/.claude/projects/-Users-alice2/memory',
     );
   });
+
+  it('replaces the encoded home when the account name contains a dot', () => {
+    // Claude Code encodes '.' like '/', so a dotted home (/Users/john.doe)
+    // appears in memory paths as -Users-john-doe — the slash-only form would
+    // leave the account name unredacted.
+    expect(
+      redactHomePath('~/.claude/projects/-Users-john-doe-work/memory', '/Users/john.doe'),
+    ).toBe('~/.claude/projects/~-work/memory');
+  });
 });
 
 describe('redactPath', () => {
