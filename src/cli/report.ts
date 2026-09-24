@@ -145,12 +145,14 @@ export async function runReport(
 }
 
 function compatScopeCounts(
-  elements: readonly { native: { scope: string | null } }[],
+  elements: readonly { native: { scope: string | null }; status: string }[],
 ): { scope: string; count: number }[] {
   const counts = new Map<string, number>();
   for (const element of elements) {
     const scope = element.native.scope;
-    if (scope !== null && isCompatScope(scope)) {
+    // The count claims files read through the surface; a skipped, unreadable,
+    // or unsupported entry was discovered but not read.
+    if (element.status === 'observed' && scope !== null && isCompatScope(scope)) {
       counts.set(scope, (counts.get(scope) ?? 0) + 1);
     }
   }

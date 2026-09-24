@@ -9,7 +9,7 @@ import {
   runtimeId,
   type ResolvedSnapshotId,
 } from '../core/ids.js';
-import type { ObservedElement, ObservedSnapshot } from '../core/observed.js';
+import type { ObservedElement, ObservedSnapshot, ObservedStatus } from '../core/observed.js';
 import type { ResolvedElement, ResolvedSnapshot, ResolvedStatus } from '../core/resolved.js';
 import { resolveProjectContext } from '../discovery/project-identity.js';
 import {
@@ -66,6 +66,7 @@ function pair(
   path: string,
   resolvedStatus: ResolvedStatus = 'effective',
   scope?: string,
+  observedStatus: ObservedStatus = 'observed',
 ): Pair {
   const origin = path.startsWith('~/') ? 'user' : 'project';
   const id = elementIdFor({ runtimeId: rid, origin, path, kind });
@@ -76,7 +77,8 @@ function pair(
       source: { path },
       inspectability: 'observable',
       metadata: {},
-      status: 'observed',
+      status: observedStatus,
+      ...(observedStatus === 'skipped' ? { reason: 'symlink-not-followed' as const } : {}),
     },
     resolved: {
       id,
@@ -251,6 +253,8 @@ describe('runReport', () => {
       pair('skills', '~/.claude/skills/uclaude/SKILL.md', 'effective', 'claude-compat'),
       pair('skills', '~/.agents/skills/a/SKILL.md', 'effective', 'agents-compat'),
       pair('skills', '~/.agents/skills/b/SKILL.md', 'effective', 'agents-compat'),
+      // A skipped compat entry was discovered but not read; it must not count.
+      pair('skills', '~/.claude/skills/link/SKILL.md', 'effective', 'claude-compat', 'skipped'),
     ]);
     const { lines, logger } = fakeLogger();
 
