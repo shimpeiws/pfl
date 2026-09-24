@@ -74,6 +74,22 @@ runtimes. The literal `latest` is accepted anywhere an id is. Scope `latest`
 to one runtime with `--runtime <id>` on `report`, `list`, `show`, `graph`, or
 `diff` when the store mixes runtimes.
 
+`pfl list` and `pfl graph` can be verbose on a real harness — hundreds of
+elements and thousands of lines, which costs tens of thousands of tokens as
+`--json`. Prefer the filters (`--kind`, `--facet`, `--origin`, `--status`,
+`--scope` on `graph`, `--limit` on `list`) over printing the whole document.
+
+Common recipes:
+
+```sh
+pfl list --kind skills --origin project --origin user   # what skills load?
+pfl list --kind hooks                                   # what hooks are active?
+pfl list --kind subagents                               # what subagents exist?
+pfl list --status shadowed                              # what is shadowed?
+pfl list --kind mcp-configuration                       # what MCP servers?
+pfl graph --status effective --json                     # the effective harness only
+```
+
 ## Consent and the user scope
 
 Project-local discovery is implicit. Reading anything outside the project — the

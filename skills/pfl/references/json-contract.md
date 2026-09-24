@@ -135,6 +135,7 @@ read only its own surfaces.
   "elements": [
     {
       "id": "el_…",
+      "path": "CLAUDE.md",
       "kind": "instructions",
       "origin": "project",
       "scope": "project",
