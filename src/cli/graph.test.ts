@@ -181,4 +181,47 @@ describe('runGraph', () => {
     const ids = outcome.data.nodes.map((node) => node.id);
     expect(ids).toEqual([...ids].sort());
   });
+
+  it('filters nodes by origin, kind, and status, dropping edges to missing nodes (#161)', async () => {
+    const { projectRoot, home } = await fixture();
+    const { logger } = fakeLogger();
+
+    const byOrigin = await runGraph(projectRoot, { home, json: true, origin: ['user'] }, logger);
+    expect(byOrigin.data.nodes.every((node) => node.origin === 'user')).toBe(true);
+    expect(byOrigin.data.nodes).toHaveLength(2);
+    // Both edges reference filtered-out nodes, so none survive.
+    expect(byOrigin.data.edges).toHaveLength(0);
+
+    const byStatus = await runGraph(
+      projectRoot,
+      { home, json: true, status: ['shadowed'] },
+      logger,
+    );
+    expect(byStatus.data.nodes).toHaveLength(1);
+    expect(byStatus.data.nodes[0]?.status).toBe('shadowed');
+
+    const byKind = await runGraph(
+      projectRoot,
+      { home, json: true, kind: ['instructions'] },
+      logger,
+    );
+    expect(byKind.data.nodes.every((node) => node.kind === 'instructions')).toBe(true);
+    expect(byKind.data.nodes).toHaveLength(2);
+    // The accumulates-with edge survives: both endpoints are instructions.
+    expect(byKind.data.edges.map((edge) => edge.type)).toEqual(['accumulates-with']);
+  });
+
+  it('filters by facet and rejects an unknown filter value (#161)', async () => {
+    const { projectRoot, home } = await fixture();
+    const { logger } = fakeLogger();
+
+    const byFacet = await runGraph(projectRoot, { home, json: true, facet: ['controls'] }, logger);
+    expect(byFacet.data.nodes.every((node) => node.facets.includes('controls'))).toBe(true);
+    expect(byFacet.data.nodes.some((node) => node.kind === 'permissions')).toBe(true);
+    expect(byFacet.data.nodes.some((node) => node.kind === 'instructions')).toBe(false);
+
+    await expect(
+      runGraph(projectRoot, { home, json: true, status: ['bogus'] }, logger),
+    ).rejects.toThrow('valid statuses');
+  });
 });

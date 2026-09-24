@@ -68,12 +68,15 @@ findings, and provenance.
 ## `graph`
 
 ```sh
-pfl graph [--snapshot <id>] [--runtime <id>] [--json]
+pfl graph [--snapshot <id>] [--runtime <id>] [--origin <o>] [--facet <f>] [--kind <k>] [--status <s>] [--json]
 ```
 
 Renders the provenance graph (observed sources → resolved elements) and
 resolution graph (inter-layer relations: accumulates, shadows, conditionally
-activates).
+activates). Each effective element prints once under its primary facet, with
+any further facets inline (`path [knowledge, actions]`). The filters are
+repeatable, combine with AND, apply to `--json` too, and drop edges whose
+endpoints were filtered out.
 
 ## `diff`
 

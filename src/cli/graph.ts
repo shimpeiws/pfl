@@ -2,7 +2,8 @@ import { homedir } from 'node:os';
 import { redactPath, redactingLogger } from '../redact/output.js';
 import type { Logger } from '../util/logger.js';
 import { type CommandOutcome } from './document.js';
-import { buildGraphModel, type GraphModel } from './graph-model.js';
+import { validateFacets, validateKinds, validateOrigins, validateStatuses } from './filters.js';
+import { buildGraphModel, filterGraphModel, type GraphModel } from './graph-model.js';
 import {
   interpretationProvenance,
   loadInterpretation,
@@ -12,8 +13,13 @@ import { detectTreeStyle, renderGraph } from './tree.js';
 
 export interface GraphOptions {
   snapshot?: string;
-  /** Scope `latest` to this runtime's newest run (#180). */
+  /** Scope `latest` to a runtime's newest run (#180). */
   runtime?: string;
+  /** Repeatable filters (each ORs within itself, filters AND) (#161). */
+  origin?: readonly string[];
+  facet?: readonly string[];
+  kind?: readonly string[];
+  status?: readonly string[];
   json?: boolean;
   /** Injected for tests; defaults to the current user's home. */
   home?: string;
@@ -38,13 +44,21 @@ export async function runGraph(
 ): Promise<CommandOutcome<GraphData>> {
   const home = options.home ?? homedir();
   const out = redactingLogger(logger, options.json ? 'export' : 'display', { home });
+  // Validate filters before touching the store: an invalid value is a
+  // configuration error and must not be masked by a missing-snapshot error
+  // (the same order `runList` applies).
+  const filter = {
+    origins: validateOrigins(options.origin),
+    facets: validateFacets(options.facet),
+    kinds: validateKinds(options.kind),
+    statuses: validateStatuses(options.status),
+  };
   const run = await loadInterpretation(cwd, options.snapshot, home, options.runtime);
   const { observed, resolved, interpretation, diagnostics } = run;
   for (const diagnostic of diagnostics) {
     out.warn(diagnostic.message, { code: diagnostic.code, path: diagnostic.path ?? undefined });
   }
-
-  const model = buildGraphModel(observed, resolved, interpretation);
+  const model = filterGraphModel(buildGraphModel(observed, resolved, interpretation), filter);
   const provenance = interpretationProvenance(run);
   if (options.json) {
     // Nodes are ordered by id, as the document contract states; the human tree

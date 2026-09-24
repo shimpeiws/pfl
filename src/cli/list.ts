@@ -1,12 +1,11 @@
 import { homedir } from 'node:os';
-import { HARNESS_FACETS, isHarnessFacet, type HarnessFacet } from '../core/facets.js';
+import type { HarnessFacet } from '../core/facets.js';
 import type { NativeOrigin } from '../core/observed.js';
 import type { ResolvedStatus } from '../core/resolved.js';
 import { redactPath, redactingLogger } from '../redact/output.js';
-import { listElementKinds } from '../runtime/registry.js';
 import type { Logger } from '../util/logger.js';
 import { type CommandOutcome } from './document.js';
-import { EXIT_CODES, PflError } from './exit-codes.js';
+import { validateFacets, validateKinds, validateOrigins, validateStatuses } from './filters.js';
 import {
   interpretationProvenance,
   loadInterpretation,
@@ -28,23 +27,6 @@ export interface ListOptions {
   /** Injected for tests; defaults to the current user's home. */
   home?: string;
 }
-
-const NATIVE_ORIGINS: readonly NativeOrigin[] = [
-  'project',
-  'user',
-  'managed',
-  'plugin',
-  'builtin',
-  'unknown',
-];
-
-const RESOLVED_STATUSES: readonly ResolvedStatus[] = [
-  'effective',
-  'shadowed',
-  'conditional',
-  'unresolved',
-  'unknown',
-];
 
 interface ListRow {
   id: string;
@@ -77,10 +59,10 @@ export async function runList(
   options: ListOptions,
   logger: Logger,
 ): Promise<CommandOutcome<ListData>> {
-  const facet = validateFacet(options.facet);
+  const facets = validateFacets(options.facet === undefined ? undefined : [options.facet]);
   const kinds = validateKinds(options.kind);
-  const origin = validateOrigin(options.origin);
-  const status = validateStatus(options.status);
+  const origins = validateOrigins(options.origin === undefined ? undefined : [options.origin]);
+  const statuses = validateStatuses(options.status === undefined ? undefined : [options.status]);
   const home = options.home ?? homedir();
   const out = redactingLogger(logger, options.json ? 'export' : 'display', { home });
 
@@ -109,10 +91,10 @@ export async function runList(
     })
     .filter(
       (row) =>
-        (facet === undefined || row.facets.includes(facet)) &&
+        (facets === undefined || row.facets.some((f) => facets.has(f))) &&
         (kinds === undefined || kinds.has(row.kind)) &&
-        (origin === undefined || row.origin === origin) &&
-        (status === undefined || row.status === status),
+        (origins === undefined || origins.has(row.origin)) &&
+        (statuses === undefined || statuses.has(row.status)),
     );
 
   // Elements are ordered by id, as the document contract states, so --limit
@@ -164,51 +146,4 @@ function displayPath(path: string | undefined, kind: string): string {
     return dir.length > 0 ? dir : path;
   }
   return path;
-}
-
-function validateFacet(value: string | undefined): HarnessFacet | undefined {
-  if (value === undefined) return undefined;
-  if (!isHarnessFacet(value)) {
-    throw new PflError(
-      `unknown facet: ${value}; valid facets: ${HARNESS_FACETS.join(', ')}`,
-      EXIT_CODES.CONFIG_ERROR,
-    );
-  }
-  return value;
-}
-
-function validateKinds(values: readonly string[] | undefined): ReadonlySet<string> | undefined {
-  if (values === undefined || values.length === 0) return undefined;
-  const valid = listElementKinds();
-  for (const value of values) {
-    if (!valid.includes(value)) {
-      throw new PflError(
-        `unknown kind: ${value}; valid kinds: ${valid.join(', ')}`,
-        EXIT_CODES.CONFIG_ERROR,
-      );
-    }
-  }
-  return new Set(values);
-}
-
-function validateOrigin(value: string | undefined): NativeOrigin | undefined {
-  if (value === undefined) return undefined;
-  if (!(NATIVE_ORIGINS as readonly string[]).includes(value)) {
-    throw new PflError(
-      `unknown origin: ${value}; valid origins: ${NATIVE_ORIGINS.join(', ')}`,
-      EXIT_CODES.CONFIG_ERROR,
-    );
-  }
-  return value as NativeOrigin;
-}
-
-function validateStatus(value: string | undefined): ResolvedStatus | undefined {
-  if (value === undefined) return undefined;
-  if (!(RESOLVED_STATUSES as readonly string[]).includes(value)) {
-    throw new PflError(
-      `unknown status: ${value}; valid statuses: ${RESOLVED_STATUSES.join(', ')}`,
-      EXIT_CODES.CONFIG_ERROR,
-    );
-  }
-  return value as ResolvedStatus;
 }

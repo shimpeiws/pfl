@@ -46,6 +46,33 @@ export const ORIGIN_ORDER: readonly NativeOrigin[] = [
   'unknown',
 ];
 
+/**
+ * Node filters for `pfl graph` (#161): each repeatable filter ORs within
+ * itself, filters combine with AND. The JSON document and the human tree share
+ * the filtered model, so the `GraphModel` shape is unchanged — only `nodes` and
+ * `edges` shrink. Edges whose endpoints were filtered out are dropped, so the
+ * tree never references a node it did not print.
+ */
+export interface GraphFilter {
+  origins?: ReadonlySet<NativeOrigin> | undefined;
+  facets?: ReadonlySet<HarnessFacet> | undefined;
+  kinds?: ReadonlySet<string> | undefined;
+  statuses?: ReadonlySet<ResolvedStatus> | undefined;
+}
+
+export function filterGraphModel(model: GraphModel, filter: GraphFilter): GraphModel {
+  const nodes = model.nodes.filter(
+    (node) =>
+      (filter.origins === undefined || filter.origins.has(node.origin)) &&
+      (filter.facets === undefined || node.facets.some((facet) => filter.facets?.has(facet))) &&
+      (filter.kinds === undefined || filter.kinds.has(node.kind)) &&
+      (filter.statuses === undefined || filter.statuses.has(node.status)),
+  );
+  const present = new Set(nodes.map((node) => node.id));
+  const edges = model.edges.filter((edge) => present.has(edge.from) && present.has(edge.to));
+  return { ...model, nodes, edges };
+}
+
 export function buildGraphModel(
   observed: ObservedSnapshot,
   resolved: ResolvedSnapshot,

@@ -188,7 +188,9 @@ is how many elements matched before `--limit` truncated the list.
 }
 ```
 
-Nodes ordered by `id`. Edges carry `{ type, from, to }`.
+Nodes ordered by `id`. Edges carry `{ type, from, to }`. With `--origin` /
+`--facet` / `--kind` / `--status` filters the shape is identical — `nodes` and
+`edges` simply shrink to the filtered set (#161).
 
 ### snapshots
 

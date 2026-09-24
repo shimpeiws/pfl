@@ -47,22 +47,44 @@ export function renderGraph(model: GraphModel, style: TreeStyle = UTF8_STYLE): s
 
   const effective = model.nodes.filter((node) => node.status === 'effective');
   lines.push('effective');
+  // Each effective node appears exactly once (#161): grouped under its primary
+  // facet (the first the classifier assigned), with any further facets listed
+  // inline instead of repeating the line once per facet.
+  // The primary facet is the first *recognized* one: a stored interpretation
+  // can carry facet names a newer classifier added, and a node whose leading
+  // facet is unknown to this binary must still render, under its first known
+  // facet or the fallback group.
+  const primaryFacet = (node: GraphNode): string | undefined =>
+    node.facets.find((facet) => (HARNESS_FACETS as readonly string[]).includes(facet));
   const groups: TreeNode[] = HARNESS_FACETS.map((facet) => ({
     label: facet,
     children: effective
-      .filter((node) => node.facets.includes(facet))
-      .map((node) => ({ label: nodeLabel(node) })),
+      .filter((node) => primaryFacet(node) === facet)
+      .map((node) => ({ label: effectiveLabel(node) })),
   })).filter((group) => (group.children?.length ?? 0) > 0);
-  const unclassified = effective.filter((node) => node.facets.length === 0);
+  const unclassified = effective.filter((node) => primaryFacet(node) === undefined);
   if (unclassified.length > 0) {
     groups.push({
       label: '(unclassified)',
-      children: unclassified.map((node) => ({ label: nodeLabel(node) })),
+      children: unclassified.map((node) => ({
+        // No recognized facet led the grouping, so the label keeps the full
+        // list — an unknown facet is the only explanation for landing here.
+        label:
+          node.facets.length === 0
+            ? nodeLabel(node)
+            : `${nodeLabel(node)}  [${node.facets.join(', ')}]`,
+      })),
     });
   }
   lines.push(...(groups.length === 0 ? ['  (none)'] : renderTree(groups, style)));
 
   return trimTrailingBlank(lines);
+}
+
+function effectiveLabel(node: GraphNode): string {
+  const label = nodeLabel(node);
+  const extra = node.facets.slice(1);
+  return extra.length === 0 ? label : `${label}  [${node.facets.join(', ')}]`;
 }
 
 function nodeToTree(
