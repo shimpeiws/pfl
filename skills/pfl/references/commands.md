@@ -60,6 +60,11 @@ pfl show <element-id> [--snapshot <id>] [--runtime <id>] [--json]
 Drills into one element: observed fact, resolved interpretation, relations,
 findings, and provenance.
 
+A malformed id fails as "not an element id" (`el_` + 16 hex). A well-formed id
+absent from the selected snapshot is searched across the project's other stored
+runs (newest-first, bounded); a hit names the run and the `--snapshot` (and
+`--runtime`, when needed) to reach it, and a miss points at `list`/`snapshots`.
+
 ## `graph`
 
 ```sh
