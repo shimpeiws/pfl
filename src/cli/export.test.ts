@@ -8,6 +8,7 @@ import {
   runtimeId,
   type ResolvedSnapshotId,
 } from '../core/ids.js';
+import type { Diagnostic } from '../core/diagnostics.js';
 import type { Finding, Interpretation } from '../core/interpretation.js';
 import type { NativeOrigin, ObservedElement, ObservedSnapshot } from '../core/observed.js';
 import type { ResolvedElement, ResolvedSnapshot, ResolvedStatus } from '../core/resolved.js';
@@ -78,6 +79,8 @@ async function seed(
     findings?: Finding[];
     storeInterpretation?: boolean;
     completeness?: ObservedSnapshot['completeness'];
+    observedDiagnostics?: Diagnostic[];
+    resolvedDiagnostics?: Diagnostic[];
   } = {},
 ): Promise<{ observed: ObservedSnapshot; resolved: ResolvedSnapshot }> {
   const projectId = (await resolveProjectContext(projectRoot)).id;
@@ -89,7 +92,7 @@ async function seed(
     runtime: { id: rid, version: '2.1.272' },
     adapter: { id: 'claude-code', version: '0.1.0', runtimeCompatibility: 'verified' },
     elements: pairs.map((p) => p.observed),
-    diagnostics: [],
+    diagnostics: options.observedDiagnostics ?? [],
     completeness: options.completeness ?? 'complete',
     digests: { observed: 'sha256:x' },
   };
@@ -102,7 +105,7 @@ async function seed(
     elements: pairs.map((p) => p.resolved),
     relations: [...(options.relations ?? [])],
     effectiveElementIds: [],
-    diagnostics: [],
+    diagnostics: options.resolvedDiagnostics ?? [],
     digests: { harnessContent: 'sha256:h', resolvedSnapshot: 'sha256:r' },
   };
   await writeObservedSnapshot(projectId, observed, home);
@@ -275,6 +278,35 @@ describe('runExport', () => {
     const outcome = await runExport(projectRoot, { home, json: true }, logger);
 
     expect(outcome.completeness).toBe('partial');
+  });
+
+  it('carries the stored observed and resolved diagnostics, not only store-read ones', async () => {
+    const projectRoot = await tempDir('pfl-export-project-');
+    const home = await tempDir('pfl-export-home-');
+    const observedDiagnostic: Diagnostic = {
+      severity: 'warning',
+      code: 'unreadable-file',
+      message: 'could not read file: .claude/skills/broken/SKILL.md',
+      path: '.claude/skills/broken/SKILL.md',
+    };
+    const resolvedDiagnostic: Diagnostic = {
+      severity: 'warning',
+      code: 'unverified-runtime-version',
+      message: 'the runtime version is outside the verified adapter range',
+    };
+    await seed(projectRoot, home, [pair('instructions', 'CLAUDE.md')], {
+      completeness: 'partial',
+      observedDiagnostics: [observedDiagnostic],
+      resolvedDiagnostics: [resolvedDiagnostic],
+    });
+    const { logger } = fakeLogger();
+
+    const outcome = await runExport(projectRoot, { home, json: true }, logger);
+
+    // A consumer must be able to tell *why* the export is partial without a
+    // separate `report --explain` call.
+    expect(outcome.diagnostics).toContainEqual(observedDiagnostic);
+    expect(outcome.diagnostics).toContainEqual(resolvedDiagnostic);
   });
 
   it('redacts the home directory out of a source path', async () => {

@@ -301,7 +301,10 @@ cli
   .command('export', 'Export the full sanitized IR of a snapshot in one document')
   .option('--snapshot <id>', 'Snapshot id (default: latest)')
   .option('--runtime <id>', `Scope 'latest' to a runtime: ${RUNTIME_CHOICES}`)
-  .option('--json', 'Output as JSON')
+  .option(
+    '--json',
+    'Output the full IR document as JSON (the canonical interface; without it, a human-readable summary is printed instead)',
+  )
   .action(
     withErrorHandling(
       'export',

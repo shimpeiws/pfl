@@ -67,6 +67,10 @@ export interface ExportData {
  * intent is that a downstream agent (an Analyzer) can build an evidence plan
  * from this one call instead of `list` followed by `show` per element
  * (design doc; roadmap #203).
+ *
+ * `--json` is the canonical interface, matching the design doc. Without it,
+ * `export` prints a human-readable summary (counts, not the IR) rather than
+ * the document itself, the same stance every other `--json` command takes.
  */
 export async function runExport(
   cwd: string,
@@ -76,10 +80,18 @@ export async function runExport(
   const home = options.home ?? homedir();
   const out = redactingLogger(logger, options.json ? 'export' : 'display', { home });
   const run = await loadInterpretation(cwd, options.snapshot, home, options.runtime);
-  const { observed, resolved, interpretation, diagnostics } = run;
-  for (const diagnostic of diagnostics) {
+  const { observed, resolved, interpretation } = run;
+  for (const diagnostic of run.diagnostics) {
     out.warn(diagnostic.message, { code: diagnostic.code, path: diagnostic.path ?? undefined });
   }
+
+  // Export is meant to stand alone as the full IR, so it carries the inspection
+  // diagnostics too — not only the store-read diagnostics `report`/`list`/`show`
+  // surface — the same set `inspect` combines for its own envelope. Without
+  // them a consumer sees `completeness: "partial"` with no way to tell why
+  // (a parse failure, an unverified runtime version) short of a separate
+  // `report --explain` call, which defeats the point of one document.
+  const diagnostics = [...run.diagnostics, ...observed.diagnostics, ...resolved.diagnostics];
 
   const resolvedById = new Map(resolved.elements.map((element) => [element.id, element]));
   const interpretationById = new Map(

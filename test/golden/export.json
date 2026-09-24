@@ -8,6 +8,11 @@
       "severity": "info",
       "code": "adopted-legacy-history",
       "message": "adopted the existing history under PROJECT_ID"
+    },
+    {
+      "code": "example",
+      "message": "example",
+      "severity": "warning"
     }
   ],
   "data": {

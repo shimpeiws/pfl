@@ -327,6 +327,11 @@ document, so it spells out which classifier produced it rather than assuming
 the reader already knows `pfl-native` is the only one. `origin` is `stored` or
 `recomputed`, with the same meaning as elsewhere.
 
+Like `inspect`, the observed and resolved snapshots' own diagnostics travel in
+the envelope's `diagnostics`, not nested under `data` — `export` is meant to
+stand alone, so a partial `completeness` is always explained there, without a
+separate `report --explain` call.
+
 ### `gc`
 
 The envelope applies unchanged. `data` lists what was or would be reclaimed,
