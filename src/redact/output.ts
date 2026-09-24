@@ -100,6 +100,27 @@ export function redactFreeText(
  * still faces the rule, so an unlabelled high-entropy value — a secret with no
  * known shape — stays masked at export and persistence.
  */
+/**
+ * Whether a whitespace-separated token is a path (or a path glued to
+ * punctuation) rather than a bare secret. `/` alone is not enough — the
+ * high-entropy alphabet includes it, so a slash-bearing secret would pose as a
+ * path. Require a marker paths carry and secrets rarely do: a leading `~`,
+ * `/`, or `.` (allowing a punctuation prefix), a `/~` home expansion, a `.`
+ * anywhere (hidden directories, file extensions), or a second `/` (a real
+ * path has directories; a secret's slashes are sparse). An ambiguous token
+ * fails closed to the catch-all.
+ */
+function isPathToken(token: string): boolean {
+  const first = token.indexOf('/');
+  if (first === -1) return false;
+  return (
+    /^[~/.(]/.test(token) ||
+    token.includes('/~') ||
+    token.includes('.') ||
+    token.indexOf('/', first + 1) !== -1
+  );
+}
+
 function redactDiagnosticMessage(
   message: string,
   level: RedactionLevel,
@@ -109,7 +130,7 @@ function redactDiagnosticMessage(
   const caught = ruled
     .split(/(\s+)/)
     .map((token) =>
-      token.includes('/') ? token : applyRedactionRules(token, [HIGH_ENTROPY_RULE], level),
+      isPathToken(token) ? token : applyRedactionRules(token, [HIGH_ENTROPY_RULE], level),
     )
     .join('');
   return redactHomePath(caught, ctx.home);

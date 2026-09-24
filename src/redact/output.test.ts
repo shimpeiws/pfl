@@ -117,6 +117,21 @@ describe('redactDiagnostic', () => {
     const displayed = redactDiagnostic(diagnostic, 'display', { home: HOME });
     expect(displayed.message).toContain(candidate);
   });
+
+  it('masks a slash-bearing high-entropy token instead of mistaking it for a path', () => {
+    // A secret-shaped fixture, not a real credential. Base64 output can
+    // contain '/', which must not exempt the token from the catch-all.
+    const candidate = 'Zx9k2pQ7mN4vR1sT8uW3yA6bC0dE/5fG7hJ2kL9mN4pQ';
+    const diagnostic = {
+      severity: 'warning' as const,
+      code: 'example',
+      message: `harness signalled ${candidate}`,
+    };
+
+    for (const level of ['export', 'persistence'] as const) {
+      expect(redactDiagnostic(diagnostic, level, { home: HOME }).message).not.toContain(candidate);
+    }
+  });
 });
 
 describe('redactingLogger', () => {
