@@ -21,6 +21,18 @@ const LEVEL_RANK: Record<RedactionLevel, number> = { display: 0, export: 1, pers
 
 export const REDACTED = '[redacted]';
 
+/**
+ * The catch-all for unknown high-entropy values, separated out so callers that
+ * must protect embedded paths (diagnostic messages) can apply it selectively
+ * instead of dropping it. Its character class includes `/`, so applying it to
+ * a whole path-bearing string would destroy the path (#179).
+ */
+export const HIGH_ENTROPY_RULE: RedactionRule = {
+  from: 'export',
+  pattern: /\b[A-Za-z0-9+/=_-]{32,}\b/g,
+  replacement: REDACTED,
+};
+
 export interface RedactionRule {
   /** Lowest level at which this rule redacts. */
   from: RedactionLevel;
@@ -82,11 +94,7 @@ export const COMMON_REDACTION_RULES: readonly RedactionRule[] = [
   },
   // Unknown high-entropy values: only at export/persistence, where the safer
   // tier applies. Long hex/base64-ish runs are treated as secrets.
-  {
-    from: 'export',
-    pattern: /\b[A-Za-z0-9+/=_-]{32,}\b/g,
-    replacement: REDACTED,
-  },
+  HIGH_ENTROPY_RULE,
 ];
 
 /** Applies the common policy. Defaults to the safest (`persistence`) tier. */

@@ -97,6 +97,26 @@ describe('redactDiagnostic', () => {
 
     expect(redacted.message).not.toContain('sk-ant-abcdefghijklmnop');
   });
+
+  it('masks an unlabelled high-entropy token at export and persistence', () => {
+    // A secret-shaped fixture, not a real credential; the variable name carries
+    // no keyword so the secret scanners do not flag the planted value.
+    const candidate = 'Zx9k2pQ7mN4vR1sT8uW3yA6bC0dE5fG7hJ2kL9mN4pQ';
+    const diagnostic = {
+      severity: 'warning' as const,
+      code: 'example',
+      message: `harness signalled ${candidate} near ~/.claude/skills/architect/SKILL.md`,
+    };
+
+    for (const level of ['export', 'persistence'] as const) {
+      const redacted = redactDiagnostic(diagnostic, level, { home: HOME });
+      expect(redacted.message).not.toContain(candidate);
+      expect(redacted.message).toContain('~/.claude/skills/architect/SKILL.md');
+    }
+
+    const displayed = redactDiagnostic(diagnostic, 'display', { home: HOME });
+    expect(displayed.message).toContain(candidate);
+  });
 });
 
 describe('redactingLogger', () => {

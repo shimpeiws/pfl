@@ -1,7 +1,7 @@
 import type { Diagnostic } from '../core/diagnostics.js';
 import type { ObservedElement } from '../core/observed.js';
 import type { Logger } from '../util/logger.js';
-import { applyRedactionRules, type RedactionLevel } from './common.js';
+import { applyRedactionRules, HIGH_ENTROPY_RULE, type RedactionLevel } from './common.js';
 import { ALL_REDACTION_RULES } from './rules.js';
 
 /**
@@ -20,9 +20,10 @@ import { ALL_REDACTION_RULES } from './rules.js';
  *   redact legitimate long path segments (an encoded project directory is one
  *   long `-`-joined run).
  * - **Diagnostic messages** are templates with interpolated paths, so they get
- *   the same path treatment: the export-tier high-entropy rule would destroy
- *   the embedded path (its character class includes `/`), which is the bug
- *   from #179. The known secret shapes still apply.
+ *   the same path treatment plus the high-entropy catch-all scoped to the
+ *   tokens that are not paths: the rule's character class includes `/`, so a
+ *   path-bearing token is left alone (#179), while an unlabelled
+ *   high-entropy value anywhere else in the message stays masked.
  * - **Free text** (error strings, logger output) gets the full policy at the
  *   channel's level, high-entropy rule included: unlike a diagnostic template
  *   it may carry arbitrary text, which is where the catch-all earns its keep.
@@ -92,9 +93,33 @@ export function redactFreeText(
 }
 
 /**
- * Redacts a diagnostic's message and optional path. The message uses
- * PATH_RULES, whose rules all apply from 'display' up, so `level` is inert
- * there — the same parity `redactPath` gives the sibling `path` field.
+ * Applies the export-tier high-entropy catch-all to the non-path tokens of a
+ * diagnostic message. A token containing `/` is a path (or a path-like
+ * fragment glued to punctuation): its long segments are the legitimate runs
+ * the catch-all would destroy, so it is left to PATH_RULES. Every other token
+ * still faces the rule, so an unlabelled high-entropy value — a secret with no
+ * known shape — stays masked at export and persistence.
+ */
+function redactDiagnosticMessage(
+  message: string,
+  level: RedactionLevel,
+  ctx: RedactionContext,
+): string {
+  const ruled = applyRedactionRules(message, PATH_RULES, level);
+  const caught = ruled
+    .split(/(\s+)/)
+    .map((token) =>
+      token.includes('/') ? token : applyRedactionRules(token, [HIGH_ENTROPY_RULE], level),
+    )
+    .join('');
+  return redactHomePath(caught, ctx.home);
+}
+
+/**
+ * Redacts a diagnostic's message and optional path. The message gets
+ * PATH_RULES over its whole text and the high-entropy catch-all over its
+ * non-path tokens, so `level` gates only that catch-all — the same parity
+ * `redactPath` gives the sibling `path` field.
  */
 export function redactDiagnostic(
   diagnostic: Diagnostic,
@@ -103,7 +128,7 @@ export function redactDiagnostic(
 ): Diagnostic {
   return {
     ...diagnostic,
-    message: redactHomePath(applyRedactionRules(diagnostic.message, PATH_RULES, level), ctx.home),
+    message: redactDiagnosticMessage(diagnostic.message, level, ctx),
     ...(diagnostic.path !== undefined ? { path: redactPath(diagnostic.path, ctx) } : {}),
   };
 }
