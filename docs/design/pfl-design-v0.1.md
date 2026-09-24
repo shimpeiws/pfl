@@ -1419,6 +1419,11 @@ v0.1 should inspect, where statically discoverable:
 - plugin-provided harness elements
 - known runtime-provided opaque instruction layers
 
+Plugin *marketplace catalogs* (`~/.claude/plugins/marketplaces/`) are cloned
+repositories, not installed plugins; the runtime loads installed plugins from
+`plugins/cache/`. Catalog elements are recorded but resolve `unresolved` rather
+than effective (#176).
+
 ### 30.2 Codex
 
 v0.1 should inspect, where statically discoverable:

@@ -9,7 +9,7 @@ import type {
   SafeMetadataValue,
 } from '../../core/observed.js';
 import type { ResolvedElement } from '../../core/resolved.js';
-import { resolveClaudeCode, semanticsFor } from './resolve.js';
+import { MARKETPLACE_CATALOG_REASON, resolveClaudeCode, semanticsFor } from './resolve.js';
 
 const rid = runtimeId('claude-code');
 
@@ -100,6 +100,36 @@ describe('resolveClaudeCode', () => {
       status: 'effective',
       resolution: { strategy: 'available' },
     });
+  });
+
+  it('resolves marketplace catalog clones as unresolved, keeping installed cache effective (#176)', async () => {
+    const catalogSkill = element(
+      '~/.claude/plugins/marketplaces/official/hookify/skills/x/SKILL.md',
+      'skills',
+      'plugin',
+    );
+    const catalogHook = element(
+      '~/.claude/plugins/marketplaces/official/hookify/hooks/pretooluse.py',
+      'hooks',
+      'plugin',
+    );
+    const installed = element(
+      '~/.claude/plugins/cache/pstack-claude/pstack/0.9.15/commands/go.md',
+      'commands',
+      'plugin',
+    );
+
+    const resolved = await resolveClaudeCode(snapshot([catalogSkill, catalogHook, installed]));
+
+    for (const source of [catalogSkill, catalogHook]) {
+      expect(find(resolved.elements, source)).toMatchObject({
+        status: 'unresolved',
+        resolution: { reason: MARKETPLACE_CATALOG_REASON },
+      });
+      expect(resolved.effectiveElementIds).not.toContain(source.id);
+    }
+    expect(find(resolved.elements, installed).status).toBe('effective');
+    expect(resolved.effectiveElementIds).toContain(installed.id);
   });
 
   it('derives instruction applicability from the file directory', async () => {

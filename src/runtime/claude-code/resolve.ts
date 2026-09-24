@@ -9,7 +9,7 @@ import type { ResolutionAxes, ResolutionSemantics } from '../types.js';
 import { versionPosition } from '../version-compat.js';
 import { eventTarget } from '../scaffold.js';
 import { VERIFIED_CLAUDE_CODE_RANGE } from './detect.js';
-import { PROJECT_CONFIG_DIR } from './paths.js';
+import { PROJECT_CONFIG_DIR, USER_PLUGINS_DIR } from './paths.js';
 
 /**
  * Claude Code resolution rules, verified against Claude Code 2.1.272 (design doc
@@ -87,6 +87,7 @@ export async function resolveClaudeCode(
       id: element.id,
       ...axes,
       ...(by !== undefined ? { shadowedBy: by } : {}),
+      ...(isMarketplaceCatalog(element) ? { unresolvedReason: MARKETPLACE_CATALOG_REASON } : {}),
     };
   });
 
@@ -103,6 +104,22 @@ export async function resolveClaudeCode(
     home,
     runtimeCompatibility: semantics.position === 'within' ? 'verified' : 'unverified',
   });
+}
+
+/**
+ * Files under `~/.claude/plugins/marketplaces/` are cloned catalog repositories,
+ * not installed plugins — the runtime loads installed plugins from
+ * `plugins/cache/`. They resolve `unresolved` with a reason naming the cause
+ * instead of being reported as effective harness (#176). `unresolved` (rather
+ * than a new status) keeps the frozen schema-1 enum; downstream consumers such
+ * as the duplicate-name aggregation (#183) match `MARKETPLACE_CATALOG_REASON`.
+ */
+export const MARKETPLACE_CATALOG_REASON = 'marketplace catalog clone; the plugin is not installed';
+
+const MARKETPLACE_PATH_PREFIX = `~/.claude/${USER_PLUGINS_DIR}/marketplaces/`;
+
+function isMarketplaceCatalog(element: ObservedElement): boolean {
+  return element.source.path?.startsWith(MARKETPLACE_PATH_PREFIX) === true;
 }
 
 function axesFor(element: ObservedElement): ResolutionAxes {

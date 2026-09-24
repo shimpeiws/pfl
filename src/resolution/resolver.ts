@@ -31,6 +31,12 @@ export interface ElementResolutionInput {
   activation: Activation;
   /** Set when the adapter determined this element is overridden by another. */
   shadowedBy?: ElementId;
+  /**
+   * Set when the adapter determined the element is not in force for a known
+   * reason (e.g. a marketplace catalog clone that is not installed, #176).
+   * Resolves to `unresolved` carrying this reason.
+   */
+  unresolvedReason?: string;
 }
 
 /** Runtime-agnostic entry point (design doc §11): delegates to the adapter. */
@@ -58,6 +64,9 @@ export function resolveElement(input: ElementResolutionInput): ResolvedElement {
 }
 
 function deriveStatus(input: ElementResolutionInput): { status: ResolvedStatus; reason: string } {
+  if (input.unresolvedReason !== undefined) {
+    return { status: 'unresolved', reason: input.unresolvedReason };
+  }
   if (input.shadowedBy !== undefined) {
     return { status: 'shadowed', reason: `overridden by ${input.shadowedBy}` };
   }
