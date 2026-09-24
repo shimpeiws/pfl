@@ -214,6 +214,47 @@ describe('pfl CLI end to end', () => {
     expect(literalFirst.stdout).toContain('+ 0 added');
   });
 
+  it('diffs previous vs latest with no operands (#186)', async () => {
+    const m = await fixture();
+    await runCli(m, ['inspect', '--runtime', 'claude-code']);
+    await mkdir(join(m.projectRoot, '.claude', 'agents'), { recursive: true });
+    await writeFile(join(m.projectRoot, '.claude', 'agents', 'added.md'), '# later\n');
+    await runCli(m, ['inspect', '--runtime', 'claude-code']);
+
+    const result = await runCli(m, ['diff']);
+
+    expect(result.code, result.stderr).toBe(EXIT_CODES.SUCCESS);
+    expect(result.stdout).toContain('Runtime: claude-code');
+    // A real element was added between the two runs — not an all-zero self-diff.
+    expect(result.stdout).toContain('+ 1 added');
+  });
+
+  it('fails a bare diff when the runtime has only one run', async () => {
+    const m = await fixture();
+    await runCli(m, ['inspect', '--runtime', 'claude-code']);
+
+    const result = await runCli(m, ['diff']);
+
+    expect(result.code).toBe(EXIT_CODES.CONFIG_ERROR);
+    expect(result.stderr).toContain('only one');
+  });
+
+  it('honours --runtime and --json on a bare diff (#186)', async () => {
+    const m = await fixture('codex');
+    await runCli(m, ['inspect', '--runtime', 'codex']);
+    await runCli(m, ['inspect', '--runtime', 'codex']);
+
+    const result = await runCli(m, ['diff', '--runtime', 'codex', '--json']);
+
+    expect(result.code, result.stderr).toBe(EXIT_CODES.SUCCESS);
+    const document = JSON.parse(result.stdout) as {
+      command: string;
+      data: { runtime: string };
+    };
+    expect(document.command).toBe('diff');
+    expect(document.data.runtime).toBe('codex');
+  });
+
   it('inspects a Codex harness and reads back Codex-specific content', async () => {
     const m = await fixture('codex');
 

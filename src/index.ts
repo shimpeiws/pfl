@@ -315,23 +315,27 @@ cli
   );
 
 cli
-  .command('diff <snapshot-a> [snapshot-b]', 'Compare two snapshots (default: latest)')
+  .command('diff [snapshot-a] [snapshot-b]', 'Compare two snapshots (default: previous vs latest)')
   .option('--runtime <id>', `Scope 'latest' to a runtime: ${RUNTIME_CHOICES}`)
   .option('--json', 'Output as JSON')
   .action(
     withErrorHandling(
       'diff',
       async (
-        snapshotA: string,
+        snapshotAOrFlags: string | CommonFlags | undefined,
         snapshotBOrFlags: string | CommonFlags | undefined,
         maybeFlags: CommonFlags | undefined,
       ) => {
-        // `cac` omits the second positional when it is not given and passes the
-        // options object in its place, so it is recovered from either position.
-        const flags = (maybeFlags ?? (snapshotBOrFlags as CommonFlags) ?? {}) as CommonFlags & {
-          runtime?: string;
-        };
+        // `cac` passes the options object right after the positionals actually
+        // supplied: two operands put it in `maybeFlags`, one in
+        // `snapshotBOrFlags`, none in `snapshotAOrFlags`.
+        const snapshotA = typeof snapshotAOrFlags === 'string' ? snapshotAOrFlags : undefined;
         const snapshotB = typeof snapshotBOrFlags === 'string' ? snapshotBOrFlags : undefined;
+        const flags =
+          [maybeFlags, snapshotBOrFlags, snapshotAOrFlags].find(
+            (arg): arg is CommonFlags & { runtime?: string } =>
+              typeof arg === 'object' && arg !== null,
+          ) ?? {};
         const runtime = parseRuntimeFlag(flags.runtime);
         return runDiff(
           process.cwd(),

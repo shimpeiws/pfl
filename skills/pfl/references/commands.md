@@ -73,12 +73,25 @@ activates).
 ## `diff`
 
 ```sh
-pfl diff <snapshot-a> [snapshot-b] [--runtime <id>] [--json]
+pfl diff [snapshot-a] [snapshot-b] [--runtime <id>] [--json]
 ```
 
 Compares two snapshots structurally (added / removed / changed elements),
 by effective state (newly effective / no longer effective / activation changed),
-and by semantic facet delta. The second operand defaults to `latest`.
+and by semantic facet delta. The second operand defaults to `latest`. With no
+operands the pair is previous vs latest within one runtime — `latest` resolves
+first (scoped by `--runtime` when given), then the newest other run of the same
+runtime becomes `snapshot-a`. A runtime with only one stored run fails with
+exit 2.
+
+## `--runtime` on read commands
+
+`report`, `list`, `show`, `graph`, and `diff` accept `--runtime <id>`. Without
+it, `latest` means whichever runtime was inspected last; with it, `latest`
+means the newest stored run for that runtime. A named `--snapshot` (or a `diff`
+operand) from another runtime is refused with exit 2. The runtime is also in
+every human header and JSON `data.runtime`, so a consumer can assert which
+snapshot answered.
 
 ## `--runtime` on read commands
 

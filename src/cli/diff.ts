@@ -1,10 +1,12 @@
 import { homedir } from 'node:os';
 import { HARNESS_FACETS, type HarnessFacet } from '../core/facets.js';
+import type { Diagnostic } from '../core/diagnostics.js';
 import type { Finding } from '../core/interpretation.js';
 import type { ObservedElement } from '../core/observed.js';
 import type { RelationType, ResolvedElement, ResolvedStatus } from '../core/resolved.js';
 import { canonicalJsonStringify } from '../util/json.js';
 import { redactingLogger } from '../redact/output.js';
+import { listRuns } from '../snapshot/store.js';
 import type { Logger } from '../util/logger.js';
 import { type CommandOutcome } from './document.js';
 import { EXIT_CODES, PflError } from './exit-codes.js';
@@ -78,10 +80,16 @@ export interface DiffResult {
 }
 
 /**
- * `pfl diff <a> <b>` (design doc §15, §28): a descriptive comparison across three
+ * `pfl diff [a] [b]` (design doc §15, §28): a descriptive comparison across three
  * levels — structural, effective-state, and semantic facet. It never says
  * whether a change improved or harmed outcomes, and never rewrites either
  * snapshot.
+ *
+ * With no operands the pair defaults to previous vs latest within one runtime
+ * (#186): B is the run `latest` resolves to (runtime-scoped when `--runtime`
+ * is given) and A is the newest stored run for the same runtime before it.
+ * A one-operand call keeps `b` on `latest`, consistently with every other read
+ * command, so `pfl diff <a>` compares a snapshot against the current one.
  *
  * Refuses snapshots from different projects or runtimes. A runtime-version or
  * semantics-version difference is allowed and reported, because resolution can
@@ -89,18 +97,26 @@ export interface DiffResult {
  */
 export async function runDiff(
   cwd: string,
-  snapshotA: string,
+  snapshotA: string | undefined,
   snapshotB: string | undefined,
   options: DiffOptions,
   logger: Logger,
 ): Promise<CommandOutcome<DiffData>> {
   const home = options.home ?? homedir();
   const out = redactingLogger(logger, options.json ? 'export' : 'display', { home });
-  const runA = await loadInterpretation(cwd, snapshotA, home, options.runtime);
-  // The second operand defaults to `latest`, consistently with every other read
-  // command, so `pfl diff <a>` compares a snapshot against the current one.
-  const runB = await loadInterpretation(cwd, snapshotB ?? 'latest', home, options.runtime);
-  const diagnostics = [...runA.diagnostics, ...runB.diagnostics];
+  let runA: InterpretedRun;
+  let runB: InterpretedRun;
+  let pairDiagnostics: Diagnostic[] = [];
+  if (snapshotA === undefined) {
+    ({ a: runA, b: runB, pairDiagnostics } = await resolveDefaultPair(cwd, home, options.runtime));
+  } else {
+    runA = await loadInterpretation(cwd, snapshotA, home, options.runtime);
+    // The second operand defaults to `latest`, consistently with every other
+    // read command, so `pfl diff <a>` compares a snapshot against the current
+    // one.
+    runB = await loadInterpretation(cwd, snapshotB ?? 'latest', home, options.runtime);
+  }
+  const diagnostics = [...pairDiagnostics, ...runA.diagnostics, ...runB.diagnostics];
   for (const diagnostic of diagnostics) {
     out.warn(diagnostic.message, { code: diagnostic.code, path: diagnostic.path ?? undefined });
   }
@@ -157,6 +173,39 @@ export async function runDiff(
     }
   }
   return outcome;
+}
+
+/**
+ * Resolves the default pair for a bare `pfl diff` (#186): previous vs latest
+ * within one runtime. B is whatever `latest` resolves to — the newest stored
+ * run for `runtime` when scoped, else the run the latest pointer names — and
+ * A is the newest other run of the same runtime. A runtime with only one run
+ * has nothing to diff against, so the error says how to create a pair.
+ */
+async function resolveDefaultPair(
+  cwd: string,
+  home: string,
+  runtime: string | undefined,
+): Promise<{ a: InterpretedRun; b: InterpretedRun; pairDiagnostics: Diagnostic[] }> {
+  const b = await loadInterpretation(cwd, 'latest', home, runtime);
+  const scope = b.resolved.runtime.id;
+  const { runs, diagnostics } = await listRuns(b.observed.project.id, home);
+  const prior = runs.find(
+    (entry) =>
+      entry.runtime.id === scope &&
+      entry.resolvedId !== null &&
+      entry.resolvedId !== b.resolved.snapshotId &&
+      entry.observedId !== b.observed.snapshotId,
+  );
+  if (prior === undefined || prior.resolvedId === null) {
+    throw new PflError(
+      `only one ${scope} snapshot stored; run \`pfl inspect --runtime ${scope}\` again to create a pair`,
+      EXIT_CODES.CONFIG_ERROR,
+      diagnostics.length > 0 ? { diagnostics } : {},
+    );
+  }
+  const a = await loadInterpretation(cwd, prior.resolvedId, home, scope);
+  return { a, b, pairDiagnostics: diagnostics };
 }
 
 /**

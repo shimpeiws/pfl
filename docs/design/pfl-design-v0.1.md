@@ -1113,12 +1113,14 @@ pfl graph --snapshot <id>
 
 pfl snapshots
 
-pfl diff <snapshot-a> <snapshot-b>
+pfl diff [snapshot-a] [snapshot-b]
 ```
 
 Default snapshot for read commands is `latest`. `--runtime <id>` scopes
 `latest` to the newest stored run for that runtime and refuses a named
-snapshot from another runtime (exit 2).
+snapshot from another runtime (exit 2). A bare `pfl diff` compares previous vs
+latest within one runtime: `latest` resolves first, and the newest other run
+of the same runtime becomes the first operand.
 
 ---
 
