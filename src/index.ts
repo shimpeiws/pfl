@@ -303,7 +303,7 @@ cli
   .option('--runtime <id>', `Scope 'latest' to a runtime: ${RUNTIME_CHOICES}`)
   .option(
     '--bundle <dir>',
-    'Write an evidence bundle (harness.json + evidence + manifest) to this directory',
+    'Write a bundle (harness.json + evidence manifest) to this directory (R3: no raw content)',
   )
   .option(
     '--json',

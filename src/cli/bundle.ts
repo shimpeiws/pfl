@@ -1,9 +1,9 @@
 import { randomBytes } from 'node:crypto';
-import { lstat, mkdir, rename, rm, writeFile } from 'node:fs/promises';
+import { lstat, mkdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join, relative, resolve } from 'node:path';
 import type { ElementId } from '../core/ids.js';
 import { fragmentKeyOf } from '../core/element-path.js';
-import { isPathWithin, readTextFileGuarded } from '../util/fs.js';
+import { inspectFileTarget, isPathWithin } from '../util/fs.js';
 import { sha256Digest } from '../util/hash.js';
 import type { ExportData, ExportElement } from './export.js';
 
@@ -145,27 +145,66 @@ async function collectEvidenceMetadata(
   const physicalPath = stripFragment(sourcePath);
   const resolvedSource = resolve(projectRoot, physicalPath);
 
-  const read = await readTextFileGuarded(resolvedSource, MAX_EVIDENCE_BYTES, projectRoot);
-
-  if (read.status === 'missing') {
+  // D2: Use inspectFileTarget for symlink/hardlink/regular checks, then
+  // readFile as Buffer for raw-byte digest (matches discovery's digest).
+  const target = await inspectFileTarget(resolvedSource, projectRoot);
+  if (target.status === 'missing') {
     return { elementId: element.id, sourcePath, status: 'missing', verified: false };
   }
-  if (read.status !== 'ok') {
+  if (target.status !== 'ok') {
     return {
       elementId: element.id,
       sourcePath,
       status: 'skipped',
       verified: false,
-      reasonCode: read.status,
+      reasonCode: target.status,
+    };
+  }
+  if ((target.sizeBytes ?? 0) > MAX_EVIDENCE_BYTES) {
+    return {
+      elementId: element.id,
+      sourcePath,
+      status: 'skipped',
+      verified: false,
+      reasonCode: 'too-large',
     };
   }
 
-  const actualDigest = sha256Digest(read.text);
-  const sizeBytes = Buffer.byteLength(read.text, 'utf8');
+  // D2: Read as Buffer for raw-byte digest (UTF-8 replacement chars would
+  // differ from discovery's raw-byte hash for non-UTF-8 files).
+  let content: Buffer;
+  try {
+    content = await readFile(resolvedSource);
+  } catch {
+    return {
+      elementId: element.id,
+      sourcePath,
+      status: 'skipped',
+      verified: false,
+      reasonCode: 'unreadable',
+    };
+  }
+
+  const actualDigest = sha256Digest(content);
+  const sizeBytes = content.length;
   const expectedDigest = element.observed.source.digest;
+  // D1: verified requires both presence AND match of expected digest.
+  const digestMatches = expectedDigest !== undefined && actualDigest === expectedDigest;
   const status: EvidenceStatus =
-    expectedDigest !== undefined && actualDigest !== expectedDigest ? 'modified' : 'included';
-  const verified = expectedDigest !== undefined;
+    expectedDigest !== undefined && !digestMatches ? 'modified' : 'included';
+  const verified = digestMatches;
+
+  // D6: An element not observed at inspection time should not become
+  // 'included' at export time, even if the file is readable now.
+  if (element.observed.status !== 'observed') {
+    return {
+      elementId: element.id,
+      sourcePath,
+      status: 'skipped',
+      verified: false,
+      reasonCode: `not-observed-at-inspection:${element.observed.status}`,
+    };
+  }
 
   const entry: ManifestEvidenceEntry = {
     elementId: element.id,
@@ -214,7 +253,7 @@ async function assertValidBundleDir(bundleDir: string, projectRoot: string): Pro
   }
 
   const entry = await lstat(resolved).catch(() => null);
-  if (entry !== null && !entry.isDirectory() && !entry.isSymbolicLink()) {
+  if (entry !== null && !entry.isDirectory()) {
     throw new Error('bundle destination exists but is not a directory');
   }
 }

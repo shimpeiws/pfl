@@ -19,11 +19,11 @@ start with `..`.
 
 ## Findings and disposition
 
-| # | Severity | Finding | Disposition |
-|---|----------|---------|-------------|
-| 1 | Bug fix | `rel.startsWith('..')` falsely rejected `..draft/file.md` as `outside-base`, preventing reads of legitimate project-local files | **Fixed.** Changed to `rel === '..' \|\| rel.startsWith('../')` — only actual parent traversal is rejected |
-| 2 | No regression | The fix does not weaken symlink traversal prevention: `../` paths are still correctly rejected, and the per-component symlink check remains unchanged | Verified by existing symlink tests passing |
-| 3 | Scope | This fix is in a shared utility used by `readTextFileGuarded` and `inspectFileTarget`. It affects all callers, not just the bundle feature | All existing tests pass; the fix is universally correct |
+| #   | Severity      | Finding                                                                                                                                               | Disposition                                                                                                |
+| --- | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| 1   | Bug fix       | `rel.startsWith('..')` falsely rejected `..draft/file.md` as `outside-base`, preventing reads of legitimate project-local files                       | **Fixed.** Changed to `rel === '..' \|\| rel.startsWith('../')` — only actual parent traversal is rejected |
+| 2   | No regression | The fix does not weaken symlink traversal prevention: `../` paths are still correctly rejected, and the per-component symlink check remains unchanged | Verified by existing symlink tests passing                                                                 |
+| 3   | Scope         | This fix is in a shared utility used by `readTextFileGuarded` and `inspectFileTarget`. It affects all callers, not just the bundle feature            | All existing tests pass; the fix is universally correct                                                    |
 
 ## Verification
 
