@@ -1,3 +1,4 @@
+import { resolve } from 'node:path';
 import { homedir } from 'node:os';
 import type { ElementId } from '../core/ids.js';
 import type { Finding, Interpretation } from '../core/interpretation.js';
@@ -6,6 +7,7 @@ import type { Relation, ResolutionConfidence, ResolvedElement } from '../core/re
 import { redactElementSource, redactingLogger } from '../redact/output.js';
 import type { Logger } from '../util/logger.js';
 import { type CommandOutcome } from './document.js';
+import { writeBundle } from './bundle.js';
 import { loadInterpretation } from './read.js';
 
 export interface ExportOptions {
@@ -13,6 +15,8 @@ export interface ExportOptions {
   /** Scope `latest` to this runtime's newest run (#180). */
   runtime?: string;
   json?: boolean;
+  /** Write an evidence bundle (harness.json + evidence + manifest) to this directory. */
+  bundle?: string;
   /** Injected for tests; defaults to the current user's home. */
   home?: string;
 }
@@ -133,6 +137,15 @@ export async function runExport(
     findings: interpretation.findings,
     interpretation: { classifier: interpretation.classifier, origin: run.interpretationOrigin },
   };
+  // When --bundle is provided, write the evidence bundle to the specified
+  // directory. INV-001: this path only executes when bundle is set; the default
+  // export path (no bundle) is unchanged.
+  if (options.bundle !== undefined) {
+    const bundleDir = resolve(options.bundle);
+    await writeBundle(data, elements, { projectRoot: cwd, bundleDir });
+    out.info(`Bundle written to ${bundleDir}`);
+  }
+
   const outcome = { data, diagnostics, completeness: observed.completeness };
 
   if (options.json) return outcome;
@@ -144,6 +157,9 @@ export async function runExport(
   out.info(`Relations    ${resolved.relations.length}`);
   out.info(`Findings     ${interpretation.findings.length}`);
   out.info(`Completeness ${observed.completeness}`);
+  if (options.bundle !== undefined) {
+    out.info(`Bundle       ${resolve(options.bundle)}`);
+  }
   out.info('');
   out.info('This is a machine-oriented document; use --json to consume it.');
   return outcome;

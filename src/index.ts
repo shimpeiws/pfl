@@ -302,19 +302,24 @@ cli
   .option('--snapshot <id>', 'Snapshot id (default: latest)')
   .option('--runtime <id>', `Scope 'latest' to a runtime: ${RUNTIME_CHOICES}`)
   .option(
+    '--bundle <dir>',
+    'Write an evidence bundle (harness.json + evidence + manifest) to this directory',
+  )
+  .option(
     '--json',
     'Output the full IR document as JSON (the canonical interface; without it, a human-readable summary is printed instead)',
   )
   .action(
     withErrorHandling(
       'export',
-      async (flags: { snapshot?: string; runtime?: string } & CommonFlags) => {
+      async (flags: { snapshot?: string; runtime?: string; bundle?: string } & CommonFlags) => {
         const runtime = parseRuntimeFlag(flags.runtime);
         return runExport(
           process.cwd(),
           {
             ...(flags.snapshot !== undefined ? { snapshot: flags.snapshot } : {}),
             ...(runtime !== undefined ? { runtime } : {}),
+            ...(flags.bundle !== undefined ? { bundle: flags.bundle } : {}),
             json: flags.json ?? false,
           },
           loggerForFlags(flags),
