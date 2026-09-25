@@ -1,13 +1,12 @@
 import { randomBytes } from 'node:crypto';
 import { lstat, mkdir, rename, rm, writeFile } from 'node:fs/promises';
-import { isAbsolute, join, relative, resolve } from 'node:path';
+import { join, relative, resolve } from 'node:path';
 import type { ElementId } from '../core/ids.js';
 import { fragmentKeyOf } from '../core/element-path.js';
 import { isPathWithin, readTextFileGuarded } from '../util/fs.js';
 import { sha256Digest } from '../util/hash.js';
 import type { ExportData, ExportElement } from './export.js';
 
-const BUNDLE_EVIDENCE_DIR = 'evidence';
 const BUNDLE_MANIFEST_FILE = 'manifest.json';
 const BUNDLE_HARNESS_FILE = 'harness.json';
 const BUNDLE_DIR_MODE = 0o700;
@@ -16,35 +15,23 @@ const MAX_EVIDENCE_BYTES = 10 * 1024 * 1024; // 10 MB per evidence file
 export type EvidenceStatus = 'included' | 'missing' | 'modified' | 'skipped';
 
 /**
- * A single evidence entry in the manifest, mapping an element to its bundled
- * source file and integrity digest. The `status` field distinguishes included
- * from skipped/missing/modified evidence, enabling a downstream consumer to
- * verify integrity and detect stale files.
+ * R3: Evidence entry in the manifest — metadata only, no raw content.
+ * Records digest, status, and verification state for downstream analysis.
  */
 export interface ManifestEvidenceEntry {
   elementId: ElementId;
-  /** The original display path (redacted form, as stored in the element). */
   sourcePath: string;
-  /** Status of this evidence entry. */
   status: EvidenceStatus;
-  /** Whether the evidence was verified against the snapshot's inspect-time digest. */
   verified: boolean;
-  /** SHA-256 digest from the observed snapshot (inspect time). */
   expectedDigest?: string;
-  /** SHA-256 digest of the actual file content at export time. */
   actualDigest?: string;
-  /** Bundle-relative path to the evidence file. */
-  evidencePath?: string;
-  /** File size in bytes. */
   sizeBytes?: number;
-  /** Reason code when status is 'skipped'. */
   reasonCode?: string;
 }
 
 /**
- * The manifest structure written to the bundle directory root. It enables a
- * downstream consumer (an Analyzer) to verify the integrity of every bundled
- * evidence file and detect modified sources.
+ * R3: Manifest — sanitized harness.json and evidence metadata only.
+ * containsRawEvidence is always false (§19 deny-by-default).
  */
 export interface BundleManifest {
   schemaVersion: string;
@@ -52,6 +39,7 @@ export interface BundleManifest {
   observedSnapshotId: string;
   resolvedSnapshotId: string;
   createdAt: string;
+  containsRawEvidence: false;
   evidence: ManifestEvidenceEntry[];
 }
 
@@ -61,16 +49,8 @@ export interface BundleOptions {
 }
 
 /**
- * Writes a full evidence bundle: harness.json, evidence files, and
- * manifest.json into `bundleDir`.
- *
- * INV-001: only runs when `--bundle` is provided; default `pfl export` is
- * unchanged.
- * INV-002: uses `readTextFileGuarded` to avoid symlinks/hardlinks.
- * INV-003: `readTextFileGuarded` enforces project-root containment via baseDir.
- * INV-005: writes to a randomBytes staging dir, backup-and-rollback replaces
- *          atomically, cleans up on failure.
- * INV-006: clears stale evidence by replacing the entire bundle dir.
+ * R3: Writes a bundle with sanitized harness.json and evidence metadata.
+ * No raw file content is written (§19 deny-by-default).
  */
 export async function writeBundle(
   data: ExportData,
@@ -80,18 +60,15 @@ export async function writeBundle(
   const { projectRoot, bundleDir } = options;
   await assertValidBundleDir(bundleDir, projectRoot);
 
-  // INV-005: staging dir with random suffix for atomicity and unique naming.
   const stagingDir = `${bundleDir}.staging.${randomBytes(6).toString('hex')}`;
-  const stagingEvidenceDir = join(stagingDir, BUNDLE_EVIDENCE_DIR);
   let backupDir: string | undefined;
 
   try {
-    await mkdir(stagingEvidenceDir, { recursive: true, mode: BUNDLE_DIR_MODE });
+    await mkdir(stagingDir, { recursive: true, mode: BUNDLE_DIR_MODE });
 
     const evidence: ManifestEvidenceEntry[] = [];
     for (const element of elements) {
-      const result = await collectEvidence(element, projectRoot, stagingEvidenceDir);
-      evidence.push(result);
+      evidence.push(await collectEvidenceMetadata(element, projectRoot));
     }
 
     const harnessContent = JSON.stringify(data, null, 2);
@@ -103,6 +80,7 @@ export async function writeBundle(
       observedSnapshotId: data.snapshot.observedSnapshotId,
       resolvedSnapshotId: data.snapshot.resolvedSnapshotId,
       createdAt: new Date().toISOString(),
+      containsRawEvidence: false,
       evidence,
     };
 
@@ -111,8 +89,6 @@ export async function writeBundle(
       mode: 0o600,
     });
 
-    // Backup-and-rollback: if the destination exists, move it aside first,
-    // then rename staging into place, and clean up the backup on success.
     const destExists = await pathExists(bundleDir);
     if (destExists) {
       backupDir = `${bundleDir}.backup.${randomBytes(6).toString('hex')}`;
@@ -123,9 +99,7 @@ export async function writeBundle(
       await rm(backupDir, { recursive: true, force: true }).catch(() => undefined);
     }
   } catch (error) {
-    // Clean up staging dir on any failure.
     await rm(stagingDir, { recursive: true, force: true }).catch(() => undefined);
-    // Restore backup if rename failed after backup was created.
     if (backupDir !== undefined) {
       await rename(backupDir, bundleDir).catch(() => undefined);
     }
@@ -134,19 +108,15 @@ export async function writeBundle(
 }
 
 /**
- * Collects evidence for a single element. Reads the source file via
- * `readTextFileGuarded` (INV-002, INV-003), computes the digest, and compares
- * it against the snapshot's expected digest (BUG_0004).
+ * R3: Collects evidence metadata. Reads the source file to compute the
+ * digest and detect missing/modified, but does NOT write content to bundle.
  *
- * Fix-1 (hash-named dirs): tries the full display path first; if that is
- * missing and a #fragment is present, falls back to the fragment-stripped
- * path. This handles both `team#one/file.md` (full path exists) and
- * `settings.json#permissions` (stripped path exists).
+ * BUG_0001: always strips synthetic #fragment (always-strip). Literal # in
+ * file paths results in missing status rather than bundling wrong content.
  */
-async function collectEvidence(
+async function collectEvidenceMetadata(
   element: ExportElement,
   projectRoot: string,
-  evidenceDir: string,
 ): Promise<ManifestEvidenceEntry> {
   const sourcePath = element.observed.source.path;
 
@@ -160,7 +130,6 @@ async function collectEvidence(
     };
   }
 
-  // INV-003: detect non-project paths before any resolution.
   if (!isProjectLocal(sourcePath, projectRoot)) {
     return {
       elementId: element.id,
@@ -171,57 +140,32 @@ async function collectEvidence(
     };
   }
 
-  // Try the full display path first (handles # in directory names like
-  // team#one/file.md). If missing and a #fragment is present, fall back
-  // to the fragment-stripped path (handles settings.json#permissions).
-  const hasFragment = fragmentKeyOf(sourcePath) !== null;
-  const stripped = hasFragment ? stripFragment(sourcePath) : sourcePath;
-  const candidates = hasFragment && stripped !== sourcePath ? [sourcePath, stripped] : [sourcePath];
+  // BUG_0001: always strip synthetic #fragment. Literal # in file paths
+  // results in missing status — safer than bundling wrong content.
+  const physicalPath = stripFragment(sourcePath);
+  const resolvedSource = resolve(projectRoot, physicalPath);
 
-  let readResult: Awaited<ReturnType<typeof readTextFileGuarded>> | undefined;
-  for (const candidate of candidates) {
-    const resolved = resolve(projectRoot, candidate);
-    const read = await readTextFileGuarded(resolved, MAX_EVIDENCE_BYTES, projectRoot);
-    if (read.status === 'ok') {
-      readResult = read;
-      break;
-    }
-    // On 'missing', try next candidate. On other errors (symlink, hardlink,
-    // etc.) stop immediately — the file exists but cannot be read.
-    if (read.status !== 'missing') {
-      return {
-        elementId: element.id,
-        sourcePath,
-        status: 'skipped',
-        verified: false,
-        reasonCode: read.status,
-      };
-    }
+  const read = await readTextFileGuarded(resolvedSource, MAX_EVIDENCE_BYTES, projectRoot);
+
+  if (read.status === 'missing') {
+    return { elementId: element.id, sourcePath, status: 'missing', verified: false };
   }
-
-  if (readResult === undefined || readResult.status !== 'ok') {
+  if (read.status !== 'ok') {
     return {
       elementId: element.id,
       sourcePath,
       status: 'skipped',
       verified: false,
-      reasonCode: 'missing',
+      reasonCode: read.status,
     };
   }
 
-  const content = readResult.text;
-  const actualDigest = sha256Digest(content);
-  const sizeBytes = Buffer.byteLength(content, 'utf8');
-  const evidencePath = join(BUNDLE_EVIDENCE_DIR, element.id);
-
-  // BUG_0004: compare against snapshot's expected digest.
+  const actualDigest = sha256Digest(read.text);
+  const sizeBytes = Buffer.byteLength(read.text, 'utf8');
   const expectedDigest = element.observed.source.digest;
   const status: EvidenceStatus =
     expectedDigest !== undefined && actualDigest !== expectedDigest ? 'modified' : 'included';
-  // Fix-3: config elements lack source.digest, so digest comparison is not possible.
   const verified = expectedDigest !== undefined;
-
-  await writeFile(join(evidenceDir, element.id), content, { mode: 0o600 });
 
   const entry: ManifestEvidenceEntry = {
     elementId: element.id,
@@ -229,7 +173,6 @@ async function collectEvidence(
     status,
     verified,
     actualDigest,
-    evidencePath,
     sizeBytes,
   };
   if (expectedDigest !== undefined) entry.expectedDigest = expectedDigest;
@@ -237,21 +180,18 @@ async function collectEvidence(
 }
 
 /**
- * Whether a display path is project-local and can be resolved within
- * projectRoot. Non-project paths (~/..., ../..., absolute outside project,
- * internal traversal like foo/../../etc/passwd) are out of scope.
- * Uses lexical containment after resolve to prevent path traversal.
+ * BUG_0002: Canonical containment check using resolve + relative.
+ * Catches internal traversal (foo/../../etc/passwd) and dot-prefixed
+ * dirs (..draft) that the previous prefix-based check missed.
  */
 function isProjectLocal(sourcePath: string, projectRoot: string): boolean {
-  // Tilde-prefixed paths are user-scope (~/...).
   if (sourcePath.startsWith('~/')) return false;
-  // Relative paths starting with ../ are ancestor-scope.
-  if (sourcePath.startsWith('../')) return false;
-  // Resolve and check lexical containment. This catches internal ../
-  // traversal (e.g. foo/../../etc/passwd) that escapes projectRoot.
   const resolved = resolve(projectRoot, sourcePath);
   const rel = relative(projectRoot, resolved);
-  return rel !== '' && !rel.startsWith('..') && !isAbsolute(rel);
+  // rel === '..' means the path resolved to the project root's parent.
+  // rel.startsWith('../') means it escaped above the project root.
+  // rel.startsWith('..') without '/' is NOT a parent reference (e.g. '..draft').
+  return rel !== '' && rel !== '..' && !rel.startsWith('../');
 }
 
 /** Strips the synthetic #fragment suffix from a display path. */
@@ -273,7 +213,6 @@ async function assertValidBundleDir(bundleDir: string, projectRoot: string): Pro
     throw new Error('bundle destination must not be inside the project directory');
   }
 
-  // Refuse to write into an existing regular file.
   const entry = await lstat(resolved).catch(() => null);
   if (entry !== null && !entry.isDirectory() && !entry.isSymbolicLink()) {
     throw new Error('bundle destination exists but is not a directory');

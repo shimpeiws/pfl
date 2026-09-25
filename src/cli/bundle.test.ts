@@ -151,8 +151,8 @@ function fakeLogger() {
   };
 }
 
-describe('evidence bundle', () => {
-  it('creates harness.json, evidence files, and manifest.json', async () => {
+describe('evidence bundle (R3: metadata only)', () => {
+  it('creates harness.json and manifest.json without evidence files', async () => {
     const projectRoot = await tempDir('pfl-bundle-project-');
     const home = await tempDir('pfl-bundle-home-');
     const bundleDir = join(await tempDir('pfl-bundle-out-'), 'my-bundle');
@@ -169,34 +169,45 @@ describe('evidence bundle', () => {
     const entries = await readdir(bundleDir);
     expect(entries).toContain('harness.json');
     expect(entries).toContain('manifest.json');
-    expect(entries).toContain('evidence');
-
-    const evidenceEntries = await readdir(join(bundleDir, 'evidence'));
-    expect(evidenceEntries).toHaveLength(2);
+    // R3: no evidence directory
+    expect(entries).not.toContain('evidence');
 
     const harness = JSON.parse(await readFile(join(bundleDir, 'harness.json'), 'utf8'));
     expect(harness.elements).toHaveLength(2);
 
     const manifest = JSON.parse(await readFile(join(bundleDir, 'manifest.json'), 'utf8'));
     expect(manifest.schemaVersion).toBe('1');
-    expect(manifest.harnessDigest).toMatch(/^sha256:/);
+    expect(manifest.containsRawEvidence).toBe(false);
     expect(manifest.observedSnapshotId).toBe(outcome.data.snapshot.observedSnapshotId);
     expect(manifest.evidence).toHaveLength(2);
   });
 
-  it('reads actual file content into evidence files', async () => {
+  it('records digest metadata without writing evidence files', async () => {
     const projectRoot = await tempDir('pfl-bundle-project-');
     const home = await tempDir('pfl-bundle-home-');
     const bundleDir = join(await tempDir('pfl-bundle-out-'), 'my-bundle');
-    const fileContent = '# Test Instructions\nThis is a test.';
+    const fileContent = 'evidence content for digest test';
     const elem = pair('instructions', 'CLAUDE.md');
     await seed(projectRoot, home, [elem], { 'CLAUDE.md': fileContent });
     const { logger } = fakeLogger();
 
     await runExport(projectRoot, { home, json: true, bundle: bundleDir }, logger);
 
-    const evidenceContent = await readFile(join(bundleDir, 'evidence', elem.observed.id), 'utf8');
-    expect(evidenceContent).toBe(fileContent);
+    const manifest = JSON.parse(await readFile(join(bundleDir, 'manifest.json'), 'utf8'));
+    const entry = manifest.evidence.find(
+      (e: { elementId: string }) => e.elementId === elem.observed.id,
+    );
+
+    expect(entry.status).toBe('included');
+    expect(entry.actualDigest).toMatch(/^sha256:/);
+    expect(entry.sizeBytes).toBe(Buffer.byteLength(fileContent, 'utf8'));
+    expect(entry.verified).toBe(false);
+
+    // R3: no evidence file written
+    const evidenceExists = await readFile(join(bundleDir, 'evidence', elem.observed.id), 'utf8')
+      .then(() => true)
+      .catch(() => false);
+    expect(evidenceExists).toBe(false);
   });
 
   it('skips elements without source.path', async () => {
@@ -224,9 +235,6 @@ describe('evidence bundle', () => {
     const { logger } = fakeLogger();
 
     await runExport(projectRoot, { home, json: true, bundle: bundleDir }, logger);
-
-    const evidenceEntries = await readdir(join(bundleDir, 'evidence'));
-    expect(evidenceEntries).toHaveLength(0);
 
     const manifest = JSON.parse(await readFile(join(bundleDir, 'manifest.json'), 'utf8'));
     expect(manifest.evidence).toHaveLength(1);
@@ -263,33 +271,7 @@ describe('evidence bundle', () => {
     expect(manifest.harnessDigest).toBe(actualDigest);
   });
 
-  it('records sha256 digest of evidence content', async () => {
-    const projectRoot = await tempDir('pfl-bundle-project-');
-    const home = await tempDir('pfl-bundle-home-');
-    const bundleDir = join(await tempDir('pfl-bundle-out-'), 'my-bundle');
-    const fileContent = 'evidence content for digest test';
-    const elem = pair('instructions', 'CLAUDE.md');
-    await seed(projectRoot, home, [elem], { 'CLAUDE.md': fileContent });
-    const { logger } = fakeLogger();
-
-    await runExport(projectRoot, { home, json: true, bundle: bundleDir }, logger);
-
-    const evidenceContent = await readFile(join(bundleDir, 'evidence', elem.observed.id), 'utf8');
-    const manifest = JSON.parse(await readFile(join(bundleDir, 'manifest.json'), 'utf8'));
-    const entry = manifest.evidence.find(
-      (e: { elementId: string }) => e.elementId === elem.observed.id,
-    );
-
-    const { createHash } = await import('node:crypto');
-    const actualDigest = `sha256:${createHash('sha256').update(evidenceContent).digest('hex')}`;
-    expect(entry.actualDigest).toBe(actualDigest);
-    expect(entry.sizeBytes).toBe(Buffer.byteLength(fileContent, 'utf8'));
-    expect(entry.status).toBe('included');
-    // Without a digest on the observed element, verified is false
-    expect(entry.verified).toBe(false);
-  });
-
-  it('detects config fragments (#permissions) and reads the underlying file', async () => {
+  it('always strips synthetic #fragment (BUG_0001 always-strip)', async () => {
     const projectRoot = await tempDir('pfl-bundle-project-');
     const home = await tempDir('pfl-bundle-home-');
     const bundleDir = join(await tempDir('pfl-bundle-out-'), 'my-bundle');
@@ -307,17 +289,29 @@ describe('evidence bundle', () => {
     const entry = manifest.evidence.find(
       (e: { elementId: string }) => e.elementId === configElem.observed.id,
     );
-    // Should read the underlying settings.json, not the literal #permissions filename
+    // Always strips to settings.json — reads the physical file
     expect(entry.status).toBe('included');
     expect(entry.actualDigest).toMatch(/^sha256:/);
-    // Config elements lack source.digest, so evidence is unverified
     expect(entry.verified).toBe(false);
+  });
 
-    const evidenceContent = await readFile(
-      join(bundleDir, 'evidence', configElem.observed.id),
-      'utf8',
+  it('reports missing status for nonexistent files', async () => {
+    const projectRoot = await tempDir('pfl-bundle-project-');
+    const home = await tempDir('pfl-bundle-home-');
+    const bundleDir = join(await tempDir('pfl-bundle-out-'), 'my-bundle');
+    // Element referencing a file that does not exist
+    const elem = pair('instructions', 'nonexistent.md');
+    await seed(projectRoot, home, [elem]);
+    const { logger } = fakeLogger();
+
+    await runExport(projectRoot, { home, json: true, bundle: bundleDir }, logger);
+
+    const manifest = JSON.parse(await readFile(join(bundleDir, 'manifest.json'), 'utf8'));
+    const entry = manifest.evidence.find(
+      (e: { elementId: string }) => e.elementId === elem.observed.id,
     );
-    expect(evidenceContent).toBe(fileContent);
+    expect(entry.status).toBe('missing');
+    expect(entry.verified).toBe(false);
   });
 
   it('skips user-scope elements (~/...) with outside-project-scope', async () => {
@@ -356,7 +350,7 @@ describe('evidence bundle', () => {
     expect(entry.reasonCode).toBe('outside-project-scope');
   });
 
-  it('skips symlinked evidence with reason symlink', async () => {
+  it('skips symlinked files with reason symlink', async () => {
     const projectRoot = await tempDir('pfl-bundle-project-');
     const home = await tempDir('pfl-bundle-home-');
     const bundleDir = join(await tempDir('pfl-bundle-out-'), 'my-bundle');
@@ -387,7 +381,6 @@ describe('evidence bundle', () => {
     const originalContent = 'original content';
     const modifiedContent = 'modified content';
 
-    // Seed with a digest matching the original content
     const { createHash } = await import('node:crypto');
     const expectedDigest = `sha256:${createHash('sha256').update(originalContent).digest('hex')}`;
     const elem = pair('instructions', 'CLAUDE.md', { digest: expectedDigest });
@@ -405,7 +398,7 @@ describe('evidence bundle', () => {
     expect(entry.actualDigest).not.toBe(expectedDigest);
   });
 
-  it('refuses bundle destination that is the project root', async () => {
+  it('rejects bundle destination that is the project root', async () => {
     const projectRoot = await tempDir('pfl-bundle-project-');
     const home = await tempDir('pfl-bundle-home-');
     const elem = pair('instructions', 'CLAUDE.md');
@@ -417,7 +410,7 @@ describe('evidence bundle', () => {
     ).rejects.toThrow('must not be the project root');
   });
 
-  it('refuses bundle destination inside the project', async () => {
+  it('rejects bundle destination inside the project', async () => {
     const projectRoot = await tempDir('pfl-bundle-project-');
     const home = await tempDir('pfl-bundle-home-');
     const bundleDir = join(projectRoot, 'nested-bundle');
@@ -435,7 +428,6 @@ describe('evidence bundle', () => {
     const bundleDir = join(await tempDir('pfl-bundle-out-'), 'my-bundle');
     const elem = pair('instructions', 'CLAUDE.md');
 
-    // First export: use a fresh projectRoot so the snapshot store is empty
     const projectRoot = await tempDir('pfl-bundle-proj1-');
     await seed(projectRoot, home, [elem], { 'CLAUDE.md': 'version 1' });
     const { logger } = fakeLogger();
@@ -443,29 +435,23 @@ describe('evidence bundle', () => {
 
     const manifest1 = JSON.parse(await readFile(join(bundleDir, 'manifest.json'), 'utf8'));
     expect(manifest1.evidence).toHaveLength(1);
-    expect(manifest1.evidence[0].actualDigest).toMatch(/^sha256:/);
 
-    // Second export to same dir using the same projectRoot (store already has
-    // the snapshot, so runExport reads it from store and re-runs bundle).
     await runExport(projectRoot, { home, json: true, bundle: bundleDir }, logger);
 
     const manifest2 = JSON.parse(await readFile(join(bundleDir, 'manifest.json'), 'utf8'));
-    const evidenceContent = await readFile(join(bundleDir, 'evidence', elem.observed.id), 'utf8');
-    // Evidence content is the same because the snapshot hasn't changed,
-    // but manifest timestamps differ, proving the overwrite happened.
-    expect(evidenceContent).toBe('version 1');
-    expect(manifest2.createdAt).toBeDefined();
+    expect(manifest2.containsRawEvidence).toBe(false);
     expect(manifest2.evidence).toHaveLength(1);
+    expect(manifest2.createdAt).toBeDefined();
   });
 
-  it('reads files under hash-named directories (team#one/file.md)', async () => {
+  it('accepts dot-prefixed project paths (..draft/file.md)', async () => {
     const projectRoot = await tempDir('pfl-bundle-project-');
     const home = await tempDir('pfl-bundle-home-');
     const bundleDir = join(await tempDir('pfl-bundle-out-'), 'my-bundle');
-    const fileContent = 'hash-named directory file';
-    // Path with # in a directory name (not a fragment)
-    const elem = pair('instructions', 'team#one/file.md');
-    await seed(projectRoot, home, [elem], { 'team#one/file.md': fileContent });
+    const fileContent = 'dot-prefixed file';
+    // BUG_0002: ..draft/ is project-local, not ancestor
+    const elem = pair('instructions', '..draft/file.md');
+    await seed(projectRoot, home, [elem], { '..draft/file.md': fileContent });
     const { logger } = fakeLogger();
 
     await runExport(projectRoot, { home, json: true, bundle: bundleDir }, logger);
@@ -474,51 +460,7 @@ describe('evidence bundle', () => {
     const entry = manifest.evidence.find(
       (e: { elementId: string }) => e.elementId === elem.observed.id,
     );
-    // Full path should be tried first and succeed
     expect(entry.status).toBe('included');
-    const evidenceContent = await readFile(join(bundleDir, 'evidence', elem.observed.id), 'utf8');
-    expect(evidenceContent).toBe(fileContent);
-  });
-
-  it('rejects traversal paths (foo/../../etc/passwd) with outside-project-scope', async () => {
-    const projectRoot = await tempDir('pfl-bundle-project-');
-    const home = await tempDir('pfl-bundle-home-');
-    const bundleDir = join(await tempDir('pfl-bundle-out-'), 'my-bundle');
-    const traversalElem = pair('instructions', 'foo/../../etc/passwd');
-    await seed(projectRoot, home, [traversalElem]);
-    const { logger } = fakeLogger();
-
-    await runExport(projectRoot, { home, json: true, bundle: bundleDir }, logger);
-
-    const manifest = JSON.parse(await readFile(join(bundleDir, 'manifest.json'), 'utf8'));
-    const entry = manifest.evidence.find(
-      (e: { elementId: string }) => e.elementId === traversalElem.observed.id,
-    );
-    expect(entry.status).toBe('skipped');
-    expect(entry.reasonCode).toBe('outside-project-scope');
-  });
-
-  it('marks config evidence as unverified when source.digest is absent', async () => {
-    const projectRoot = await tempDir('pfl-bundle-project-');
-    const home = await tempDir('pfl-bundle-home-');
-    const bundleDir = join(await tempDir('pfl-bundle-out-'), 'my-bundle');
-    const fileContent = '{"hooks": {}}';
-    // Config element — adapter does NOT set source.digest
-    const configElem = pair('hooks', '.claude/settings.json#hooks');
-    await seed(projectRoot, home, [configElem], {
-      '.claude/settings.json': fileContent,
-    });
-    const { logger } = fakeLogger();
-
-    await runExport(projectRoot, { home, json: true, bundle: bundleDir }, logger);
-
-    const manifest = JSON.parse(await readFile(join(bundleDir, 'manifest.json'), 'utf8'));
-    const entry = manifest.evidence.find(
-      (e: { elementId: string }) => e.elementId === configElem.observed.id,
-    );
-    expect(entry.status).toBe('included');
-    // Config elements lack source.digest → verified: false
     expect(entry.verified).toBe(false);
-    expect(entry.expectedDigest).toBeUndefined();
   });
 });
