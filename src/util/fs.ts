@@ -57,7 +57,7 @@ export async function checkSymlinkAncestors(
 ): Promise<AncestorCheck> {
   const base = resolve(baseDir);
   const rel = relative(base, resolve(target));
-  if (rel === '' || rel.startsWith('..') || isAbsolute(rel)) return 'outside-base';
+  if (rel === '' || rel === '..' || rel.startsWith('../') || isAbsolute(rel)) return 'outside-base';
 
   let current = base;
   for (const component of rel.split(sep)) {

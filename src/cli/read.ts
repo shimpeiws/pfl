@@ -41,6 +41,12 @@ export interface InterpretedRun {
   interpretationOrigin: 'stored' | 'recomputed';
   /** Store-level diagnostics encountered while resolving the snapshot. */
   diagnostics: Diagnostic[];
+  /**
+   * The canonical (unredacted) project root resolved from cwd.
+   * D3: bundle needs this for evidence resolution, since observed.project.root
+   * is redacted at persistence time.
+   */
+  canonicalProjectRoot: string;
 }
 
 /** What the read commands report about the interpretation they used (#84). */
@@ -91,6 +97,7 @@ export async function loadInterpretation(
       interpretation: stored,
       interpretationOrigin: 'stored',
       diagnostics,
+      canonicalProjectRoot: context.root,
     };
   }
 
@@ -100,6 +107,7 @@ export async function loadInterpretation(
     interpretation: recomputeInterpretation(observed, resolved),
     interpretationOrigin: 'recomputed',
     diagnostics,
+    canonicalProjectRoot: context.root,
   };
 }
 
