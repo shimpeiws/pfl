@@ -244,10 +244,8 @@ function stripFragment(sourcePath: string): string {
 async function assertValidBundleDir(bundleDir: string, projectRoot: string): Promise<void> {
   const resolved = resolve(bundleDir);
 
-  if (resolved === projectRoot) {
-    throw new Error('bundle destination must not be the project root');
-  }
-
+  // Use isPathWithin which resolves symlinks for comparison. This correctly
+  // catches both the exact root and symlinked-equivalent paths.
   if (await isPathWithin(projectRoot, resolved)) {
     throw new Error('bundle destination must not be inside the project directory');
   }

@@ -142,7 +142,7 @@ export async function runExport(
   // export path (no bundle) is unchanged.
   if (options.bundle !== undefined) {
     const bundleDir = resolve(options.bundle);
-    await writeBundle(data, elements, { projectRoot: cwd, bundleDir });
+    await writeBundle(data, elements, { projectRoot: run.canonicalProjectRoot, bundleDir });
     out.info(`Bundle written to ${bundleDir}`);
   }
 

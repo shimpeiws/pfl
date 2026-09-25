@@ -407,7 +407,7 @@ describe('evidence bundle (R3: metadata only)', () => {
 
     await expect(
       runExport(projectRoot, { home, json: true, bundle: projectRoot }, logger),
-    ).rejects.toThrow('must not be the project root');
+    ).rejects.toThrow('must not be inside the project directory');
   });
 
   it('rejects bundle destination inside the project', async () => {
