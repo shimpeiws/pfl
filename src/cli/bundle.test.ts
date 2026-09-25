@@ -285,6 +285,8 @@ describe('evidence bundle', () => {
     expect(entry.actualDigest).toBe(actualDigest);
     expect(entry.sizeBytes).toBe(Buffer.byteLength(fileContent, 'utf8'));
     expect(entry.status).toBe('included');
+    // Without a digest on the observed element, verified is false
+    expect(entry.verified).toBe(false);
   });
 
   it('detects config fragments (#permissions) and reads the underlying file', async () => {
@@ -308,6 +310,8 @@ describe('evidence bundle', () => {
     // Should read the underlying settings.json, not the literal #permissions filename
     expect(entry.status).toBe('included');
     expect(entry.actualDigest).toMatch(/^sha256:/);
+    // Config elements lack source.digest, so evidence is unverified
+    expect(entry.verified).toBe(false);
 
     const evidenceContent = await readFile(
       join(bundleDir, 'evidence', configElem.observed.id),
@@ -452,5 +456,69 @@ describe('evidence bundle', () => {
     expect(evidenceContent).toBe('version 1');
     expect(manifest2.createdAt).toBeDefined();
     expect(manifest2.evidence).toHaveLength(1);
+  });
+
+  it('reads files under hash-named directories (team#one/file.md)', async () => {
+    const projectRoot = await tempDir('pfl-bundle-project-');
+    const home = await tempDir('pfl-bundle-home-');
+    const bundleDir = join(await tempDir('pfl-bundle-out-'), 'my-bundle');
+    const fileContent = 'hash-named directory file';
+    // Path with # in a directory name (not a fragment)
+    const elem = pair('instructions', 'team#one/file.md');
+    await seed(projectRoot, home, [elem], { 'team#one/file.md': fileContent });
+    const { logger } = fakeLogger();
+
+    await runExport(projectRoot, { home, json: true, bundle: bundleDir }, logger);
+
+    const manifest = JSON.parse(await readFile(join(bundleDir, 'manifest.json'), 'utf8'));
+    const entry = manifest.evidence.find(
+      (e: { elementId: string }) => e.elementId === elem.observed.id,
+    );
+    // Full path should be tried first and succeed
+    expect(entry.status).toBe('included');
+    const evidenceContent = await readFile(join(bundleDir, 'evidence', elem.observed.id), 'utf8');
+    expect(evidenceContent).toBe(fileContent);
+  });
+
+  it('rejects traversal paths (foo/../../etc/passwd) with outside-project-scope', async () => {
+    const projectRoot = await tempDir('pfl-bundle-project-');
+    const home = await tempDir('pfl-bundle-home-');
+    const bundleDir = join(await tempDir('pfl-bundle-out-'), 'my-bundle');
+    const traversalElem = pair('instructions', 'foo/../../etc/passwd');
+    await seed(projectRoot, home, [traversalElem]);
+    const { logger } = fakeLogger();
+
+    await runExport(projectRoot, { home, json: true, bundle: bundleDir }, logger);
+
+    const manifest = JSON.parse(await readFile(join(bundleDir, 'manifest.json'), 'utf8'));
+    const entry = manifest.evidence.find(
+      (e: { elementId: string }) => e.elementId === traversalElem.observed.id,
+    );
+    expect(entry.status).toBe('skipped');
+    expect(entry.reasonCode).toBe('outside-project-scope');
+  });
+
+  it('marks config evidence as unverified when source.digest is absent', async () => {
+    const projectRoot = await tempDir('pfl-bundle-project-');
+    const home = await tempDir('pfl-bundle-home-');
+    const bundleDir = join(await tempDir('pfl-bundle-out-'), 'my-bundle');
+    const fileContent = '{"hooks": {}}';
+    // Config element — adapter does NOT set source.digest
+    const configElem = pair('hooks', '.claude/settings.json#hooks');
+    await seed(projectRoot, home, [configElem], {
+      '.claude/settings.json': fileContent,
+    });
+    const { logger } = fakeLogger();
+
+    await runExport(projectRoot, { home, json: true, bundle: bundleDir }, logger);
+
+    const manifest = JSON.parse(await readFile(join(bundleDir, 'manifest.json'), 'utf8'));
+    const entry = manifest.evidence.find(
+      (e: { elementId: string }) => e.elementId === configElem.observed.id,
+    );
+    expect(entry.status).toBe('included');
+    // Config elements lack source.digest → verified: false
+    expect(entry.verified).toBe(false);
+    expect(entry.expectedDigest).toBeUndefined();
   });
 });

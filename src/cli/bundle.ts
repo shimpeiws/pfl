@@ -27,6 +27,8 @@ export interface ManifestEvidenceEntry {
   sourcePath: string;
   /** Status of this evidence entry. */
   status: EvidenceStatus;
+  /** Whether the evidence was verified against the snapshot's inspect-time digest. */
+  verified: boolean;
   /** SHA-256 digest from the observed snapshot (inspect time). */
   expectedDigest?: string;
   /** SHA-256 digest of the actual file content at export time. */
@@ -135,6 +137,11 @@ export async function writeBundle(
  * Collects evidence for a single element. Reads the source file via
  * `readTextFileGuarded` (INV-002, INV-003), computes the digest, and compares
  * it against the snapshot's expected digest (BUG_0004).
+ *
+ * Fix-1 (hash-named dirs): tries the full display path first; if that is
+ * missing and a #fragment is present, falls back to the fragment-stripped
+ * path. This handles both `team#one/file.md` (full path exists) and
+ * `settings.json#permissions` (stripped path exists).
  */
 async function collectEvidence(
   element: ExportElement,
@@ -148,6 +155,7 @@ async function collectEvidence(
       elementId: element.id,
       sourcePath: '(none)',
       status: 'skipped',
+      verified: false,
       reasonCode: 'no-source-path',
     };
   }
@@ -158,25 +166,50 @@ async function collectEvidence(
       elementId: element.id,
       sourcePath,
       status: 'skipped',
+      verified: false,
       reasonCode: 'outside-project-scope',
     };
   }
 
-  // BUG_0002: strip synthetic #fragment for filesystem resolution.
-  const physicalPath = stripFragment(sourcePath);
-  const resolvedSource = resolve(projectRoot, physicalPath);
+  // Try the full display path first (handles # in directory names like
+  // team#one/file.md). If missing and a #fragment is present, fall back
+  // to the fragment-stripped path (handles settings.json#permissions).
+  const hasFragment = fragmentKeyOf(sourcePath) !== null;
+  const stripped = hasFragment ? stripFragment(sourcePath) : sourcePath;
+  const candidates = hasFragment && stripped !== sourcePath ? [sourcePath, stripped] : [sourcePath];
 
-  const read = await readTextFileGuarded(resolvedSource, MAX_EVIDENCE_BYTES, projectRoot);
-  if (read.status !== 'ok') {
+  let readResult: Awaited<ReturnType<typeof readTextFileGuarded>> | undefined;
+  for (const candidate of candidates) {
+    const resolved = resolve(projectRoot, candidate);
+    const read = await readTextFileGuarded(resolved, MAX_EVIDENCE_BYTES, projectRoot);
+    if (read.status === 'ok') {
+      readResult = read;
+      break;
+    }
+    // On 'missing', try next candidate. On other errors (symlink, hardlink,
+    // etc.) stop immediately — the file exists but cannot be read.
+    if (read.status !== 'missing') {
+      return {
+        elementId: element.id,
+        sourcePath,
+        status: 'skipped',
+        verified: false,
+        reasonCode: read.status,
+      };
+    }
+  }
+
+  if (readResult === undefined || readResult.status !== 'ok') {
     return {
       elementId: element.id,
       sourcePath,
       status: 'skipped',
-      reasonCode: read.status,
+      verified: false,
+      reasonCode: 'missing',
     };
   }
 
-  const content = read.text;
+  const content = readResult.text;
   const actualDigest = sha256Digest(content);
   const sizeBytes = Buffer.byteLength(content, 'utf8');
   const evidencePath = join(BUNDLE_EVIDENCE_DIR, element.id);
@@ -185,6 +218,8 @@ async function collectEvidence(
   const expectedDigest = element.observed.source.digest;
   const status: EvidenceStatus =
     expectedDigest !== undefined && actualDigest !== expectedDigest ? 'modified' : 'included';
+  // Fix-3: config elements lack source.digest, so digest comparison is not possible.
+  const verified = expectedDigest !== undefined;
 
   await writeFile(join(evidenceDir, element.id), content, { mode: 0o600 });
 
@@ -192,6 +227,7 @@ async function collectEvidence(
     elementId: element.id,
     sourcePath,
     status,
+    verified,
     actualDigest,
     evidencePath,
     sizeBytes,
@@ -202,22 +238,20 @@ async function collectEvidence(
 
 /**
  * Whether a display path is project-local and can be resolved within
- * projectRoot. Non-project paths (~/..., ../..., absolute outside project)
- * are out of scope for this PR; they require adapter-level resolution with
- * consent gating (follow-up architecture change).
+ * projectRoot. Non-project paths (~/..., ../..., absolute outside project,
+ * internal traversal like foo/../../etc/passwd) are out of scope.
+ * Uses lexical containment after resolve to prevent path traversal.
  */
 function isProjectLocal(sourcePath: string, projectRoot: string): boolean {
-  // Absolute path: check if it's within the project root.
-  if (isAbsolute(sourcePath)) {
-    // Use a synchronous check: the real project root resolves to itself.
-    const rel = relative(projectRoot, sourcePath);
-    return rel !== '' && !rel.startsWith('..');
-  }
   // Tilde-prefixed paths are user-scope (~/...).
   if (sourcePath.startsWith('~/')) return false;
   // Relative paths starting with ../ are ancestor-scope.
   if (sourcePath.startsWith('../')) return false;
-  return true;
+  // Resolve and check lexical containment. This catches internal ../
+  // traversal (e.g. foo/../../etc/passwd) that escapes projectRoot.
+  const resolved = resolve(projectRoot, sourcePath);
+  const rel = relative(projectRoot, resolved);
+  return rel !== '' && !rel.startsWith('..') && !isAbsolute(rel);
 }
 
 /** Strips the synthetic #fragment suffix from a display path. */
