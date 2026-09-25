@@ -156,7 +156,14 @@ function makeRun(options: {
     },
     findings: options.findings ?? [],
   };
-  return { observed, resolved, interpretation, interpretationOrigin: 'stored', diagnostics: [] };
+  return {
+    observed,
+    resolved,
+    interpretation,
+    interpretationOrigin: 'stored',
+    diagnostics: [],
+    canonicalProjectRoot: '',
+  };
 }
 
 describe('computeDiff', () => {
