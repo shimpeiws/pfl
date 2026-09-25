@@ -1,4 +1,4 @@
-import { mkdir, writeFile } from 'node:fs/promises';
+import { mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import { isAbsolute, join, resolve } from 'node:path';
 import type { ElementId } from '../core/ids.js';
 import { readTextFileGuarded } from '../util/fs.js';
@@ -67,6 +67,10 @@ export interface BundleOptions {
  * unchanged.
  * INV-002: uses `readTextFileGuarded` to avoid symlinks/hardlinks.
  * INV-003: `readTextFileGuarded` enforces project-root containment via baseDir.
+ * INV-005: writes to a temp directory and renames for atomicity; cleans up
+ *          on failure so no partial bundle remains.
+ * INV-006: clears stale evidence before writing so the manifest and directory
+ *          contents are always consistent.
  */
 export async function writeBundle(
   data: ExportData,
@@ -74,35 +78,48 @@ export async function writeBundle(
   options: BundleOptions,
 ): Promise<void> {
   const { projectRoot, bundleDir } = options;
-  const evidenceDir = join(bundleDir, BUNDLE_EVIDENCE_DIR);
 
-  // Create bundle directory structure. INV-005: mkdir + write in one atomic
-  // intent; if any step fails, the caller can clean up the partial bundle.
-  await mkdir(evidenceDir, { recursive: true, mode: BUNDLE_DIR_MODE });
+  // INV-005: Write to a temp directory inside bundleDir, then rename.
+  // This ensures no partial bundle is left on failure.
+  const tempDir = `${bundleDir}.tmp.${Date.now()}`;
+  const tempEvidenceDir = join(tempDir, BUNDLE_EVIDENCE_DIR);
 
-  const evidence: ManifestEvidenceEntry[] = [];
+  try {
+    await mkdir(tempEvidenceDir, { recursive: true, mode: BUNDLE_DIR_MODE });
 
-  for (const element of elements) {
-    const result = await collectEvidence(element, projectRoot, evidenceDir);
-    evidence.push(result);
+    const evidence: ManifestEvidenceEntry[] = [];
+    for (const element of elements) {
+      const result = await collectEvidence(element, projectRoot, tempEvidenceDir);
+      evidence.push(result);
+    }
+
+    const harnessContent = JSON.stringify(data, null, 2);
+    const harnessDigest = sha256Digest(harnessContent);
+
+    const manifest: BundleManifest = {
+      schemaVersion: '1',
+      harnessDigest,
+      observedSnapshotId: data.snapshot.observedSnapshotId,
+      resolvedSnapshotId: data.snapshot.resolvedSnapshotId,
+      createdAt: new Date().toISOString(),
+      evidence,
+    };
+
+    await writeFile(join(tempDir, BUNDLE_HARNESS_FILE), harnessContent, { mode: 0o600 });
+    await writeFile(join(tempDir, BUNDLE_MANIFEST_FILE), JSON.stringify(manifest, null, 2), {
+      mode: 0o600,
+    });
+
+    // INV-006: Remove the old bundle dir (if any) before renaming, so stale
+    // evidence from a previous export is not left behind.
+    await rm(bundleDir, { recursive: true, force: true });
+    // Rename temp dir to the final bundle dir.
+    await rename(tempDir, bundleDir);
+  } catch (error) {
+    // INV-005: Clean up the temp dir on any failure.
+    await rm(tempDir, { recursive: true, force: true }).catch(() => undefined);
+    throw error;
   }
-
-  const harnessContent = JSON.stringify(data, null, 2);
-  const harnessDigest = sha256Digest(harnessContent);
-
-  const manifest: BundleManifest = {
-    schemaVersion: '1',
-    harnessDigest,
-    observedSnapshotId: data.snapshot.observedSnapshotId,
-    resolvedSnapshotId: data.snapshot.resolvedSnapshotId,
-    createdAt: new Date().toISOString(),
-    evidence,
-  };
-
-  await writeFile(join(bundleDir, BUNDLE_HARNESS_FILE), harnessContent, { mode: 0o600 });
-  await writeFile(join(bundleDir, BUNDLE_MANIFEST_FILE), JSON.stringify(manifest, null, 2), {
-    mode: 0o600,
-  });
 }
 
 /**
@@ -151,7 +168,6 @@ async function collectEvidence(
   const digest = sha256Digest(content);
   const sizeBytes = Buffer.byteLength(content, 'utf8');
 
-  // INV-005: write evidence file; if this fails the bundle is partial.
   await writeFile(join(evidenceDir, element.id), content, { mode: 0o600 });
 
   return {

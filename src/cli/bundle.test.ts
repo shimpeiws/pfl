@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -283,5 +283,80 @@ describe('evidence bundle', () => {
     const { createHash } = await import('node:crypto');
     const actualDigest = `sha256:${createHash('sha256').update(harnessContent).digest('hex')}`;
     expect(manifest.harnessDigest).toBe(actualDigest);
+  });
+
+  it('records sha256 digest of evidence content (FIND-004)', async () => {
+    const projectRoot = await tempDir('pfl-bundle-project-');
+    const home = await tempDir('pfl-bundle-home-');
+    const bundleDir = join(await tempDir('pfl-bundle-out-'), 'my-bundle');
+    const fileContent = 'evidence content for digest test';
+    const elem = pair('instructions', 'CLAUDE.md');
+    await seed(projectRoot, home, [elem], { 'CLAUDE.md': fileContent });
+    const { logger } = fakeLogger();
+
+    await runExport(projectRoot, { home, json: true, bundle: bundleDir }, logger);
+
+    const evidenceContent = await readFile(join(bundleDir, 'evidence', elem.observed.id), 'utf8');
+    const manifest = JSON.parse(await readFile(join(bundleDir, 'manifest.json'), 'utf8'));
+    const entry = manifest.evidence.find(
+      (e: { elementId: string }) => e.elementId === elem.observed.id,
+    );
+
+    // Compute SHA-256 from the actual evidence file bytes
+    const { createHash } = await import('node:crypto');
+    const actualDigest = `sha256:${createHash('sha256').update(evidenceContent).digest('hex')}`;
+    expect(entry.digest).toBe(actualDigest);
+    expect(entry.sizeBytes).toBe(Buffer.byteLength(fileContent, 'utf8'));
+  });
+
+  it('skips symlinked evidence files (FIND-003)', async () => {
+    const projectRoot = await tempDir('pfl-bundle-project-');
+    const home = await tempDir('pfl-bundle-home-');
+    const bundleDir = join(await tempDir('pfl-bundle-out-'), 'my-bundle');
+
+    // Create a real file and a symlink to it
+    const realFile = join(projectRoot, 'real.md');
+    await writeFile(realFile, 'real content', 'utf8');
+    const linkFile = join(projectRoot, 'link.md');
+    await symlink(realFile, linkFile);
+
+    const symlinked = pair('instructions', 'link.md');
+    await seed(projectRoot, home, [symlinked]);
+    const { logger } = fakeLogger();
+
+    await runExport(projectRoot, { home, json: true, bundle: bundleDir }, logger);
+
+    const manifest = JSON.parse(await readFile(join(bundleDir, 'manifest.json'), 'utf8'));
+    const entry = manifest.evidence.find(
+      (e: { elementId: string }) => e.elementId === symlinked.observed.id,
+    );
+    // Symlinked files should be skipped by readTextFileGuarded
+    expect(entry.skipped).toBe(true);
+    expect(entry.skipReason).toBe('symlink');
+  });
+
+  it('skips sources outside the project root (FIND-003)', async () => {
+    const projectRoot = await tempDir('pfl-bundle-project-');
+    const home = await tempDir('pfl-bundle-home-');
+    const bundleDir = join(await tempDir('pfl-bundle-out-'), 'my-bundle');
+
+    // Create a file outside the project root
+    const outsideDir = await tempDir('pfl-outside-');
+    const outsideFile = join(outsideDir, 'secret.md');
+    await writeFile(outsideFile, 'secret content', 'utf8');
+
+    // Use a path that resolves outside the project root via ../
+    const outsideElem = pair('instructions', '../outside-project/secret.md');
+    await seed(projectRoot, home, [outsideElem]);
+    const { logger } = fakeLogger();
+
+    await runExport(projectRoot, { home, json: true, bundle: bundleDir }, logger);
+
+    const manifest = JSON.parse(await readFile(join(bundleDir, 'manifest.json'), 'utf8'));
+    const entry = manifest.evidence.find(
+      (e: { elementId: string }) => e.elementId === outsideElem.observed.id,
+    );
+    // readTextFileGuarded enforces project-root containment
+    expect(entry.skipped).toBe(true);
   });
 });

@@ -159,6 +159,7 @@ export async function runExport(
   out.info(`Completeness ${observed.completeness}`);
   if (options.bundle !== undefined) {
     out.info(`Bundle       ${resolve(options.bundle)}`);
+    out.warn('Evidence files are stored unredacted. Review the content before sharing the bundle.');
   }
   out.info('');
   out.info('This is a machine-oriented document; use --json to consume it.');
