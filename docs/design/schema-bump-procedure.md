@@ -66,3 +66,13 @@ Two things are explicitly **not** shape changes and do not bump:
   versions supported, and exits 2. It never guesses at a shape it does not know.
 - The package version is independent of `SNAPSHOT_SCHEMA_VERSION`; see
   [`versions.md`](versions.md).
+
+## History
+
+- **1 → 2 (#212)**: `ObservedSnapshot` gained optional `provenance.cellId`, the
+  caller-asserted identifier of the yuurei isolation cell a pre-run inspection
+  ran inside. Optional, so a schema-1 artifact remains valid as written;
+  `SUPPORTED_SNAPSHOT_SCHEMA_VERSIONS` keeps `"1"` and the `legacy-observed`
+  fixture exercises the read path. The field is provenance, not an observed
+  fact: absent means unknown, and a supplied value does not certify which
+  environment was observed. See ADR 0004.

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { elementIdFor, runtimeId } from '../core/ids.js';
 import type { ObservedElement, ObservedReason, ObservedStatus } from '../core/observed.js';
 import { harnessContentDigest } from '../snapshot/digest.js';
-import { assembleObservedSnapshot, completenessOf } from './assemble.js';
+import { assembleObservedSnapshot, completenessOf, withObservationProvenance } from './assemble.js';
 
 function element(id: string, status: ObservedStatus, reason?: ObservedReason): ObservedElement {
   return {
@@ -41,7 +41,7 @@ describe('assembleObservedSnapshot', () => {
 
     const snapshot = assembleObservedSnapshot(input(elements));
 
-    expect(snapshot.schemaVersion).toBe('1');
+    expect(snapshot.schemaVersion).toBe('2');
     expect(snapshot.snapshotId).toMatch(/^obs_[0-9a-f]{12}$/);
     expect(snapshot.capturedAt).toBe('2026-09-16T00:00:00.000Z');
     expect(snapshot.digests.observed).toBe(harnessContentDigest(elements));
@@ -86,6 +86,24 @@ describe('assembleObservedSnapshot', () => {
     const snapshot = assembleObservedSnapshot(input([element('a', 'observed')], diagnostics));
 
     expect(snapshot.diagnostics.map((d) => d.code)).toEqual(['a', 'b']);
+  });
+});
+
+describe('withObservationProvenance', () => {
+  it('attaches caller-supplied provenance without touching ids or digests (#212)', () => {
+    const snapshot = assembleObservedSnapshot(input([element('a', 'observed')]));
+
+    const provenanced = withObservationProvenance(snapshot, { cellId: 'cell_abc123' });
+
+    expect(provenanced).not.toBe(snapshot);
+    expect(provenanced.provenance?.cellId).toBe('cell_abc123');
+    expect(provenanced.snapshotId).toBe(snapshot.snapshotId);
+    expect(provenanced.digests.observed).toBe(snapshot.digests.observed);
+    expect(snapshot.provenance).toBeUndefined();
+    expect(Object.isFrozen(provenanced)).toBe(true);
+    expect(() => {
+      (provenanced as { provenance?: unknown }).provenance = undefined;
+    }).toThrow(TypeError);
   });
 });
 

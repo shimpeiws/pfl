@@ -7,15 +7,18 @@ document contract.
 ## `inspect`
 
 ```sh
-pfl inspect --runtime <id> [--allow-scope <scope>] [--json]
+pfl inspect --runtime <id> [--allow-scope <scope>] [--cell-id <id>] [--json]
 ```
 
 | Flag                    | Required | Meaning                                                                      |
 | ----------------------- | -------- | ---------------------------------------------------------------------------- |
 | `--runtime <id>`        | yes      | `claude-code`, `codex`, or `opencode`                                        |
 | `--allow-scope <scope>` | no       | Grant `<runtime>:user` or `<runtime>:install` for this run only (repeatable) |
+| `--cell-id <id>`        | no       | Record `<id>` as caller-asserted cell provenance on the observed snapshot    |
 
-Exits 5 when the user scope is required and not granted.
+Exits 5 when the user scope is required and not granted. `--cell-id` is
+recorded verbatim — it tags which isolation cell the caller claims the
+inspection ran for, and does not verify the environment.
 
 ## `report`
 

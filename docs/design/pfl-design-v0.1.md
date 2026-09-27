@@ -650,6 +650,13 @@ interface ObservedSnapshot {
   snapshotId: string;
   capturedAt: string;
 
+  // Caller-asserted provenance for the observation event (#212; schema 2).
+  // Recorded verbatim, never an observed fact: a supplied cellId does not
+  // certify which environment was actually observed. Absent means unknown.
+  provenance?: {
+    cellId: string;
+  };
+
   project: {
     id: string;
     displayName: string;

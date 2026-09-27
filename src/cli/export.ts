@@ -53,6 +53,12 @@ export interface ExportData {
     resolvedSnapshotId: string;
     capturedAt: string;
     schemaVersion: string;
+    /**
+     * The caller-supplied cell provenance recorded on the observed snapshot
+     * (#212). `null` when none was recorded — standalone runs and snapshots
+     * written before schema 2 — meaning unknown, not a mismatch.
+     */
+    cellId: string | null;
   };
   resolution: { semanticsVersion: string; confidence: ResolutionConfidence };
   elements: ExportElement[];
@@ -130,6 +136,7 @@ export async function runExport(
       resolvedSnapshotId: resolved.snapshotId,
       capturedAt: observed.capturedAt,
       schemaVersion: observed.schemaVersion,
+      cellId: observed.provenance?.cellId ?? null,
     },
     resolution: resolved.resolution,
     elements,

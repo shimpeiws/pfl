@@ -18,8 +18,13 @@ import { canonicalJsonStringify } from '../util/json.js';
  * an unknown one rather than guessing (observe-don't-infer); snapshots are
  * immutable, so an unreadable snapshot is never rewritten or migrated in place.
  */
-export const SNAPSHOT_SCHEMA_VERSION = '1';
-export const SUPPORTED_SNAPSHOT_SCHEMA_VERSIONS: readonly string[] = [SNAPSHOT_SCHEMA_VERSION];
+// 1 → 2: ObservedSnapshot gained the optional `provenance` field (cell
+// observation provenance, #212). An addition still bumps the version
+// (docs/design/schema-bump-procedure.md): an older reader must refuse rather
+// than silently drop the field. Version 1 stays supported so the new reader
+// adopts existing histories.
+export const SNAPSHOT_SCHEMA_VERSION = '2';
+export const SUPPORTED_SNAPSHOT_SCHEMA_VERSIONS: readonly string[] = [SNAPSHOT_SCHEMA_VERSION, '1'];
 
 const SCHEMA_VERSION_PATTERN = /^\d+$/;
 

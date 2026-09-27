@@ -668,8 +668,22 @@ function isObservedSnapshot(value: unknown): value is ObservedSnapshot {
   }
   const completeness = value['completeness'];
   if (typeof completeness !== 'string' || !COMPLETENESS_VALUES.includes(completeness)) return false;
+  if (!isObservationProvenance(value['provenance'])) return false;
   const digests = value['digests'];
   return isRecord(digests) && typeof digests['observed'] === 'string';
+}
+
+/**
+ * Optional caller-supplied provenance (schema 2, #212): when present it is a
+ * record whose `cellId`, if present, is a string. Fields this reader does not
+ * know are tolerated so a future provenance field stays readable; a malformed
+ * `cellId` is not.
+ */
+function isObservationProvenance(value: unknown): boolean {
+  if (value === undefined) return true;
+  if (!isRecord(value)) return false;
+  const cellId = value['cellId'];
+  return cellId === undefined || typeof cellId === 'string';
 }
 
 /**

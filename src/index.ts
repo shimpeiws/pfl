@@ -143,18 +143,33 @@ cli
     '--allow-scope <scope>',
     'Grant <runtime>:<scope> for this run only (repeatable; scope: user or install)',
   )
+  .option(
+    '--cell-id <id>',
+    'Record a caller-supplied cell id as observation provenance (the value is asserted by the caller, not verified)',
+  )
   .option('--json', 'Output as JSON')
   .action(
     withErrorHandling(
       'inspect',
-      async (flags: { runtime?: string; allowScope?: string | string[] } & CommonFlags) => {
+      async (
+        flags: {
+          runtime?: string;
+          allowScope?: string | string[];
+          cellId?: string;
+        } & CommonFlags,
+      ) => {
         if (!flags.runtime) {
           throw new PflError(`--runtime is required (${RUNTIME_CHOICES})`, EXIT_CODES.CONFIG_ERROR);
         }
         const allowScopes = parseAllowScopes(flags.allowScope, flags.runtime);
         return runInspect(
           process.cwd(),
-          { runtime: flags.runtime, allowScopes, json: flags.json ?? false },
+          {
+            runtime: flags.runtime,
+            allowScopes,
+            ...(flags.cellId !== undefined ? { cellId: flags.cellId } : {}),
+            json: flags.json ?? false,
+          },
           loggerForFlags(flags),
         );
       },

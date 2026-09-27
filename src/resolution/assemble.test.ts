@@ -42,7 +42,7 @@ function observedSnapshot(
   version: string | null = '2.1.100',
 ): ObservedSnapshot {
   return {
-    schemaVersion: '1',
+    schemaVersion: '2',
     snapshotId: generateObservedSnapshotId(),
     capturedAt: '2026-09-16T00:00:00.000Z',
     project: { id: 'proj', displayName: 'owner/repo', root: '/repo' },
@@ -70,7 +70,7 @@ describe('assembleResolvedSnapshot', () => {
       snapshotId: 'res_test' as ResolvedSnapshotId,
     });
 
-    expect(resolved.schemaVersion).toBe('1');
+    expect(resolved.schemaVersion).toBe('2');
     expect(resolved.snapshotId).toBe('res_test');
     expect(resolved.observedSnapshotId).toBe(observed.snapshotId);
     expect(resolved.effectiveElementIds).toEqual([elements[0]?.id, elements[2]?.id]);

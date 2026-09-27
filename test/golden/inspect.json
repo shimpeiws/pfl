@@ -69,7 +69,8 @@
       "snapshotId": "obs_ID",
       "elements": 27,
       "opaqueLayers": 1,
-      "completeness": "partial"
+      "completeness": "partial",
+      "cellId": null
     },
     "resolved": {
       "snapshotId": "res_ID",

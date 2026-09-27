@@ -115,11 +115,30 @@ export interface AdapterIdentity {
   runtimeCompatibility: 'verified' | 'unverified';
 }
 
+/**
+ * Caller-supplied provenance for the observation event (yuurei cell
+ * observation, #212). These fields assert something about the context the
+ * inspection ran in; they are recorded verbatim and are not observed facts —
+ * a supplied `cellId` does not certify which environment was actually
+ * observed. Absent on standalone runs and on snapshots written before schema
+ * version 2, where it reads as unknown rather than as a mismatch.
+ */
+export interface ObservationProvenance {
+  cellId: string;
+}
+
 /** Design doc §13.1. Immutable once captured. */
 export interface ObservedSnapshot {
   schemaVersion: string;
   snapshotId: ObservedSnapshotId;
   capturedAt: string;
+
+  /**
+   * Optional provenance the caller asserted for this observation, e.g. the
+   * yuurei cell id supplied to `pfl inspect --cell-id`. Never an element
+   * identity and never a substitute for `snapshotId`.
+   */
+  provenance?: ObservationProvenance;
 
   project: ObservedProject;
   runtime: ObservedRuntime;

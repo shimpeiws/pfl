@@ -58,7 +58,7 @@ async function seedRun(home: string, projectId: string, capturedAt: string): Pro
   const resolvedId = generateResolvedSnapshotId();
   const interpretationId = generateInterpretationId();
   const observed: ObservedSnapshot = {
-    schemaVersion: '1',
+    schemaVersion: '2',
     snapshotId: observedId,
     capturedAt,
     project: { id: projectId, displayName: 'owner/repo', root: '/repo' },
@@ -70,7 +70,7 @@ async function seedRun(home: string, projectId: string, capturedAt: string): Pro
     digests: { observed: 'sha256:abc' },
   };
   const resolved: ResolvedSnapshot = {
-    schemaVersion: '1',
+    schemaVersion: '2',
     snapshotId: resolvedId,
     observedSnapshotId: observedId,
     runtime: { id: runtimeId('claude-code'), version: '2.1.272' },
@@ -82,7 +82,7 @@ async function seedRun(home: string, projectId: string, capturedAt: string): Pro
     digests: { harnessContent: 'sha256:c', resolvedSnapshot: 'sha256:r' },
   };
   const interpretation: Interpretation = {
-    schemaVersion: '1',
+    schemaVersion: '2',
     interpretationId,
     resolvedSnapshotId: resolvedId,
     classifier: { id: 'pfl-native', version: '4' },
@@ -254,7 +254,7 @@ describe('runGc', () => {
     await writeObservedSnapshot(
       projectId,
       {
-        schemaVersion: '1',
+        schemaVersion: '2',
         snapshotId: observedOnly,
         capturedAt: '2026-01-01T00:00:00.000Z',
         project: { id: projectId, displayName: 'owner/repo', root: '/repo' },

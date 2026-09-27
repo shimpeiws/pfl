@@ -38,7 +38,7 @@ async function seedRun(
 ): Promise<{ observedId: string; resolvedId: string }> {
   const projectId = (await resolveProjectContext(projectRoot)).id;
   const observed: ObservedSnapshot = {
-    schemaVersion: '1',
+    schemaVersion: '2',
     snapshotId: generateObservedSnapshotId(),
     capturedAt,
     project: { id: projectId, displayName: 'owner/repo', root: projectRoot },
@@ -50,7 +50,7 @@ async function seedRun(
     digests: { observed: 'sha256:x' },
   };
   const resolved: ResolvedSnapshot = {
-    schemaVersion: '1',
+    schemaVersion: '2',
     snapshotId: resolvedId as ResolvedSnapshotId,
     observedSnapshotId: observed.snapshotId,
     runtime: { id: runtimeId(runtime), version: '1.0.0' },

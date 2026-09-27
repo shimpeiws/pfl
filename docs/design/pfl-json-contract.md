@@ -154,7 +154,7 @@ Only `data` varies. Each shape below is the payload once, not repeated per run.
   runtime, runtimeVersion, runtimeCompatibility,
   project,
   store,
-  observed: { snapshotId, elements, opaqueLayers, completeness },
+  observed: { snapshotId, elements, opaqueLayers, completeness, cellId },
   resolved: { snapshotId, effective, conditional, shadowed, confidence }
 }
 ```
@@ -162,6 +162,12 @@ Only `data` varies. Each shape below is the payload once, not repeated per run.
 `store` is the home-redacted project directory under `~/.pfl/`, e.g.
 `~/.pfl/projects/git-0f214d60555919a5`. It tells the user where artifacts were
 written. A field addition to `data` is minor per the Compatibility section.
+
+`observed.cellId` is the `--cell-id` value the caller supplied for this
+inspection (#212; additive, nullable). It is caller-asserted provenance for the
+observation event — recorded verbatim, never verified — and is `null` when the
+flag was not given. A non-null value does not certify which environment was
+observed.
 
 Observed and resolved diagnostics travel in the envelope's `diagnostics`, not
 nested under `data`.
@@ -298,7 +304,9 @@ artifact.
 {
   project: { id, displayName },
   runtime: { id, version, adapter: { id, version, runtimeCompatibility } },
-  snapshot: { observedSnapshotId, resolvedSnapshotId, capturedAt, schemaVersion },
+  snapshot: {
+    observedSnapshotId, resolvedSnapshotId, capturedAt, schemaVersion, cellId
+  },
   resolution: { semanticsVersion, confidence },
   elements: [{ id, observed, resolved, interpretation }],
   relations: [{ type, from, to }],
@@ -319,6 +327,13 @@ omitted, when no such layer exists for the element, matching `show`.
 `relations` and `findings` are the resolved snapshot's and the interpretation's
 in full, unfiltered by element (unlike `show`, which scopes both to the one
 element requested).
+
+`snapshot.cellId` carries the observed snapshot's caller-asserted provenance
+(#212; additive, nullable): the `--cell-id` recorded at inspection time, or
+`null` for standalone inspections and for artifacts written before schema 2,
+where absence means unknown, not mismatch. `snapshot.schemaVersion` is the
+stored artifact's version — schema-1 artifacts export as `"1"` with
+`cellId: null`.
 
 `export.data.interpretation` names the classifier as `{ id, version }` rather
 than the `classifierVersion` string the other read commands use (see

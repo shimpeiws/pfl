@@ -82,7 +82,7 @@ async function seed(
 
   const projectId = (await resolveProjectContext(projectRoot)).id;
   const observed: ObservedSnapshot = {
-    schemaVersion: '1',
+    schemaVersion: '2',
     snapshotId: generateObservedSnapshotId(),
     capturedAt: '2026-09-25T00:00:00.000Z',
     project: { id: projectId, displayName: 'owner/repo', root: projectRoot },
@@ -94,7 +94,7 @@ async function seed(
     digests: { observed: 'sha256:x' },
   };
   const resolved: ResolvedSnapshot = {
-    schemaVersion: '1',
+    schemaVersion: '2',
     snapshotId: 'res_test' as ResolvedSnapshotId,
     observedSnapshotId: observed.snapshotId,
     runtime: { id: rid, version: '2.1.272' },
@@ -108,7 +108,7 @@ async function seed(
   await writeObservedSnapshot(projectId, observed, home);
   await writeResolvedSnapshot(projectId, resolved, home);
   const interpretation: Interpretation = {
-    schemaVersion: '1',
+    schemaVersion: '2',
     interpretationId: 'int_test' as never,
     resolvedSnapshotId: resolved.snapshotId,
     classifier: { id: 'pfl-native', version: '5' },

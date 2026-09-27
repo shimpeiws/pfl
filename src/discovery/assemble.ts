@@ -1,6 +1,7 @@
 import type { Completeness, Diagnostic } from '../core/diagnostics.js';
 import type {
   AdapterIdentity,
+  ObservationProvenance,
   ObservedElement,
   ObservedProject,
   ObservedRuntime,
@@ -73,6 +74,21 @@ export function assembleObservedSnapshot(input: ObservedSnapshotInput): Observed
     completeness: completenessOf(elements, diagnostics),
     digests: { observed: harnessContentDigest(elements) },
   });
+}
+
+/**
+ * Attaches caller-supplied provenance to a captured snapshot, returning a new
+ * immutable snapshot (#212). Provenance belongs to the inspect path, not to
+ * discovery: an adapter observes the harness and must not know which cell the
+ * caller claims it ran in, so this is applied after `discover` returns. The
+ * provenance is a caller's assertion about the observation context — it does
+ * not re-enter `digests.observed`, which covers the harness content only.
+ */
+export function withObservationProvenance(
+  snapshot: ObservedSnapshot,
+  provenance: ObservationProvenance,
+): ObservedSnapshot {
+  return deepFreeze({ ...snapshot, provenance });
 }
 
 function redactProject(project: ObservedProject, ctx: RedactionContext): ObservedProject {

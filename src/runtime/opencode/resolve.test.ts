@@ -39,7 +39,7 @@ function snapshot(
   version: string | null = '1.18.31',
 ): ObservedSnapshot {
   return {
-    schemaVersion: '1',
+    schemaVersion: '2',
     snapshotId: generateObservedSnapshotId(),
     capturedAt: '2026-09-18T00:00:00.000Z',
     project: { id: 'proj', displayName: 'owner/repo', root: '/repo' },

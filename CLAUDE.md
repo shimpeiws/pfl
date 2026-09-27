@@ -53,6 +53,10 @@ a dry-run publish; and the OpenCode model was reconciled with the installed
 1.18.31 (adapter aligned as #149–#151). See
 `docs/design/pfl-roadmap-v1.0.md`.
 
+Post-v1.0 work has begun: `inspect` accepts `--cell-id` to record
+caller-asserted observation provenance (#212; snapshot schema is now `"2"`,
+with `"1"` still readable).
+
 ## Commands
 
 ```sh
