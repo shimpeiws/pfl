@@ -7,6 +7,40 @@ onward. The package version is not a compatibility signal for the on-disk
 snapshot schema, the resolution semantics, or the classifier; see
 [`docs/design/stability.md`](docs/design/stability.md).
 
+## [1.1.0-rc.1] - 2026-09-27
+
+### Added
+
+- **`pfl export`** — emit a sanitized full IR in one JSON document.
+- **Evidence bundle mode** (`--bundle <dir>`) — collect sanitized IR, manifest,
+  and metadata into a self-contained directory for review.
+- **`--runtime` flag** on read commands (`inspect`, `report`, `list`, `show`,
+  `graph`, `diff`, `snapshots`) to scope `latest` to a single runtime.
+- **`--kind` filter and `--limit`** on `list` to narrow element output.
+- **Origin / facet / kind / status filters** on `graph` with deduped facet
+  rendering.
+- **Findings carry cited element path and kind** (`report`, `list`).
+- **Partial snapshot cause explanation** in `report` and `snapshots`.
+- **Cross-runtime compat scopes** surfaced in `report`, `list`, and `graph`.
+- **Human-readable source path** shown on each element in `list`.
+- **Store location** shown in human and JSON output (`inspect`).
+- **Relation endpoints** rendered by source path in `show`.
+- **Duplicate catalog name detection** in `claude-code` and `codex` adapters.
+- **Distributable agent skill** shipped under `skills/pfl/`.
+
+### Changed
+
+- **Resolution semantics bumped (1 → 2).** The derivation and relation rules
+  changed; stored resolved snapshots from v1.0 are incompatible with the new
+  semantics.
+
+### Fixed
+
+- `claude-code`: encode dots in project directory names like Claude Code.
+- `claude-code`: resolve marketplace catalogs as unresolved, not effective.
+- Prune nested git checkouts from project instruction walks.
+- Keep embedded paths readable in diagnostic messages (`redact`).
+
 ## [1.0.0] - 2026-09-18
 
 ### Added
