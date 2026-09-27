@@ -164,6 +164,10 @@ describe('observed snapshots', () => {
     for (const [id, provenance] of [
       ['obs_badprov1', 'cell_x'],
       ['obs_badprov2', { cellId: 42 }],
+      ['obs_badprov3', {}],
+      ['obs_badprov4', { cellId: 'with\nnewline' }],
+      ['obs_badprov5', { cellId: 'has space' }],
+      ['obs_badprov6', { cellId: 'x'.repeat(129) }],
     ] as const) {
       await writeFile(
         join(observationsDir('proj', home), `${id}.json`),

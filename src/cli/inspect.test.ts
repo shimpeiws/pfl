@@ -195,7 +195,14 @@ describe('runInspect', () => {
     const { project, home } = await makeFixture(true);
     const { logger } = fakeLogger();
 
-    for (const cellId of ['', 'has space', 'no/slash', '-leading', 'x'.repeat(129)]) {
+    for (const cellId of [
+      '',
+      'has space',
+      'no/slash',
+      '-leading',
+      'x'.repeat(129),
+      'trailing-newline\n',
+    ]) {
       await expect(
         runInspect(
           project,

@@ -3,7 +3,7 @@ import { classify } from '../classify/classifier.js';
 import { deriveFindings } from '../classify/findings.js';
 import { generateInterpretationId } from '../core/ids.js';
 import type { Interpretation } from '../core/interpretation.js';
-import type { ObservedSnapshot } from '../core/observed.js';
+import { CELL_ID_PATTERN, type ObservedSnapshot } from '../core/observed.js';
 import type { ResolvedSnapshot, ResolvedStatus } from '../core/resolved.js';
 import { resolveAccessPolicy, type ConsentIO } from '../discovery/consent.js';
 import { resolveProjectContext } from '../discovery/project-identity.js';
@@ -72,14 +72,6 @@ export interface InspectOptions {
    */
   cellId?: string;
 }
-
-/**
- * A caller-supplied cell id is bounded and printable: it is stored verbatim in
- * a persisted artifact and echoed in documents, so it must be a short
- * identifier-shaped string rather than arbitrary input. It is never a path
- * segment, but the charset keeps it safe to display and compare.
- */
-const CELL_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 
 function parseCellId(value: string | undefined): string | undefined {
   if (value === undefined) return undefined;

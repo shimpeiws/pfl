@@ -25,6 +25,7 @@ import {
   type Interpretation,
 } from '../core/interpretation.js';
 import {
+  CELL_ID_PATTERN,
   INSPECTABILITY_VALUES as CORE_INSPECTABILITY_VALUES,
   NATIVE_ORIGIN_VALUES as CORE_NATIVE_ORIGIN_VALUES,
   OBSERVED_REASONS,
@@ -675,15 +676,18 @@ function isObservedSnapshot(value: unknown): value is ObservedSnapshot {
 
 /**
  * Optional caller-supplied provenance (schema 2, #212): when present it is a
- * record whose `cellId`, if present, is a string. Fields this reader does not
- * know are tolerated so a future provenance field stays readable; a malformed
+ * record whose `cellId` is a string within the bound `inspect` enforced —
+ * the reader holds a stored artifact to the same `CELL_ID_PATTERN`, so one
+ * written around the CLI cannot smuggle control characters or unbounded text
+ * into a document. Fields this reader does not know are tolerated so a
+ * future provenance field stays readable; a missing or out-of-bounds
  * `cellId` is not.
  */
 function isObservationProvenance(value: unknown): boolean {
   if (value === undefined) return true;
   if (!isRecord(value)) return false;
   const cellId = value['cellId'];
-  return cellId === undefined || typeof cellId === 'string';
+  return typeof cellId === 'string' && CELL_ID_PATTERN.test(cellId);
 }
 
 /**

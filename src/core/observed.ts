@@ -127,6 +127,18 @@ export interface ObservationProvenance {
   cellId: string;
 }
 
+/**
+ * The bound a caller-supplied cell id is held to (#212): it is stored
+ * verbatim in a persisted artifact and echoed in documents, so it must be a
+ * short identifier-shaped string rather than arbitrary input. `inspect`
+ * validates `--cell-id` against it and the snapshot reader revalidates a
+ * stored `cellId` against the same rule, so an artifact that bypassed the
+ * write path cannot carry control characters or unbounded text into a
+ * document. The id is never a path segment, but the charset keeps it safe to
+ * display and compare.
+ */
+export const CELL_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
+
 /** Design doc §13.1. Immutable once captured. */
 export interface ObservedSnapshot {
   schemaVersion: string;
