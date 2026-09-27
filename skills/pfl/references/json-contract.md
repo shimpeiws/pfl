@@ -78,7 +78,8 @@ add `missingScopes`:
     "snapshotId": "obs_…",
     "elements": 4,
     "opaqueLayers": 1,
-    "completeness": "complete"
+    "completeness": "complete",
+    "cellId": null
   },
   "resolved": {
     "snapshotId": "res_…",
@@ -89,6 +90,10 @@ add `missingScopes`:
   }
 }
 ```
+
+`observed.cellId` is the `--cell-id` the caller supplied at inspection time —
+caller-asserted provenance, `null` when the flag was not given. It names what
+the caller claimed, not what was verified to be observed.
 
 ### report
 

@@ -7,6 +7,19 @@ onward. The package version is not a compatibility signal for the on-disk
 snapshot schema, the resolution semantics, or the classifier; see
 [`docs/design/stability.md`](docs/design/stability.md).
 
+## [Unreleased]
+
+### Added
+
+- **`pfl inspect --cell-id <id>`** (#212) — record a caller-asserted isolation
+  cell identifier as `provenance.cellId` on the observed snapshot, surfaced as
+  `cellId` in `inspect` and `export` JSON (`null` when absent). The value is
+  provenance, not verification: it does not change snapshot or element
+  identity and does not certify which environment was observed.
+- **Snapshot schema bumped (1 → 2).** Schema-1 artifacts remain readable; their
+  absent `provenance` surfaces as `cellId: null`. See ADR 0004 and
+  `docs/design/schema-bump-procedure.md`.
+
 ## [1.1.0] - 2026-09-27
 
 ### Added

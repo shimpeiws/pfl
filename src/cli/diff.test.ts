@@ -109,7 +109,7 @@ function makeRun(options: {
   const observedSnapshotId = generateObservedSnapshotId();
   const resolvedSnapshotId = generateResolvedSnapshotId();
   const observed: ObservedSnapshot = {
-    schemaVersion: '1',
+    schemaVersion: '2',
     snapshotId: observedSnapshotId,
     capturedAt: '2026-09-16T00:00:00.000Z',
     project: { id: options.projectId, displayName: 'owner/repo', root: '/repo' },
@@ -121,7 +121,7 @@ function makeRun(options: {
     digests: { observed: options.contentDigest },
   };
   const resolved: ResolvedSnapshot = {
-    schemaVersion: '1',
+    schemaVersion: '2',
     snapshotId: resolvedSnapshotId,
     observedSnapshotId,
     runtime: { id: rid, version: options.runtimeVersion },
@@ -136,7 +136,7 @@ function makeRun(options: {
     },
   };
   const interpretation: Interpretation = {
-    schemaVersion: '1',
+    schemaVersion: '2',
     interpretationId: generateInterpretationId(),
     resolvedSnapshotId,
     classifier: { id: 'pfl-native', version: options.classifierVersion ?? '1' },
@@ -491,7 +491,7 @@ async function seedRun(
   const observedSnapshotId = generateObservedSnapshotId();
   const resolvedSnapshotId = generateResolvedSnapshotId();
   const observed: ObservedSnapshot = {
-    schemaVersion: '1',
+    schemaVersion: '2',
     snapshotId: observedSnapshotId,
     capturedAt: '2026-09-16T00:00:00.000Z',
     project: { id: projectId, displayName: 'owner/repo', root: projectRoot },
@@ -503,7 +503,7 @@ async function seedRun(
     digests: { observed: 'sha256:content' },
   };
   const resolved: ResolvedSnapshot = {
-    schemaVersion: '1',
+    schemaVersion: '2',
     snapshotId: resolvedSnapshotId,
     observedSnapshotId,
     runtime: { id: rid, version: options.runtimeVersion ?? '2.1.272' },

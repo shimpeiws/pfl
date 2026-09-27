@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -14,6 +14,8 @@ import type { NativeOrigin, ObservedElement, ObservedSnapshot } from '../core/ob
 import type { ResolvedElement, ResolvedSnapshot, ResolvedStatus } from '../core/resolved.js';
 import { resolveProjectContext } from '../discovery/project-identity.js';
 import {
+  observationsDir,
+  snapshotsDir,
   writeInterpretation,
   writeLatestPointer,
   writeObservedSnapshot,
@@ -81,11 +83,12 @@ async function seed(
     completeness?: ObservedSnapshot['completeness'];
     observedDiagnostics?: Diagnostic[];
     resolvedDiagnostics?: Diagnostic[];
+    cellId?: string;
   } = {},
 ): Promise<{ observed: ObservedSnapshot; resolved: ResolvedSnapshot }> {
   const projectId = (await resolveProjectContext(projectRoot)).id;
   const observed: ObservedSnapshot = {
-    schemaVersion: '1',
+    schemaVersion: '2',
     snapshotId: generateObservedSnapshotId(),
     capturedAt: '2026-09-16T00:00:00.000Z',
     project: { id: projectId, displayName: 'owner/repo', root: projectRoot },
@@ -94,10 +97,11 @@ async function seed(
     elements: pairs.map((p) => p.observed),
     diagnostics: options.observedDiagnostics ?? [],
     completeness: options.completeness ?? 'complete',
+    ...(options.cellId !== undefined ? { provenance: { cellId: options.cellId } } : {}),
     digests: { observed: 'sha256:x' },
   };
   const resolved: ResolvedSnapshot = {
-    schemaVersion: '1',
+    schemaVersion: '2',
     snapshotId: 'res_test' as ResolvedSnapshotId,
     observedSnapshotId: observed.snapshotId,
     runtime: { id: rid, version: '2.1.272' },
@@ -112,7 +116,7 @@ async function seed(
   await writeResolvedSnapshot(projectId, resolved, home);
   if (options.storeInterpretation === true) {
     const interpretation: Interpretation = {
-      schemaVersion: '1',
+      schemaVersion: '2',
       interpretationId: 'int_test' as never,
       resolvedSnapshotId: resolved.snapshotId,
       classifier: { id: 'pfl-native', version: '5' },
@@ -218,7 +222,7 @@ describe('runExport', () => {
     // whose elements array omits the element.
     const projectId = (await resolveProjectContext(projectRoot)).id;
     const observed: ObservedSnapshot = {
-      schemaVersion: '1',
+      schemaVersion: '2',
       snapshotId: generateObservedSnapshotId(),
       capturedAt: '2026-09-16T00:00:00.000Z',
       project: { id: projectId, displayName: 'owner/repo', root: projectRoot },
@@ -230,7 +234,7 @@ describe('runExport', () => {
       digests: { observed: 'sha256:x' },
     };
     const resolved: ResolvedSnapshot = {
-      schemaVersion: '1',
+      schemaVersion: '2',
       snapshotId: 'res_test' as ResolvedSnapshotId,
       observedSnapshotId: observed.snapshotId,
       runtime: { id: rid, version: '2.1.272' },
@@ -254,6 +258,84 @@ describe('runExport', () => {
 
     expect(outcome.data.elements).toHaveLength(1);
     expect(outcome.data.elements[0]?.resolved).toBeNull();
+  });
+
+  it('names the recorded cell provenance on the snapshot block (#212)', async () => {
+    const projectRoot = await tempDir('pfl-export-project-');
+    const home = await tempDir('pfl-export-home-');
+    await seed(projectRoot, home, [pair('instructions', 'CLAUDE.md')], {
+      cellId: 'cell_20260928T120000Z-a1b2',
+    });
+    const { logger } = fakeLogger();
+
+    const outcome = await runExport(projectRoot, { home, json: true }, logger);
+
+    expect(outcome.data.snapshot.cellId).toBe('cell_20260928T120000Z-a1b2');
+    // The snapshot ids keep their own identity; provenance does not replace them.
+    expect(outcome.data.snapshot.observedSnapshotId).toMatch(/^obs_/);
+    expect(outcome.data.snapshot.resolvedSnapshotId).toBe('res_test');
+  });
+
+  it('reports unknown cell provenance, not a mismatch, on standalone and pre-schema-2 runs', async () => {
+    const projectRoot = await tempDir('pfl-export-project-');
+    const home = await tempDir('pfl-export-home-');
+    await seed(projectRoot, home, [pair('instructions', 'CLAUDE.md')]);
+    const { logger } = fakeLogger();
+
+    const standalone = await runExport(projectRoot, { home, json: true }, logger);
+    expect(standalone.data.snapshot.cellId).toBeNull();
+
+    // A schema-1 artifact written before provenance existed reads the same
+    // way: absent means unknown, and the old artifact still loads.
+    const legacy = await tempDir('pfl-export-legacy-project-');
+    const legacyHome = await tempDir('pfl-export-legacy-home-');
+    const projectId = (await resolveProjectContext(legacy)).id;
+    const observed: ObservedSnapshot = {
+      schemaVersion: '1',
+      snapshotId: generateObservedSnapshotId(),
+      capturedAt: '2026-09-16T00:00:00.000Z',
+      project: { id: projectId, displayName: 'owner/repo', root: legacy },
+      runtime: { id: rid, version: '2.1.272' },
+      adapter: { id: 'claude-code', version: '0.1.0', runtimeCompatibility: 'verified' },
+      elements: [pair('instructions', 'CLAUDE.md').observed],
+      diagnostics: [],
+      completeness: 'complete',
+      digests: { observed: 'sha256:x' },
+    };
+    const resolved: ResolvedSnapshot = {
+      schemaVersion: '1',
+      snapshotId: 'res_legacy' as ResolvedSnapshotId,
+      observedSnapshotId: observed.snapshotId,
+      runtime: { id: rid, version: '2.1.272' },
+      resolution: { semanticsVersion: '1', confidence: 'verified' },
+      elements: [],
+      relations: [],
+      effectiveElementIds: [],
+      diagnostics: [],
+      digests: { harnessContent: 'sha256:h', resolvedSnapshot: 'sha256:r' },
+    };
+    // Schema-1 artifacts are written directly: the current writer would refuse
+    // to produce them, but the reader must still accept them.
+    await mkdir(observationsDir(projectId, legacyHome), { recursive: true });
+    await mkdir(snapshotsDir(projectId, legacyHome), { recursive: true });
+    await writeFile(
+      join(observationsDir(projectId, legacyHome), `${observed.snapshotId}.json`),
+      `${JSON.stringify(observed)}\n`,
+    );
+    await writeFile(
+      join(snapshotsDir(projectId, legacyHome), `${resolved.snapshotId}.json`),
+      `${JSON.stringify(resolved)}\n`,
+    );
+    await writeLatestPointer(
+      projectId,
+      { observed: observed.snapshotId, resolved: resolved.snapshotId },
+      legacyHome,
+    );
+
+    const legacyOutcome = await runExport(legacy, { home: legacyHome, json: true }, logger);
+
+    expect(legacyOutcome.data.snapshot.schemaVersion).toBe('1');
+    expect(legacyOutcome.data.snapshot.cellId).toBeNull();
   });
 
   it('names a recomputed interpretation, not a stored one, when none is persisted', async () => {

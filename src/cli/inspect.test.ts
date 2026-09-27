@@ -139,6 +139,83 @@ describe('runInspect', () => {
     );
   });
 
+  it('records a caller-supplied cell id as observation provenance (#212)', async () => {
+    const { project, home } = await makeFixture(true);
+    const { lines, logger } = fakeLogger();
+
+    const outcome = await runInspect(
+      project,
+      {
+        runtime: 'claude-code',
+        home,
+        pathValue: '',
+        interactive: false,
+        cellId: 'cell_20260928T120000Z-a1b2',
+      },
+      logger,
+    );
+
+    expect(outcome.data.observed.cellId).toBe('cell_20260928T120000Z-a1b2');
+    expect(lines.join('\n')).toContain('cell_20260928T120000Z-a1b2');
+
+    // The provenance is persisted on the observation event, so a stored
+    // artifact — and any export of it — names the cell that was supplied.
+    const projectId = (await resolveProjectContext(project)).id;
+    const stored = JSON.parse(
+      await readFile(
+        join(observationsDir(projectId, home), `${outcome.data.observed.snapshotId}.json`),
+        'utf8',
+      ),
+    ) as { provenance?: { cellId?: string } };
+    expect(stored.provenance?.cellId).toBe('cell_20260928T120000Z-a1b2');
+  });
+
+  it('records no provenance on a standalone run', async () => {
+    const { project, home } = await makeFixture(true);
+    const { logger } = fakeLogger();
+
+    const outcome = await runInspect(
+      project,
+      { runtime: 'claude-code', home, pathValue: '', interactive: false },
+      logger,
+    );
+
+    expect(outcome.data.observed.cellId).toBeNull();
+    const projectId = (await resolveProjectContext(project)).id;
+    const stored = JSON.parse(
+      await readFile(
+        join(observationsDir(projectId, home), `${outcome.data.observed.snapshotId}.json`),
+        'utf8',
+      ),
+    ) as { provenance?: unknown };
+    expect(stored.provenance).toBeUndefined();
+  });
+
+  it('rejects an out-of-bounds cell id before any store write', async () => {
+    const { project, home } = await makeFixture(true);
+    const { logger } = fakeLogger();
+
+    for (const cellId of [
+      '',
+      'has space',
+      'no/slash',
+      '-leading',
+      'x'.repeat(129),
+      'trailing-newline\n',
+    ]) {
+      await expect(
+        runInspect(
+          project,
+          { runtime: 'claude-code', home, pathValue: '', interactive: false, cellId },
+          logger,
+        ),
+      ).rejects.toMatchObject({ exitCode: EXIT_CODES.CONFIG_ERROR });
+    }
+
+    const projectId = (await resolveProjectContext(project)).id;
+    expect(await readdir(observationsDir(projectId, home)).catch(() => [])).toEqual([]);
+  });
+
   it('rejects an unknown runtime with RUNTIME_UNSUPPORTED', async () => {
     const { project, home } = await makeFixture(true);
     const { logger } = fakeLogger();

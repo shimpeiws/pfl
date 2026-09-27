@@ -33,7 +33,8 @@
       "observedSnapshotId": "obs_0123456789ab",
       "resolvedSnapshotId": "res_0123456789ab",
       "capturedAt": "2026-09-18T00:00:00.000Z",
-      "schemaVersion": "1"
+      "schemaVersion": "2",
+      "cellId": null
     },
     "resolution": {
       "confidence": "verified",

@@ -247,7 +247,7 @@ describe('redaction across every channel (S6, S8)', () => {
       path: rawPath,
     });
     const observed: ObservedSnapshot = {
-      schemaVersion: '1',
+      schemaVersion: '2',
       snapshotId: generateObservedSnapshotId(),
       capturedAt: '2026-09-16T00:00:00.000Z',
       project: { id: projectId, displayName: 'proj', root: fixture.projectRoot },
@@ -268,7 +268,7 @@ describe('redaction across every channel (S6, S8)', () => {
       digests: { observed: 'sha256:x' },
     };
     const resolved: ResolvedSnapshot = {
-      schemaVersion: '1',
+      schemaVersion: '2',
       snapshotId: generateResolvedSnapshotId(),
       observedSnapshotId: observed.snapshotId,
       runtime: { id: rid, version: '2.1.272' },

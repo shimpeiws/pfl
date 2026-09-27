@@ -107,7 +107,7 @@ function buildInterpretation() {
   const resolved = buildResolved();
   const { mappings, findingKinds } = getClassifierContribution();
   return {
-    schemaVersion: '1',
+    schemaVersion: '2',
     interpretationId: 'int_0123456789ab',
     resolvedSnapshotId: resolved.snapshotId,
     ...classify(observed, resolved, mappings),
@@ -242,7 +242,7 @@ describe('frozen CLI documents', () => {
 });
 
 describe('read compatibility', () => {
-  it('reads an older artifact shape that omits optional fields', async () => {
+  it('reads a schema-1 artifact, tolerating fields added since', async () => {
     const legacyHome = await mkdtemp(join(tmpdir(), 'pfl-golden-legacy-'));
     try {
       await mkdir(observationsDir('proj', legacyHome), { recursive: true });
@@ -257,6 +257,10 @@ describe('read compatibility', () => {
       expect(observed.elements).toHaveLength(1);
       // The older shape wrote no `sizeBytes` on the source; the reader tolerates it.
       expect(observed.elements[0]?.source.sizeBytes).toBeUndefined();
+      // The schema-1 artifact predates caller provenance (#212): it reads with
+      // `provenance` absent, which consumers treat as unknown, not a mismatch.
+      expect(observed.schemaVersion).toBe('1');
+      expect(observed.provenance).toBeUndefined();
     } finally {
       await rm(legacyHome, { recursive: true, force: true });
     }

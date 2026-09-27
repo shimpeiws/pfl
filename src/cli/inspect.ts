@@ -3,7 +3,7 @@ import { classify } from '../classify/classifier.js';
 import { deriveFindings } from '../classify/findings.js';
 import { generateInterpretationId } from '../core/ids.js';
 import type { Interpretation } from '../core/interpretation.js';
-import type { ObservedSnapshot } from '../core/observed.js';
+import { CELL_ID_PATTERN, type ObservedSnapshot } from '../core/observed.js';
 import type { ResolvedSnapshot, ResolvedStatus } from '../core/resolved.js';
 import { resolveAccessPolicy, type ConsentIO } from '../discovery/consent.js';
 import { resolveProjectContext } from '../discovery/project-identity.js';
@@ -11,7 +11,9 @@ import { resolveHarness } from '../resolution/resolver.js';
 import { getAdapter, getClassifierContribution, getConsentRequest } from '../runtime/registry.js';
 import { allowsOutsideProject, type RuntimeDetection } from '../runtime/types.js';
 import { resolveStoredProjectId } from '../snapshot/project-index.js';
+import { withObservationProvenance } from '../discovery/assemble.js';
 import { SNAPSHOT_SCHEMA_VERSION } from '../snapshot/serialization.js';
+import { EXIT_CODES, PflError } from './exit-codes.js';
 import {
   projectDir,
   writeInterpretation,
@@ -34,6 +36,8 @@ export interface InspectData {
     elements: number;
     opaqueLayers: number;
     completeness: string;
+    /** The caller-supplied cell provenance, or `null` when none was supplied (#212). */
+    cellId: string | null;
   };
   resolved: {
     snapshotId: string;
@@ -60,6 +64,24 @@ export interface InspectOptions {
    * Honored without prompting and never written to the consent store.
    */
   allowScopes?: readonly string[];
+  /**
+   * Caller-supplied observation provenance (`--cell-id`): the id of the cell
+   * the caller asserts this inspection ran inside. Recorded verbatim on the
+   * observed snapshot; it certifies nothing about the environment observed
+   * (#212).
+   */
+  cellId?: string;
+}
+
+function parseCellId(value: string | undefined): string | undefined {
+  if (value === undefined) return undefined;
+  if (!CELL_ID_PATTERN.test(value)) {
+    throw new PflError(
+      `invalid --cell-id: expected 1-128 characters from [A-Za-z0-9._:-], starting with a letter or digit`,
+      EXIT_CODES.CONFIG_ERROR,
+    );
+  }
+  return value;
 }
 
 /**
@@ -78,6 +100,7 @@ export async function runInspect(
   const adapter = getAdapter(options.runtime);
   const home = options.home ?? homedir();
   const out = redactingLogger(logger, options.json ? 'export' : 'display', { home });
+  const cellId = parseCellId(options.cellId);
 
   const request = getConsentRequest(adapter.id(), 'user');
   const interactive =
@@ -113,7 +136,12 @@ export async function runInspect(
   const project = { ...context, id: stored.id };
 
   const detection = await adapter.detect(project, access, home, options.pathValue);
-  const observed = await adapter.discover(project, access, home, options.pathValue);
+  const discovered = await adapter.discover(project, access, home, options.pathValue);
+  // The caller's provenance attaches to the observation event after discovery:
+  // it is an assertion about the context, never an observed fact, and an
+  // adapter must not need it to do its reading (#212).
+  const observed =
+    cellId === undefined ? discovered : withObservationProvenance(discovered, { cellId });
   const resolved = await resolveHarness(adapter, observed, home);
 
   await writeObservedSnapshot(project.id, observed, home);
@@ -183,6 +211,7 @@ function inspectData(
       elements: observed.elements.length,
       opaqueLayers,
       completeness: observed.completeness,
+      cellId: observed.provenance?.cellId ?? null,
     },
     resolved: {
       snapshotId: resolved.snapshotId,
@@ -226,6 +255,10 @@ function renderInspect(
   out.info('Snapshot');
   out.info(`  observed   ${observed.snapshotId}`);
   out.info(`  resolved   ${resolved.snapshotId}`);
+  const cellId = observed.provenance?.cellId;
+  if (cellId !== undefined) {
+    out.info(`  cell       ${cellId}`);
+  }
 
   out.info('');
   out.info(`Store           ${store}`);

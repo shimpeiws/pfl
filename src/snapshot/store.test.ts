@@ -60,7 +60,7 @@ afterEach(async () => {
 
 function makeObserved(overrides: Partial<ObservedSnapshot> = {}): ObservedSnapshot {
   return {
-    schemaVersion: '1',
+    schemaVersion: '2',
     snapshotId: generateObservedSnapshotId(),
     capturedAt: '2026-09-16T00:00:00.000Z',
     project: { id: 'proj', displayName: 'owner/repo', root: '/repo' },
@@ -76,7 +76,7 @@ function makeObserved(overrides: Partial<ObservedSnapshot> = {}): ObservedSnapsh
 
 function makeResolved(observedSnapshotId: ObservedSnapshotId): ResolvedSnapshot {
   return {
-    schemaVersion: '1',
+    schemaVersion: '2',
     snapshotId: generateResolvedSnapshotId(),
     observedSnapshotId,
     runtime: { id: runtimeId('claude-code'), version: '2.1.272' },
@@ -146,6 +146,35 @@ describe('observed snapshots', () => {
         0o777
       ).toString(8),
     ).toBe('600');
+  });
+
+  it('round-trips caller-supplied cell provenance (#212)', async () => {
+    const home = await tempHome();
+    const snapshot = makeObserved({ provenance: { cellId: 'cell_20260928T120000Z-a1b2' } });
+
+    await writeObservedSnapshot('proj', snapshot, home);
+
+    const read = await readObservedSnapshot('proj', snapshot.snapshotId, home);
+    expect(read.provenance?.cellId).toBe('cell_20260928T120000Z-a1b2');
+  });
+
+  it('rejects an observation whose provenance is malformed', async () => {
+    const home = await tempHome();
+    await mkdir(observationsDir('proj', home), { recursive: true });
+    for (const [id, provenance] of [
+      ['obs_badprov1', 'cell_x'],
+      ['obs_badprov2', { cellId: 42 }],
+      ['obs_badprov3', {}],
+      ['obs_badprov4', { cellId: 'with\nnewline' }],
+      ['obs_badprov5', { cellId: 'has space' }],
+      ['obs_badprov6', { cellId: 'x'.repeat(129) }],
+    ] as const) {
+      await writeFile(
+        join(observationsDir('proj', home), `${id}.json`),
+        JSON.stringify({ ...makeObserved({ snapshotId: id as ObservedSnapshotId }), provenance }),
+      );
+      await expect(readObservedSnapshot('proj', id, home)).rejects.toThrowError(PflError);
+    }
   });
 
   it('rejects a snapshot file that is only a schema version', async () => {
@@ -353,7 +382,7 @@ describe('uninterpretable artifacts (schema, #82)', () => {
     await mkdir(snapshotsDir('proj', home), { recursive: true });
     await writeFile(
       join(snapshotsDir('proj', home), 'res_future.json'),
-      '{"schemaVersion":"2","snapshotId":"res_future"}\n',
+      '{"schemaVersion":"99","snapshotId":"res_future"}\n',
     );
 
     const error = await readResolvedSnapshot('proj', 'res_future', home).catch((e: unknown) => e);
@@ -365,7 +394,7 @@ describe('uninterpretable artifacts (schema, #82)', () => {
     // not confused with an interpretation that shares its id.
     expect(diagnostic?.path).toBe('snapshots/res_future.json');
     // The message must name the version found and the versions supported.
-    expect(diagnostic?.message).toContain('2');
+    expect(diagnostic?.message).toContain('99');
     expect(diagnostic?.message).toContain('1');
   });
 
@@ -389,7 +418,7 @@ describe('uninterpretable artifacts (schema, #82)', () => {
     await mkdir(snapshotsDir('proj', home), { recursive: true });
     await writeFile(
       join(snapshotsDir('proj', home), 'res_future.json'),
-      '{"schemaVersion":"2","snapshotId":"res_future"}\n',
+      '{"schemaVersion":"99","snapshotId":"res_future"}\n',
     );
 
     const { runs, diagnostics } = await listRuns('proj', home);
@@ -456,7 +485,7 @@ describe('listRuns', () => {
     await writeFile(
       join(interpretationsDir('proj', home), 'foo.json'),
       serializeSnapshot({
-        schemaVersion: '1',
+        schemaVersion: '2',
         interpretationId: 'int_x',
         resolvedSnapshotId: resolved.snapshotId,
         classifier: { id: 'classifier', version: '1' },
@@ -490,7 +519,7 @@ describe('readInterpretationForResolved', () => {
   it('round-trips a populated interpretation and reports absence as null', async () => {
     const home = await tempHome();
     const interpretation: Interpretation = {
-      schemaVersion: '1',
+      schemaVersion: '2',
       interpretationId: generateInterpretationId(),
       resolvedSnapshotId: 'res_y' as ResolvedSnapshotId,
       classifier: { id: 'pfl-native', version: '4' },
@@ -564,7 +593,7 @@ describe('readInterpretationForResolved', () => {
     await writeFile(
       join(interpretationsDir('proj', home), 'res_y.json'),
       serializeSnapshot({
-        schemaVersion: '1',
+        schemaVersion: '2',
         interpretationId: 'int_x',
         resolvedSnapshotId: 'res_z',
         classifier: { id: 'classifier', version: '1' },

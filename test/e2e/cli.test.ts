@@ -9,6 +9,7 @@ import { elementIdFor, runtimeId } from '../../src/core/ids.js';
 import { resolveProjectContext } from '../../src/discovery/project-identity.js';
 import {
   interpretationsDir,
+  observationsDir,
   permissionsPath,
   readLatestPointer,
   snapshotsDir,
@@ -86,6 +87,58 @@ describe('pfl CLI end to end', () => {
     const result = await runCli(m, ['inspect', '--runtime', 'bogus']);
 
     expect(result.code).toBe(EXIT_CODES.RUNTIME_UNSUPPORTED);
+  });
+
+  it('records --cell-id as observation provenance and exports it (#212)', async () => {
+    const m = await fixture();
+
+    const inspect = await runCli(m, [
+      'inspect',
+      '--runtime',
+      'claude-code',
+      '--cell-id',
+      'cell_20260928T120000Z-a1b2',
+      '--json',
+    ]);
+    expect(inspect.code, inspect.stderr).toBe(EXIT_CODES.SUCCESS);
+    const inspectDoc = JSON.parse(inspect.stdout) as {
+      data: { observed: { snapshotId: string; cellId: string | null } };
+    };
+    expect(inspectDoc.data.observed.cellId).toBe('cell_20260928T120000Z-a1b2');
+
+    // The stored observation event carries the provenance verbatim.
+    const projectId = (await resolveProjectContext(m.projectRoot)).id;
+    const stored = JSON.parse(
+      await readFile(
+        join(observationsDir(projectId, m.home), `${inspectDoc.data.observed.snapshotId}.json`),
+        'utf8',
+      ),
+    ) as { provenance?: { cellId?: string } };
+    expect(stored.provenance?.cellId).toBe('cell_20260928T120000Z-a1b2');
+
+    const exported = await runCli(m, ['export', '--json']);
+    expect(exported.code, exported.stderr).toBe(EXIT_CODES.SUCCESS);
+    const exportDoc = JSON.parse(exported.stdout) as {
+      data: { snapshot: { cellId: string | null } };
+    };
+    expect(exportDoc.data.snapshot.cellId).toBe('cell_20260928T120000Z-a1b2');
+  });
+
+  it('rejects a malformed --cell-id with exit 2', async () => {
+    const m = await fixture();
+
+    const result = await runCli(m, [
+      'inspect',
+      '--runtime',
+      'claude-code',
+      '--cell-id',
+      'has space',
+      '--json',
+    ]);
+
+    expect(result.code).toBe(EXIT_CODES.CONFIG_ERROR);
+    const document = JSON.parse(result.stdout) as { ok: boolean };
+    expect(document.ok).toBe(false);
   });
 
   it('runs the read commands against the stored snapshot', async () => {
@@ -579,7 +632,7 @@ describe('pfl CLI end to end', () => {
     }
 
     // A snapshot the schema does not support is the same fail-closed path.
-    await writeFile(artifact, '{"schemaVersion":"2"}\n');
+    await writeFile(artifact, '{"schemaVersion":"99"}\n');
     const future = await runCli(m, ['report', '--snapshot', pointer.observed, '--json']);
     expect(future.code).toBe(EXIT_CODES.CONFIG_ERROR);
     expect(
@@ -703,9 +756,9 @@ describe('pfl CLI end to end', () => {
     if (pointer === null) throw new Error('expected a latest pointer after inspect');
     const artifact = join(snapshotsDir(projectId, m.home), `${pointer.resolved}.json`);
     const raw = JSON.parse(await readFile(artifact, 'utf8')) as Record<string, unknown>;
-    await writeFile(artifact, `${JSON.stringify({ ...raw, schemaVersion: '2' })}\n`);
+    await writeFile(artifact, `${JSON.stringify({ ...raw, schemaVersion: '99' })}\n`);
 
-    // `report` defaults to latest, which now points at a schema-2 snapshot.
+    // `report` defaults to latest, which now points at a schema-99 snapshot.
     const result = await runCli(m, ['report', '--json']);
 
     expect(result.code).toBe(EXIT_CODES.CONFIG_ERROR);
@@ -717,7 +770,7 @@ describe('pfl CLI end to end', () => {
     expect(document.ok).toBe(false);
     expect(document.data.error.code).toBe('CONFIG_ERROR');
     expect(document.diagnostics[0]?.code).toBe('unsupported-snapshot-schema');
-    expect(document.diagnostics[0]?.message).toContain('2');
+    expect(document.diagnostics[0]?.message).toContain('99');
 
     // A named read of the same unreadable snapshot says it could not be read,
     // rather than calling a present artifact "unknown".

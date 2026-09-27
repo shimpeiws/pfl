@@ -25,7 +25,10 @@ semantics. The supported runtimes are `claude-code`, `codex`, and `opencode`.
 `pfl` belongs to the same tool family as [`yuurei`](https://github.com/shimpeiws/yuurei),
 which isolates and executes: `pfl` inspects before execution, `yuurei` runs it
 in an isolated environment, and a future Analyzer compares harness changes
-against outcomes.
+against outcomes. A yuurei cell can tag its inspection with
+`pfl inspect --cell-id <id>`; the id is recorded verbatim as caller-asserted
+provenance on the stored snapshot and surfaced as `cellId` in `export`. It
+names what the caller claimed, never what pfl verified.
 
 ## Status
 
