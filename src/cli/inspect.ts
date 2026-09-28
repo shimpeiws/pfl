@@ -232,7 +232,15 @@ export async function runInspect(
   const data = inspectData(observed, resolved, store, { home });
 
   if (options.json !== true) {
-    renderInspect(out, request.runtimeName, observed, resolved, detection, store);
+    renderInspect(
+      out,
+      request.runtimeName,
+      observed,
+      resolved,
+      detection,
+      store,
+      declaration.status === 'invalid' ? declaration.diagnostic.message : undefined,
+    );
   }
   return { data, diagnostics, completeness: observed.completeness };
 }
@@ -287,6 +295,7 @@ function renderInspect(
   resolved: ResolvedSnapshot,
   detection: RuntimeDetection,
   store: string,
+  rejectedDeclaration?: string,
 ): void {
   const opaqueLayers = observed.elements.filter(
     (element) => element.inspectability === 'opaque',
@@ -321,6 +330,15 @@ function renderInspect(
 
   out.info('');
   out.info(`Store           ${store}`);
+
+  // A rejected declaration must not read as "none supplied": without this
+  // warning a missing `source` line is indistinguishable from an inspection
+  // that never carried one. The message is already sanitized — raw caller
+  // values never reach it.
+  if (rejectedDeclaration !== undefined) {
+    out.info('');
+    out.warn(`⚠ ${rejectedDeclaration}`);
+  }
 
   if (detection.runtimeCompatibility === 'unverified') {
     out.info('');

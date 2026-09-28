@@ -209,7 +209,7 @@ function parseSourceProjectContract(
     );
   }
   const envId = env[SOURCE_PROJECT_ID_ENV];
-  if (envId !== undefined && envId !== '' && envId !== id) {
+  if (envId !== undefined && envId !== id) {
     // The env value is unvalidated at this point, so it is not echoed into
     // the diagnostic — caller-supplied text does not reach the message
     // stream raw. The validated contract id still names what it disagrees

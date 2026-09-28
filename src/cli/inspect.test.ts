@@ -321,6 +321,29 @@ describe('runInspect', () => {
     expect(stored.completeness).toBe('complete');
   });
 
+  it('surfaces a rejected declaration on the human output path (#217)', async () => {
+    const { project, home } = await makeFixture(true);
+    const { warns, logger } = fakeLogger();
+    const contractPath = join(project, '..', 'source-project.json');
+    await writeFile(contractPath, '{ not json');
+
+    await runInspect(
+      project,
+      {
+        runtime: 'claude-code',
+        home,
+        pathValue: '',
+        interactive: false,
+        env: { YUUREI_SOURCE_PROJECT_FILE: contractPath },
+      },
+      logger,
+    );
+
+    // Without a warning, a missing `source` line reads as "no declaration
+    // supplied"; a caller whose contract was rejected would be blind to it.
+    expect(warns.join('\n')).toContain('source-project contract is not valid JSON');
+  });
+
   it('does not auto-discover a contract file outside the workspace (#217)', async () => {
     const { project, home } = await makeFixture(true);
     const { logger } = fakeLogger();

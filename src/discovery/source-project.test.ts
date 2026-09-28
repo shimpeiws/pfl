@@ -325,6 +325,17 @@ describe('resolveSourceProjectDeclaration', () => {
     expect(result.diagnostic.path).toBe(path);
   });
 
+  it('rejects a declaration when the env id is set but empty', async () => {
+    const dir = await tempDir('pfl-sp-');
+    const path = await writeContract(dir, contract());
+
+    const result = await resolveSourceProjectDeclaration({ env: envFor(path, '') });
+
+    expect(result.status).toBe('invalid');
+    if (result.status !== 'invalid') throw new Error('unreachable');
+    expect(result.diagnostic.code).toBe('source-project-declaration-mismatch');
+  });
+
   it('does not echo an unvalidated env id into the mismatch diagnostic', async () => {
     const dir = await tempDir('pfl-sp-');
     const path = await writeContract(dir, contract());
