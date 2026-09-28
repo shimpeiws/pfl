@@ -9,6 +9,8 @@ snapshot schema, the resolution semantics, or the classifier; see
 
 ## [Unreleased]
 
+## [1.3.0] - 2026-09-28
+
 ### Added
 
 - **Source-project declaration provenance** (#217; yuurei #214) — `pfl inspect`
@@ -24,6 +26,10 @@ snapshot schema, the resolution semantics, or the classifier; see
 - **Snapshot schema bumped (2 → 3).** Schema-1 and schema-2 artifacts remain
   readable; their absent `sourceProject` surfaces as `null`. See ADR 0005 and
   `docs/design/schema-bump-procedure.md`.
+
+### Documentation
+
+- Add verification contract cards (`docs/verification-contracts.md`) (#218).
 
 ## [1.2.0] - 2026-09-28
 
