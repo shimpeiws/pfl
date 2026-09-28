@@ -237,13 +237,19 @@ Input boundary / security policy / persistence layer.
 
 ## Initial inventory
 
-| Proposition | Inner observation | Boundary / integration | Real-system observation | Current confidence |
-| --- | --- | --- | --- | --- |
-| VC-P-01 static inspection | adapters/resolution | filesystem/config | real `inspect` | strong |
-| VC-P-02 incompleteness preserved | snapshot/export | denied/opaque scopes | prepared cell | strong semantics; test mapping should be indexed |
-| VC-P-03 assertion != observation | provenance model | yuurei hand-off | real two-cell flow | active work: #217 |
-| VC-P-04 effective != executed | resolver | precedence/scope | real layouts | strong |
-| VC-P-05 bounded/sanitized | security helpers | filesystem | Linux/macOS CI | strong |
+- **VC-P-01:** adapters and resolution internally, filesystem/config discovery
+  at the boundary, and real `inspect` flows at the system boundary. Coverage
+  is strong.
+- **VC-P-02:** snapshot/export semantics internally, denied and opaque scopes at
+  the boundary, and prepared-cell inspection at the system boundary. Semantics
+  are strong and the concrete evidence is indexed below.
+- **VC-P-03:** provenance model internally and yuurei hand-off at the boundary.
+  The real two-cell system path is active work in #217.
+- **VC-P-04:** resolver semantics internally, precedence/scope interactions at
+  the boundary, and real runtime layouts at the system boundary. Coverage is
+  strong.
+- **VC-P-05:** security helpers internally, filesystem boundaries in
+  integration, and Linux/macOS CI at the system boundary. Coverage is strong.
 
 ## Review rule
 
@@ -262,13 +268,26 @@ cannot conclude.
 A first pass over the current suite shows that pfl already has strong semantic
 coverage. The missing piece was primarily an index from meaning to evidence.
 
-| Proposition | Existing evidence | Assessment |
-| --- | --- | --- |
-| VC-P-01 | `test/integration/security-invariants.test.ts` contains an explicit no-execution guard; runtime discovery / resolver tests; `test/e2e/cli.test.ts` exercises real `inspect` flows | Strong. The no-execution proposition is tested directly rather than inferred from architecture. |
-| VC-P-02 | `src/cli/export.test.ts` ("surfaces partial completeness rather than hiding it"); `test/integration/security-invariants.test.ts` records unsupported/unreadable entries as partial; E2E reports why a snapshot is partial | Strong across normalization, filesystem boundary, and CLI. |
-| VC-P-03 | `src/cli/inspect.test.ts` records caller-supplied `cell_id` as observation provenance and leaves standalone runs without it; `src/cli/export.test.ts` preserves unknown provenance rather than mismatch; E2E round-trips `--cell-id` | Cell provenance is strong. The **source-project provenance** half is the real open gap and is already tracked by #217. |
-| VC-P-04 | `src/resolution/resolver.test.ts`; runtime-specific `resolve.test.ts` suites; export behavior preserves null unresolved layers instead of turning them into negative facts | Strong at the semantic/resolution layer. Downstream Gatefold additionally qualifies "effective" as static potential. |
-| VC-P-05 | `test/integration/security-invariants.test.ts`; `test/integration/consent-choke-point.test.ts`; runtime consent tests; redaction tests; Linux/macOS CI | Strong. This has both negative-security tests and real filesystem boundaries. |
+- **VC-P-01:** `test/integration/security-invariants.test.ts` contains an
+  explicit no-execution guard. Runtime discovery/resolver tests and
+  `test/e2e/cli.test.ts` cover the lower and outer boundaries. Strong.
+- **VC-P-02:** `src/cli/export.test.ts` explicitly surfaces partial
+  completeness instead of hiding it.
+  `test/integration/security-invariants.test.ts` records unsupported and
+  unreadable entries as partial, and E2E reports why a snapshot is partial.
+  Strong across normalization, filesystem boundary, and CLI.
+- **VC-P-03:** `src/cli/inspect.test.ts` records caller-supplied `cell_id` as
+  observation provenance and leaves standalone runs without it.
+  `src/cli/export.test.ts` preserves unknown provenance rather than a
+  mismatch, and E2E round-trips `--cell-id`. Cell provenance is strong; the
+  source-project provenance half remains #217.
+- **VC-P-04:** `src/resolution/resolver.test.ts`, runtime-specific
+  `resolve.test.ts` suites, and export behavior preserve unresolved null
+  layers rather than converting them into negative facts. Strong.
+- **VC-P-05:** `test/integration/security-invariants.test.ts`,
+  `test/integration/consent-choke-point.test.ts`, runtime consent tests,
+  redaction tests, and Linux/macOS CI provide both negative-security and real
+  filesystem evidence. Strong.
 
 ### Gaps / active work
 
