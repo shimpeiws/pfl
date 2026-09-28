@@ -200,6 +200,7 @@ export async function runExport(
   if (options.out !== undefined) {
     const outDir = resolve(options.out);
     // Reject --out destinations inside the inspected project (same as bundle).
+    // isPathWithin resolves symlinks, so symlink-mediated escapes are caught.
     if (await isPathWithin(run.canonicalProjectRoot, outDir)) {
       throw new Error('--out destination must not be inside the project directory');
     }
