@@ -111,7 +111,7 @@ function buildInterpretation() {
   const resolved = buildResolved();
   const { mappings, findingKinds } = getClassifierContribution();
   return {
-    schemaVersion: '2',
+    schemaVersion: '3',
     interpretationId: 'int_0123456789ab',
     resolvedSnapshotId: resolved.snapshotId,
     ...classify(observed, resolved, mappings),
@@ -265,6 +265,27 @@ describe('read compatibility', () => {
       // `provenance` absent, which consumers treat as unknown, not a mismatch.
       expect(observed.schemaVersion).toBe('1');
       expect(observed.provenance).toBeUndefined();
+    } finally {
+      await rm(legacyHome, { recursive: true, force: true });
+    }
+  });
+
+  it('reads a schema-2 artifact, with cellId and without sourceProject', async () => {
+    const legacyHome = await mkdtemp(join(tmpdir(), 'pfl-golden-legacy-'));
+    try {
+      await mkdir(observationsDir('proj', legacyHome), { recursive: true });
+      await writeFile(
+        join(observationsDir('proj', legacyHome), 'obs_legacy200000000.json'),
+        await readFile(join(FIXTURES, 'legacy-observed-2.json')),
+      );
+
+      const observed = await readObservedSnapshot('proj', 'obs_legacy200000000', legacyHome);
+
+      // The schema-2 artifact predates the source-project field (#217): its
+      // `cellId` reads, and the absent `sourceProject` means unknown.
+      expect(observed.schemaVersion).toBe('2');
+      expect(observed.provenance?.cellId).toBe('cell_20260928T120000Z-a1b2');
+      expect(observed.provenance?.sourceProject).toBeUndefined();
     } finally {
       await rm(legacyHome, { recursive: true, force: true });
     }

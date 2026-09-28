@@ -4,6 +4,7 @@ import {
   redactFreeText,
   redactHomePath,
   redactPath,
+  redactSourceProject,
   redactingLogger,
 } from './output.js';
 
@@ -140,6 +141,43 @@ describe('redactDiagnostic', () => {
     for (const level of ['export', 'persistence'] as const) {
       expect(redactDiagnostic(diagnostic, level, { home: HOME }).message).not.toContain(candidate);
     }
+  });
+});
+
+describe('redactSourceProject', () => {
+  const sourceProject = {
+    id: 'git-0123456789abcdef',
+    kind: 'git-remote' as const,
+    remote: 'https://x-access-token:SECRETVALUE9@github.com/owner/repo',
+    issuer: 'yuurei password=hunter2',
+    contractVersion: 1,
+    head: 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2',
+  };
+
+  it('masks credential-shaped asserted strings while keeping structural fields', () => {
+    const redacted = redactSourceProject(sourceProject, { home: HOME });
+    const serialized = JSON.stringify(redacted);
+    expect(serialized).not.toContain('SECRETVALUE9');
+    expect(serialized).not.toContain('hunter2');
+    expect(redacted.id).toBe(sourceProject.id);
+    expect(redacted.kind).toBe(sourceProject.kind);
+    expect(redacted.head).toBe(sourceProject.head);
+    expect(redacted.contractVersion).toBe(sourceProject.contractVersion);
+  });
+
+  it('is idempotent over already-redacted values', () => {
+    const once = redactSourceProject(sourceProject, { home: HOME });
+    expect(redactSourceProject(once, { home: HOME })).toEqual(once);
+  });
+
+  it('masks a field whose re-redacted form exceeds the persisted bound', () => {
+    // A written-around artifact can hold a value the writer would never have
+    // produced: under the persisted bound but over it once a short credential
+    // expands to `[redacted]`. Mask the field whole rather than emitting a
+    // bound-crossing document value (#217, review round 5).
+    const remote = `${'x '.repeat(250)} token=a`; // 508 chars, under 512
+    const redacted = redactSourceProject({ ...sourceProject, remote }, { home: HOME });
+    expect(redacted.remote).toBe('[redacted]');
   });
 });
 

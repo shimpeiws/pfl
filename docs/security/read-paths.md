@@ -14,15 +14,16 @@ consent choke point.
 
 ## Classification vocabulary
 
-| Term                 | Meaning                                                                                                                             |
-| -------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| **project-implicit** | A read inside the project root. No consent required (design doc §19).                                                               |
-| **user-scope**       | A read under the runtime's user harness (`~/.claude`, `~/.codex`). Requires the `<runtime>:user` grant.                             |
-| **install-scope**    | Runtime installation / version metadata. Requires the `<runtime>:install` grant.                                                    |
-| **store**            | A read of `pfl`'s own `~/.pfl` storage. No consent gate; artifact ids are charset-validated.                                        |
-| **implicit-git**     | Project-identity reads kept project-local and implicit (ADR 0002 §2).                                                               |
-| **gated-git**        | Project-identity reads outside the root (a `.git` file's `gitdir:`, an ancestor `.git`). Gated once M6 lands the S5 fix.            |
-| **external-gated**   | A read above the project root (a parent-directory `AGENTS.md`). Gated on out-of-project consent and bounded by `MAX_ANCESTOR_DIRS`. |
+| Term                 | Meaning                                                                                                                                            |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **project-implicit** | A read inside the project root. No consent required (design doc §19).                                                                              |
+| **user-scope**       | A read under the runtime's user harness (`~/.claude`, `~/.codex`). Requires the `<runtime>:user` grant.                                            |
+| **install-scope**    | Runtime installation / version metadata. Requires the `<runtime>:install` grant.                                                                   |
+| **store**            | A read of `pfl`'s own `~/.pfl` storage. No consent gate; artifact ids are charset-validated.                                                       |
+| **implicit-git**     | Project-identity reads kept project-local and implicit (ADR 0002 §2).                                                                              |
+| **gated-git**        | Project-identity reads outside the root (a `.git` file's `gitdir:`, an ancestor `.git`). Gated once M6 lands the S5 fix.                           |
+| **external-gated**   | A read above the project root (a parent-directory `AGENTS.md`). Gated on out-of-project consent and bounded by `MAX_ANCESTOR_DIRS`.                |
+| **caller-asserted**  | A read of a file the invoking caller names explicitly (an env-pointed contract file). Equivalent in trust to a CLI argument, not a discovery path. |
 
 Guard vocabulary: **lstat** = the target is `lstat`ed and a symlink is refused
 before any content read; **realpath** = canonical comparison only; **—** = none.
@@ -91,6 +92,19 @@ path-derived history is M8's root index (ADR 0002 §2).
 
 The consent writer applies the same guard before writing, so a symlinked
 `~/.pfl` or `permissions.json` is neither read nor written (roadmap S10).
+
+### `discovery/source-project.ts`
+
+| Read                                                                | Guard                                                                                                | Classification  |
+| ------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | --------------- |
+| `readFile` the `YUUREI_SOURCE_PROJECT_FILE` contract (inspect only) | `readTextFileGuarded` (base: the file's own dir — leaf must be regular, no symlink/hardlink, capped) | caller-asserted |
+
+The caller-declared source-project contract (#217). The path arrives from the
+process environment — the same trust class as `--cell-id`, an argument the
+caller supplies — so no consent scope applies, and no path is derived or
+searched for: without the env var nothing is read. A missing, unreadable, or
+malformed file is recorded as a warning diagnostic, never as an observed
+identity.
 
 ### `util/fs.ts`
 

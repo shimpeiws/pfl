@@ -70,7 +70,8 @@
       "elements": 27,
       "opaqueLayers": 1,
       "completeness": "partial",
-      "cellId": null
+      "cellId": null,
+      "sourceProject": null
     },
     "resolved": {
       "snapshotId": "res_ID",

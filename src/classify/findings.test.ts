@@ -64,7 +64,7 @@ function snapshots(pairs: ReturnType<typeof makePair>[]): {
   resolved: ResolvedSnapshot;
 } {
   const observed: ObservedSnapshot = {
-    schemaVersion: '2',
+    schemaVersion: '3',
     snapshotId: generateObservedSnapshotId(),
     capturedAt: '2026-09-16T00:00:00.000Z',
     project: { id: 'proj', displayName: 'owner/repo', root: '/repo' },
@@ -76,7 +76,7 @@ function snapshots(pairs: ReturnType<typeof makePair>[]): {
     digests: { observed: 'sha256:x' },
   };
   const resolved: ResolvedSnapshot = {
-    schemaVersion: '2',
+    schemaVersion: '3',
     snapshotId: 'res_test' as ResolvedSnapshotId,
     observedSnapshotId: observed.snapshotId,
     runtime: { id: rid, version: '2.1.272' },

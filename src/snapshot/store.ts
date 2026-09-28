@@ -30,6 +30,15 @@ import {
   NATIVE_ORIGIN_VALUES as CORE_NATIVE_ORIGIN_VALUES,
   OBSERVED_REASONS,
   OBSERVED_STATUS_VALUES as CORE_OBSERVED_STATUS_VALUES,
+  SOURCE_PROJECT_CONTRACT_VERSION,
+  SOURCE_PROJECT_CONTROL_CHARS_PATTERN,
+  SOURCE_PROJECT_HEAD_MAX_CHARS,
+  SOURCE_PROJECT_ID_PATTERN,
+  SOURCE_PROJECT_ID_PREFIXES,
+  SOURCE_PROJECT_ISSUER_MAX_CHARS,
+  SOURCE_PROJECT_KINDS,
+  SOURCE_PROJECT_REMOTE_MAX_CHARS,
+  type AssertedSourceProject,
   type ObservedSnapshot,
 } from '../core/observed.js';
 import {
@@ -675,19 +684,85 @@ function isObservedSnapshot(value: unknown): value is ObservedSnapshot {
 }
 
 /**
- * Optional caller-supplied provenance (schema 2, #212): when present it is a
- * record whose `cellId` is a string within the bound `inspect` enforced —
- * the reader holds a stored artifact to the same `CELL_ID_PATTERN`, so one
- * written around the CLI cannot smuggle control characters or unbounded text
- * into a document. Fields this reader does not know are tolerated so a
- * future provenance field stays readable; a missing or out-of-bounds
- * `cellId` is not.
+ * Optional caller-supplied provenance (schema 2 `cellId`, #212; schema 3
+ * `sourceProject`, #217): when present it is a record carrying at least one
+ * known provenance field, each held to the bound `inspect` enforced — the
+ * reader holds a stored artifact to the same rules, so one written around the
+ * CLI cannot smuggle control characters or unbounded text into a document.
+ * Fields this reader does not know are tolerated so a future provenance
+ * field stays readable; a missing or out-of-bounds `cellId` or
+ * `sourceProject` is not. Inside `sourceProject` the shape is a closed
+ * allowlist: the write path deliberately drops contract fields like the host
+ * `source` path, so a written-around artifact must not carry them back in
+ * through the reader.
  */
 function isObservationProvenance(value: unknown): boolean {
   if (value === undefined) return true;
   if (!isRecord(value)) return false;
   const cellId = value['cellId'];
-  return typeof cellId === 'string' && CELL_ID_PATTERN.test(cellId);
+  if (cellId !== undefined && (typeof cellId !== 'string' || !CELL_ID_PATTERN.test(cellId))) {
+    return false;
+  }
+  const sourceProject = value['sourceProject'];
+  if (sourceProject !== undefined && !isAssertedSourceProject(sourceProject)) return false;
+  return cellId !== undefined || sourceProject !== undefined;
+}
+
+const ASSERTED_SOURCE_PROJECT_KEYS = new Set([
+  'id',
+  'kind',
+  'remote',
+  'issuer',
+  'contractVersion',
+  'head',
+]);
+
+/** The persisted shape of a caller-declared source-project identity (#217). */
+function isAssertedSourceProject(value: unknown): boolean {
+  if (!isRecord(value)) return false;
+  if (!Object.keys(value).every((key) => ASSERTED_SOURCE_PROJECT_KEYS.has(key))) return false;
+  const id = value['id'];
+  if (typeof id !== 'string' || !SOURCE_PROJECT_ID_PATTERN.test(id)) return false;
+  const kind = value['kind'];
+  if (typeof kind !== 'string' || !(SOURCE_PROJECT_KINDS as readonly string[]).includes(kind)) {
+    return false;
+  }
+  if (!id.startsWith(SOURCE_PROJECT_ID_PREFIXES[kind as AssertedSourceProject['kind']])) {
+    return false;
+  }
+  const issuer = value['issuer'];
+  if (
+    typeof issuer !== 'string' ||
+    issuer.length === 0 ||
+    issuer.length > SOURCE_PROJECT_ISSUER_MAX_CHARS ||
+    SOURCE_PROJECT_CONTROL_CHARS_PATTERN.test(issuer)
+  )
+    return false;
+  // The writer pins this to the one contract version it knows; a stored
+  // artifact must hold the same bound rather than accept any number.
+  if (value['contractVersion'] !== SOURCE_PROJECT_CONTRACT_VERSION) return false;
+  const remote = value['remote'];
+  if (
+    remote !== undefined &&
+    (typeof remote !== 'string' ||
+      remote.length === 0 ||
+      remote.length > SOURCE_PROJECT_REMOTE_MAX_CHARS ||
+      SOURCE_PROJECT_CONTROL_CHARS_PATTERN.test(remote))
+  )
+    return false;
+  // `remote` belongs to the `git-remote` derivation; a `local-path` artifact
+  // carrying one is self-contradictory.
+  if (remote !== undefined && kind !== 'git-remote') return false;
+  const head = value['head'];
+  if (
+    head !== undefined &&
+    (typeof head !== 'string' ||
+      head.length === 0 ||
+      head.length > SOURCE_PROJECT_HEAD_MAX_CHARS ||
+      SOURCE_PROJECT_CONTROL_CHARS_PATTERN.test(head))
+  )
+    return false;
+  return true;
 }
 
 /**

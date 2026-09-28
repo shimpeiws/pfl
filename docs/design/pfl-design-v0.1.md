@@ -650,11 +650,21 @@ interface ObservedSnapshot {
   snapshotId: string;
   capturedAt: string;
 
-  // Caller-asserted provenance for the observation event (#212; schema 2).
-  // Recorded verbatim, never an observed fact: a supplied cellId does not
-  // certify which environment was actually observed. Absent means unknown.
+  // Caller-asserted provenance for the observation event (#212; schema 2;
+  // #217 adds `sourceProject`, schema 3). Recorded verbatim, never an observed
+  // fact: a supplied cellId does not certify which environment was actually
+  // observed, and a supplied sourceProject does not certify which project the
+  // cell was seeded from. Absent means unknown.
   provenance?: {
-    cellId: string;
+    cellId?: string;
+    sourceProject?: {
+      id: string;              // git-<hex16> | path-<hex16>, caller-declared
+      kind: 'git-remote' | 'local-path';
+      remote?: string;
+      issuer: string;          // e.g. "yuurei"
+      contractVersion: number;
+      head?: string;
+    };
   };
 
   project: {

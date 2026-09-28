@@ -3,10 +3,10 @@ import { resolve, join } from 'node:path';
 import { homedir } from 'node:os';
 import type { ElementId } from '../core/ids.js';
 import type { Finding, Interpretation } from '../core/interpretation.js';
-import type { ObservedElement } from '../core/observed.js';
+import type { AssertedSourceProject, ObservedElement } from '../core/observed.js';
 import type { Relation, ResolutionConfidence, ResolvedElement } from '../core/resolved.js';
 import { withObservationProvenance } from '../discovery/assemble.js';
-import { redactElementSource, redactingLogger } from '../redact/output.js';
+import { redactElementSource, redactSourceProject, redactingLogger } from '../redact/output.js';
 import { isDeadPath } from '../snapshot/project-index.js';
 import { isPathWithin } from '../util/fs.js';
 import type { Logger } from '../util/logger.js';
@@ -76,6 +76,15 @@ export interface ExportData {
      * written before schema 2 — meaning unknown, not a mismatch.
      */
     cellId: string | null;
+    /**
+     * The caller-declared source-project identity recorded on the observed
+     * snapshot (#217; yuurei `source-project.json` contract). `null` when none
+     * was recorded — standalone runs, malformed declarations, and snapshots
+     * written before schema 3 — meaning unknown, not a mismatch. This is
+     * asserted provenance: pfl never verified it, and it is intentionally
+     * separate from `project.id`, which is the observed cell-local identity.
+     */
+    sourceProject: AssertedSourceProject | null;
     /**
      * True when the cell that produced this snapshot has been discarded
      * (dead-path). Derived at read time from the project index; the
@@ -176,6 +185,13 @@ export async function runExport(
       capturedAt: observed.capturedAt,
       schemaVersion: observed.schemaVersion,
       cellId: observed.provenance?.cellId ?? null,
+      // Same boundary stance as the element sources above: a stored artifact
+      // can be written around the CLI's persistence redaction, so asserted
+      // strings are re-redacted at projection rather than trusted.
+      sourceProject:
+        observed.provenance?.sourceProject !== undefined
+          ? redactSourceProject(observed.provenance.sourceProject, { home })
+          : null,
       deadPath,
     },
     resolution: resolved.resolution,

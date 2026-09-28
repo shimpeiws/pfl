@@ -1,8 +1,14 @@
 import type { Diagnostic } from '../core/diagnostics.js';
-import type { ObservedElement } from '../core/observed.js';
+import {
+  SOURCE_PROJECT_HEAD_MAX_CHARS,
+  SOURCE_PROJECT_ISSUER_MAX_CHARS,
+  SOURCE_PROJECT_REMOTE_MAX_CHARS,
+  type AssertedSourceProject,
+  type ObservedElement,
+} from '../core/observed.js';
 import { encodeProjectDir } from '../runtime/claude-code/paths.js';
 import type { Logger } from '../util/logger.js';
-import { applyRedactionRules, HIGH_ENTROPY_RULE, type RedactionLevel } from './common.js';
+import { applyRedactionRules, HIGH_ENTROPY_RULE, REDACTED, type RedactionLevel } from './common.js';
 import { ALL_REDACTION_RULES } from './rules.js';
 
 /**
@@ -164,6 +170,48 @@ export function redactElementSource(
   const path = element.source.path;
   if (path === undefined) return element;
   return { ...element, source: { ...element.source, path: redactPath(path, ctx) } };
+}
+
+/**
+ * Re-asserts the persistence redaction on a caller-declared source-project
+ * identity at the document boundary — the same stance `redactElementSource`
+ * takes: a stored artifact can be written around the CLI, so its asserted
+ * strings are untrusted even though the reader holds their shapes and bounds.
+ * `id`, `kind`, and `contractVersion` are pattern-bound and pass through.
+ * Idempotent: values already redacted at persistence come back unchanged.
+ *
+ * Redaction can grow a value (`[redacted]` is longer than the credential run
+ * it replaces), and the writer rejects a declaration whose redacted form
+ * exceeds the persisted bounds — so a stored value that crosses the bound on
+ * re-redaction is one the writer could never have produced. The whole field
+ * is masked rather than truncated mid-token.
+ */
+export function redactSourceProject(
+  sourceProject: AssertedSourceProject,
+  ctx: RedactionContext,
+): AssertedSourceProject {
+  const bounded = (value: string, maxChars: number): string =>
+    value.length <= maxChars ? value : REDACTED;
+  return {
+    ...sourceProject,
+    ...(sourceProject.remote !== undefined
+      ? {
+          remote: bounded(
+            redactFreeText(sourceProject.remote, 'persistence', ctx),
+            SOURCE_PROJECT_REMOTE_MAX_CHARS,
+          ),
+        }
+      : {}),
+    issuer: bounded(
+      redactFreeText(sourceProject.issuer, 'persistence', ctx),
+      SOURCE_PROJECT_ISSUER_MAX_CHARS,
+    ),
+    ...(sourceProject.head !== undefined
+      ? {
+          head: bounded(redactPath(sourceProject.head, ctx), SOURCE_PROJECT_HEAD_MAX_CHARS),
+        }
+      : {}),
+  };
 }
 
 /**

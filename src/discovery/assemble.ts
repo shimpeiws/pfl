@@ -83,12 +83,16 @@ export function assembleObservedSnapshot(input: ObservedSnapshotInput): Observed
  * caller claims it ran in, so this is applied after `discover` returns. The
  * provenance is a caller's assertion about the observation context — it does
  * not re-enter `digests.observed`, which covers the harness content only.
+ *
+ * The argument merges over any provenance already on the snapshot, so an
+ * export-time `--cell-id` override does not drop a recorded `sourceProject`
+ * (#217).
  */
 export function withObservationProvenance(
   snapshot: ObservedSnapshot,
   provenance: ObservationProvenance,
 ): ObservedSnapshot {
-  return deepFreeze({ ...snapshot, provenance });
+  return deepFreeze({ ...snapshot, provenance: { ...snapshot.provenance, ...provenance } });
 }
 
 function redactProject(project: ObservedProject, ctx: RedactionContext): ObservedProject {

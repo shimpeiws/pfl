@@ -170,6 +170,243 @@ describe('runInspect', () => {
     expect(stored.provenance?.cellId).toBe('cell_20260928T120000Z-a1b2');
   });
 
+  it('records a caller-declared source project as observation provenance (#217)', async () => {
+    const { project, home } = await makeFixture(true);
+    const { lines, logger } = fakeLogger();
+    // The contract lives at the cell root, outside the inspected workspace.
+    const contractPath = join(project, '..', 'source-project.json');
+    await writeFile(
+      contractPath,
+      JSON.stringify({
+        version: 1,
+        issuer: 'yuurei',
+        cell_id: 'cell_20260928T120000Z-a1b2',
+        source_project: {
+          id: 'git-0123456789abcdef',
+          kind: 'git-remote',
+          remote: 'github.com/owner/repo',
+          source: '/home/operator/src/repo',
+          head: 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2',
+        },
+      }),
+    );
+
+    const outcome = await runInspect(
+      project,
+      {
+        runtime: 'claude-code',
+        home,
+        pathValue: '',
+        interactive: false,
+        cellId: 'cell_20260928T120000Z-a1b2',
+        env: { YUUREI_SOURCE_PROJECT_FILE: contractPath },
+      },
+      logger,
+    );
+
+    expect(outcome.data.observed.sourceProject).toEqual({
+      id: 'git-0123456789abcdef',
+      kind: 'git-remote',
+      remote: 'github.com/owner/repo',
+      issuer: 'yuurei',
+      contractVersion: 1,
+      head: 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2',
+    });
+    expect(lines.join('\n')).toContain('git-0123456789abcdef');
+
+    const projectId = (await resolveProjectContext(project)).id;
+    const stored = JSON.parse(
+      await readFile(
+        join(observationsDir(projectId, home), `${outcome.data.observed.snapshotId}.json`),
+        'utf8',
+      ),
+    ) as { provenance?: { sourceProject?: Record<string, unknown> } };
+    // The host-side `source` path is asserted but not persisted (deny-by-default).
+    expect(stored.provenance?.sourceProject).toEqual({
+      id: 'git-0123456789abcdef',
+      kind: 'git-remote',
+      remote: 'github.com/owner/repo',
+      issuer: 'yuurei',
+      contractVersion: 1,
+      head: 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2',
+    });
+    expect(JSON.stringify(stored)).not.toContain('/home/operator');
+  });
+
+  it('does not change digests.observed when a source project is declared (#217)', async () => {
+    const plain = await makeFixture(true);
+    const { logger: plainLogger } = fakeLogger();
+    const without = await runInspect(
+      plain.project,
+      { runtime: 'claude-code', home: plain.home, pathValue: '', interactive: false },
+      plainLogger,
+    );
+
+    const declared = await makeFixture(true);
+    const { logger: declaredLogger } = fakeLogger();
+    const contractPath = join(declared.project, '..', 'source-project.json');
+    await writeFile(
+      contractPath,
+      JSON.stringify({
+        version: 1,
+        issuer: 'yuurei',
+        cell_id: 'cell_x',
+        source_project: { id: 'git-0123456789abcdef', kind: 'git-remote' },
+      }),
+    );
+    const withDecl = await runInspect(
+      declared.project,
+      {
+        runtime: 'claude-code',
+        home: declared.home,
+        pathValue: '',
+        interactive: false,
+        env: { YUUREI_SOURCE_PROJECT_FILE: contractPath },
+      },
+      declaredLogger,
+    );
+
+    // Provenance is metadata about the event, not harness content: the
+    // observed digest over the elements is identical either way.
+    const readDigest = async (project: string, home: string, snapshotId: string) => {
+      const projectId = (await resolveProjectContext(project)).id;
+      const stored = JSON.parse(
+        await readFile(join(observationsDir(projectId, home), `${snapshotId}.json`), 'utf8'),
+      ) as { digests: { observed: string } };
+      return stored.digests.observed;
+    };
+    expect(
+      await readDigest(declared.project, declared.home, withDecl.data.observed.snapshotId),
+    ).toBe(await readDigest(plain.project, plain.home, without.data.observed.snapshotId));
+  });
+
+  it('reports an invalid declaration as a diagnostic without recording it (#217)', async () => {
+    const { project, home } = await makeFixture(true);
+    const { logger } = fakeLogger();
+    const contractPath = join(project, '..', 'source-project.json');
+    await writeFile(contractPath, '{ not json');
+
+    const outcome = await runInspect(
+      project,
+      {
+        runtime: 'claude-code',
+        home,
+        pathValue: '',
+        interactive: false,
+        env: { YUUREI_SOURCE_PROJECT_FILE: contractPath },
+      },
+      logger,
+    );
+
+    expect(outcome.data.observed.sourceProject).toBeNull();
+    expect(outcome.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          severity: 'warning',
+          code: 'source-project-declaration-invalid',
+        }),
+      ]),
+    );
+
+    const projectId = (await resolveProjectContext(project)).id;
+    const stored = JSON.parse(
+      await readFile(
+        join(observationsDir(projectId, home), `${outcome.data.observed.snapshotId}.json`),
+        'utf8',
+      ),
+    ) as { provenance?: unknown; completeness: string };
+    // The caller's contract failure is not persisted as harness state and does
+    // not drag the observation to `partial`.
+    expect(stored.provenance).toBeUndefined();
+    expect(stored.completeness).toBe('complete');
+  });
+
+  it('surfaces a rejected declaration on the human output path (#217)', async () => {
+    const { project, home } = await makeFixture(true);
+    const { warns, logger } = fakeLogger();
+    const contractPath = join(project, '..', 'source-project.json');
+    await writeFile(contractPath, '{ not json');
+
+    await runInspect(
+      project,
+      {
+        runtime: 'claude-code',
+        home,
+        pathValue: '',
+        interactive: false,
+        env: { YUUREI_SOURCE_PROJECT_FILE: contractPath },
+      },
+      logger,
+    );
+
+    // Without a warning, a missing `source` line reads as "no declaration
+    // supplied"; a caller whose contract was rejected would be blind to it.
+    expect(warns.join('\n')).toContain('source-project contract is not valid JSON');
+  });
+
+  it('does not auto-discover a contract file outside the workspace (#217)', async () => {
+    const { project, home } = await makeFixture(true);
+    const { logger } = fakeLogger();
+    // A contract-shaped file sits at the parent directory — where a cell root
+    // would be — but no env var points at it, so it must not be read.
+    await writeFile(
+      join(project, '..', 'source-project.json'),
+      JSON.stringify({
+        version: 1,
+        issuer: 'yuurei',
+        cell_id: 'cell_x',
+        source_project: { id: 'git-0123456789abcdef', kind: 'git-remote' },
+      }),
+    );
+
+    const outcome = await runInspect(
+      project,
+      { runtime: 'claude-code', home, pathValue: '', interactive: false, env: {} },
+      logger,
+    );
+
+    expect(outcome.data.observed.sourceProject).toBeNull();
+    expect(
+      outcome.diagnostics.filter((d) => d.code.startsWith('source-project-declaration')),
+    ).toEqual([]);
+  });
+
+  it('rejects a declaration whose cell_id disagrees with --cell-id (#217)', async () => {
+    const { project, home } = await makeFixture(true);
+    const { logger } = fakeLogger();
+    const contractPath = join(project, '..', 'source-project.json');
+    await writeFile(
+      contractPath,
+      JSON.stringify({
+        version: 1,
+        issuer: 'yuurei',
+        cell_id: 'cell_other',
+        source_project: { id: 'git-0123456789abcdef', kind: 'git-remote' },
+      }),
+    );
+
+    const outcome = await runInspect(
+      project,
+      {
+        runtime: 'claude-code',
+        home,
+        pathValue: '',
+        interactive: false,
+        cellId: 'cell_this',
+        env: { YUUREI_SOURCE_PROJECT_FILE: contractPath },
+      },
+      logger,
+    );
+
+    expect(outcome.data.observed.sourceProject).toBeNull();
+    expect(outcome.data.observed.cellId).toBe('cell_this');
+    expect(outcome.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'source-project-declaration-mismatch' }),
+      ]),
+    );
+  });
+
   it('records no provenance on a standalone run', async () => {
     const { project, home } = await makeFixture(true);
     const { logger } = fakeLogger();

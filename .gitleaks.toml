@@ -20,4 +20,5 @@ regexes = [
   '''EXFILTRATION''',
   '''s3cr3t-p4ss''',
   '''wJalrXUtnFEMIEXAMPLEKEY0123456789''',
+  '''abc123def456abc123def456''',
 ]
