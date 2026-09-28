@@ -1,14 +1,19 @@
-import { resolve } from 'node:path';
+import { writeFile, mkdir } from 'node:fs/promises';
+import { resolve, join } from 'node:path';
 import { homedir } from 'node:os';
 import type { ElementId } from '../core/ids.js';
 import type { Finding, Interpretation } from '../core/interpretation.js';
 import type { ObservedElement } from '../core/observed.js';
 import type { Relation, ResolutionConfidence, ResolvedElement } from '../core/resolved.js';
+import { withObservationProvenance } from '../discovery/assemble.js';
 import { redactElementSource, redactingLogger } from '../redact/output.js';
+import { isDeadPath } from '../snapshot/project-index.js';
+import { isPathWithin } from '../util/fs.js';
 import type { Logger } from '../util/logger.js';
-import { type CommandOutcome } from './document.js';
+import { type CommandOutcome, buildDocument } from './document.js';
 import { writeBundle } from './bundle.js';
 import { loadInterpretation } from './read.js';
+import { parseCellId } from './inspect.js';
 
 export interface ExportOptions {
   snapshot?: string;
@@ -17,6 +22,18 @@ export interface ExportOptions {
   json?: boolean;
   /** Write an evidence bundle (harness.json + evidence + manifest) to this directory. */
   bundle?: string;
+  /**
+   * Record a caller-supplied cell id as observation provenance.
+   * Validated against CELL_ID_PATTERN; same semantics as `inspect --cell-id`.
+   * When provided, overrides the stored provenance on the exported document
+   * (the stored snapshot is immutable; this stamps the in-memory projection).
+   */
+  cellId?: string;
+  /**
+   * Write JSON output to `<out>/<snapshot-id>.json` instead of stdout.
+   * Creates the directory if missing. Implies `--json`.
+   */
+  out?: string;
   /** Injected for tests; defaults to the current user's home. */
   home?: string;
 }
@@ -59,6 +76,12 @@ export interface ExportData {
      * written before schema 2 — meaning unknown, not a mismatch.
      */
     cellId: string | null;
+    /**
+     * True when the cell that produced this snapshot has been discarded
+     * (dead-path). Derived at read time from the project index; the
+     * snapshot itself is immutable.
+     */
+    deadPath: boolean;
   };
   resolution: { semanticsVersion: string; confidence: ResolutionConfidence };
   elements: ExportElement[];
@@ -88,9 +111,22 @@ export async function runExport(
   logger: Logger,
 ): Promise<CommandOutcome<ExportData>> {
   const home = options.home ?? homedir();
-  const out = redactingLogger(logger, options.json ? 'export' : 'display', { home });
+  // --out implies --json: bounded JSON output is the purpose of --out.
+  const json = options.json === true || options.out !== undefined;
+  const out = redactingLogger(logger, json ? 'export' : 'display', { home });
+
+  // Validate cell-id at the boundary, before any I/O.
+  const cellId = parseCellId(options.cellId);
+
   const run = await loadInterpretation(cwd, options.snapshot, home, options.runtime);
-  const { observed, resolved, interpretation } = run;
+  let { observed, resolved, interpretation } = run;
+
+  // When --cell-id is provided, stamp it on the in-memory snapshot.
+  // The stored snapshot is immutable; this only affects the exported document.
+  if (cellId !== undefined) {
+    observed = withObservationProvenance(observed, { cellId });
+  }
+
   for (const diagnostic of run.diagnostics) {
     out.warn(diagnostic.message, { code: diagnostic.code, path: diagnostic.path ?? undefined });
   }
@@ -102,6 +138,9 @@ export async function runExport(
   // (a parse failure, an unverified runtime version) short of a separate
   // `report --explain` call, which defeats the point of one document.
   const diagnostics = [...run.diagnostics, ...observed.diagnostics, ...resolved.diagnostics];
+
+  // Check if the project root is marked dead-path in the index.
+  const deadPath = await isDeadPath(run.canonicalProjectRoot, home);
 
   const resolvedById = new Map(resolved.elements.map((element) => [element.id, element]));
   const interpretationById = new Map(
@@ -137,6 +176,7 @@ export async function runExport(
       capturedAt: observed.capturedAt,
       schemaVersion: observed.schemaVersion,
       cellId: observed.provenance?.cellId ?? null,
+      deadPath,
     },
     resolution: resolved.resolution,
     elements,
@@ -155,6 +195,24 @@ export async function runExport(
 
   const outcome = { data, diagnostics, completeness: observed.completeness };
 
+  // When --out is provided, write the JSON document to the directory.
+  // The file is `<out>/<snapshot-id>.json`. Creates the directory if missing.
+  if (options.out !== undefined) {
+    const outDir = resolve(options.out);
+    // Reject --out destinations inside the inspected project (same as bundle).
+    // isPathWithin resolves symlinks, so symlink-mediated escapes are caught.
+    if (await isPathWithin(run.canonicalProjectRoot, outDir)) {
+      throw new Error('--out destination must not be inside the project directory');
+    }
+    await mkdir(outDir, { recursive: true });
+    const filePath = join(outDir, `${data.snapshot.observedSnapshotId}.json`);
+    // Write the full envelope (same as --json on stdout) so file consumers
+    // get completeness, diagnostics, and pflVersion.
+    const envelope = buildDocument('export', outcome, { home });
+    await writeFile(filePath, `${JSON.stringify(envelope)}\n`, { mode: 0o600 });
+    out.info(`Written to ${filePath}`);
+  }
+
   if (options.json) return outcome;
 
   out.info(`Export for ${observed.runtime.id} (${resolved.snapshotId})`);
@@ -166,6 +224,9 @@ export async function runExport(
   out.info(`Completeness ${observed.completeness}`);
   if (options.bundle !== undefined) {
     out.info(`Bundle       ${resolve(options.bundle)}`);
+  }
+  if (options.out !== undefined) {
+    out.info(`Output       ${resolve(options.out)}`);
   }
   out.info('');
   out.info('This is a machine-oriented document; use --json to consume it.');

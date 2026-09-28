@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -440,5 +440,79 @@ describe('runExport', () => {
     await expect(runExport(projectRoot, { home, json: true }, logger)).rejects.toMatchObject({
       exitCode: EXIT_CODES.CONFIG_ERROR,
     });
+  });
+
+  it('overrides cell provenance when --cell-id is provided (#213)', async () => {
+    const projectRoot = await tempDir('pfl-export-project-');
+    const home = await tempDir('pfl-export-home-');
+    await seed(projectRoot, home, [pair('instructions', 'CLAUDE.md')], {
+      cellId: 'cell_original',
+    });
+    const { logger } = fakeLogger();
+
+    const outcome = await runExport(
+      projectRoot,
+      { home, cellId: 'cell_override', json: true },
+      logger,
+    );
+
+    expect(outcome.data.snapshot.cellId).toBe('cell_override');
+  });
+
+  it('uses stored cell provenance when --cell-id is not provided', async () => {
+    const projectRoot = await tempDir('pfl-export-project-');
+    const home = await tempDir('pfl-export-home-');
+    await seed(projectRoot, home, [pair('instructions', 'CLAUDE.md')], {
+      cellId: 'cell_stored',
+    });
+    const { logger } = fakeLogger();
+
+    const outcome = await runExport(projectRoot, { home, json: true }, logger);
+
+    expect(outcome.data.snapshot.cellId).toBe('cell_stored');
+  });
+
+  it('writes JSON to out directory as <snapshot-id>.json', async () => {
+    const projectRoot = await tempDir('pfl-export-project-');
+    const home = await tempDir('pfl-export-home-');
+    const outDir = await tempDir('pfl-export-out-');
+    await seed(projectRoot, home, [pair('instructions', 'CLAUDE.md')]);
+    const { logger } = fakeLogger();
+
+    const outcome = await runExport(projectRoot, { home, out: outDir, json: true }, logger);
+
+    const filePath = join(outDir, `${outcome.data.snapshot.observedSnapshotId}.json`);
+    const content = await readFile(filePath, 'utf-8');
+    const written = JSON.parse(content);
+    // --out writes the full envelope (same as --json on stdout).
+    expect(written.ok).toBe(true);
+    expect(written.data.snapshot.observedSnapshotId).toBe(outcome.data.snapshot.observedSnapshotId);
+    expect(written.data.elements).toHaveLength(1);
+  });
+
+  it('implies --json when --out is set', async () => {
+    const projectRoot = await tempDir('pfl-export-project-');
+    const home = await tempDir('pfl-export-home-');
+    const outDir = await tempDir('pfl-export-out-');
+    await seed(projectRoot, home, [pair('instructions', 'CLAUDE.md')]);
+    const { logger } = fakeLogger();
+
+    // Without json: true, --out should still produce a file (implies json)
+    await runExport(projectRoot, { home, out: outDir }, logger);
+
+    const files = await readdir(outDir);
+    expect(files.length).toBe(1);
+    expect(files[0]).toMatch(/^obs_.*\.json$/);
+  });
+
+  it('reports deadPath: false for live projects', async () => {
+    const projectRoot = await tempDir('pfl-export-project-');
+    const home = await tempDir('pfl-export-home-');
+    await seed(projectRoot, home, [pair('instructions', 'CLAUDE.md')]);
+    const { logger } = fakeLogger();
+
+    const outcome = await runExport(projectRoot, { home, json: true }, logger);
+
+    expect(outcome.data.snapshot.deadPath).toBe(false);
   });
 });

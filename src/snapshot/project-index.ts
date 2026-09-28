@@ -22,16 +22,35 @@ import { isSafeSegment, pflHome, projectDir } from './store.js';
  * snapshots are what it exists to adopt.
  */
 
-export const PROJECT_INDEX_VERSION = '1';
+export const PROJECT_INDEX_VERSION = '2';
 
 const INDEX_FILE = 'index.json';
 const DIR_MODE = 0o700;
 const FILE_MODE = 0o600;
 
-/** Root (canonical) to project id. */
+/**
+ * Per-project flags stored in the global index. Extensible union; current
+ * members:
+ * - `dead-path`: the project root is no longer reachable (cell discarded).
+ */
+export type ProjectFlag = 'dead-path';
+
+/**
+ * Extended project entry with optional flags. When the value is a plain string,
+ * it is treated as a bare project id (v1 compatibility). When it is an object,
+ * it carries the id plus flags.
+ */
+export interface ProjectIndexEntry {
+  id: string;
+  flags?: ProjectFlag[];
+  /** Raw flags not yet recognized by this version; preserved across rewrites. */
+  unknownFlags?: string[];
+}
+
+/** Root (canonical) to project id (v1) or entry (v2). */
 export interface ProjectIndex {
   indexVersion: string;
-  projects: Record<string, string>;
+  projects: Record<string, string | ProjectIndexEntry>;
 }
 
 export function projectIndexPath(home: string = homedir()): string {
@@ -66,11 +85,17 @@ export async function resolveStoredProjectId(
 ): Promise<ResolvedProjectId> {
   const index = await readProjectIndex(home);
   const existing = index.projects[context.root];
-  if (existing !== undefined) return { id: existing, diagnostics: [] };
+  if (existing !== undefined) {
+    const id = typeof existing === 'string' ? existing : existing.id;
+    return { id, diagnostics: [] };
+  }
 
   const diagnostics: Diagnostic[] = [];
   const claimed = (id: string): boolean =>
-    Object.entries(index.projects).some(([root, value]) => value === id && root !== context.root);
+    Object.entries(index.projects).some(([root, value]) => {
+      const existingId = typeof value === 'string' ? value : value.id;
+      return existingId === id && root !== context.root;
+    });
 
   // Both the remote-derived (v0.1 git) and path-derived directories may exist
   // for this root. Prefer the one whose `latest` is more recent and leave the
@@ -115,7 +140,10 @@ export async function resolveStoredProjectId(
     // fall back to this root's own id. A lock is still out of scope for #86.
     const fresh = await readProjectIndex(home);
     if (
-      Object.entries(fresh.projects).some(([root, id]) => id === chosen && root !== context.root)
+      Object.entries(fresh.projects).some(([root, value]) => {
+        const existingId = typeof value === 'string' ? value : value.id;
+        return existingId === chosen && root !== context.root;
+      })
     ) {
       chosen = rootScopedProjectId(context);
       diagnostics.push({
@@ -150,27 +178,57 @@ export async function readProjectIndex(home: string = homedir()): Promise<Projec
     indexVersion?: unknown;
     projects?: unknown;
   };
-  if (typeof indexVersion !== 'string' || indexVersion !== PROJECT_INDEX_VERSION) {
+  if (typeof indexVersion !== 'string') {
+    throw indexError(`unsupported project index version: ${String(indexVersion)}`, home);
+  }
+  // Accept both v1 and v2 for backward compatibility.
+  if (indexVersion !== '1' && indexVersion !== PROJECT_INDEX_VERSION) {
     throw indexError(`unsupported project index version: ${String(indexVersion)}`, home);
   }
   if (typeof projects !== 'object' || projects === null || Array.isArray(projects)) {
     throw indexError('the project index has no projects map', home);
   }
-  const entries: Record<string, string> = {};
-  for (const [root, id] of Object.entries(projects)) {
-    // An id becomes a path segment under `projects/`; refuse a value that could
-    // escape it rather than let a later command delete outside the store.
-    if (typeof id !== 'string' || !isSafeSegment(id)) {
-      throw indexError('the project index has an invalid project id', home);
-    }
-    // Roots are canonical absolute paths; a relative one would be resolved
-    // against the working directory and could misclassify an orphan.
+  const entries: Record<string, string | ProjectIndexEntry> = {};
+  for (const [root, value] of Object.entries(projects)) {
     if (!root.startsWith('/')) {
       throw indexError('the project index has a non-absolute project root', home);
     }
-    entries[root] = id;
+    // v1: plain string id; v2: ProjectIndexEntry object.
+    if (typeof value === 'string') {
+      if (!isSafeSegment(value)) {
+        throw indexError('the project index has an invalid project id', home);
+      }
+      entries[root] = value;
+    } else if (typeof value === 'object' && value !== null && !Array.isArray(value)) {
+      const entry = value as { id?: unknown; flags?: unknown };
+      if (typeof entry.id !== 'string' || !isSafeSegment(entry.id)) {
+        throw indexError('the project index has an invalid project id', home);
+      }
+      // Validate flags if present; preserve unknown flags for forward compat.
+      const flags: ProjectFlag[] = [];
+      const unknownFlags: string[] = [];
+      if (Array.isArray(entry.flags)) {
+        for (const flag of entry.flags) {
+          if (flag === 'dead-path') {
+            flags.push('dead-path');
+          } else if (typeof flag === 'string') {
+            unknownFlags.push(flag);
+          }
+        }
+      }
+      if (flags.length > 0 || unknownFlags.length > 0) {
+        const result: ProjectIndexEntry = { id: entry.id };
+        if (flags.length > 0) result.flags = flags;
+        if (unknownFlags.length > 0) result.unknownFlags = unknownFlags;
+        entries[root] = result;
+      } else {
+        entries[root] = { id: entry.id };
+      }
+    } else {
+      throw indexError('the project index has an invalid project entry', home);
+    }
   }
-  return { indexVersion, projects: entries };
+  return { indexVersion: PROJECT_INDEX_VERSION, projects: entries };
 }
 
 /** Writes the index atomically; it is the one mutable store document besides `latest`. */
@@ -235,4 +293,91 @@ function indexError(message: string, _home: string): PflError {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Mark a project root as dead-path in the global index. Idempotent: if already
+ * marked, no-ops (no diagnostic, no write).
+ *
+ * Returns diagnostics when the index is unreadable or when the root is not yet
+ * indexed (dead-path on an unknown root is a no-op with a diagnostic).
+ */
+export async function markDeadPath(
+  projectRoot: string,
+  home: string = homedir(),
+): Promise<{ diagnostics: Diagnostic[] }> {
+  const index = await readProjectIndex(home);
+  const existing = index.projects[projectRoot];
+  if (existing === undefined) {
+    return {
+      diagnostics: [
+        {
+          severity: 'warning',
+          code: 'unknown-project-root',
+          message: `cannot mark dead-path: project root ${projectRoot} is not indexed`,
+        },
+      ],
+    };
+  }
+  const id = typeof existing === 'string' ? existing : existing.id;
+  const flags = typeof existing === 'string' ? [] : (existing.flags ?? []);
+  if (flags.includes('dead-path')) {
+    return { diagnostics: [] }; // Already marked.
+  }
+  flags.push('dead-path');
+  index.projects[projectRoot] = { id, flags };
+  await writeProjectIndex(index, home);
+  return { diagnostics: [] };
+}
+
+/**
+ * Clear the dead-path flag. Idempotent: if not marked, no-ops.
+ */
+export async function clearDeadPath(
+  projectRoot: string,
+  home: string = homedir(),
+): Promise<{ diagnostics: Diagnostic[] }> {
+  const index = await readProjectIndex(home);
+  const existing = index.projects[projectRoot];
+  if (existing === undefined) {
+    return {
+      diagnostics: [
+        {
+          severity: 'warning',
+          code: 'unknown-project-root',
+          message: `cannot clear dead-path: project root ${projectRoot} is not indexed`,
+        },
+      ],
+    };
+  }
+  if (typeof existing === 'string') {
+    return { diagnostics: [] }; // No flags to clear.
+  }
+  const flags = (existing.flags ?? []).filter((f) => f !== 'dead-path');
+  if (flags.length === 0) {
+    // No flags left; store as bare id for v1 compat.
+    index.projects[projectRoot] = existing.id;
+  } else {
+    index.projects[projectRoot] = { id: existing.id, flags };
+  }
+  await writeProjectIndex(index, home);
+  return { diagnostics: [] };
+}
+
+/**
+ * Check whether a project root is marked dead-path.
+ */
+export async function isDeadPath(projectRoot: string, home: string = homedir()): Promise<boolean> {
+  const index = await readProjectIndex(home);
+  const existing = index.projects[projectRoot];
+  if (existing === undefined) return false;
+  if (typeof existing === 'string') return false;
+  return (existing.flags ?? []).includes('dead-path');
+}
+
+/**
+ * Extract the project id from a project index entry (v1 string or v2 entry).
+ */
+export function projectIdFromEntry(entry: string | ProjectIndexEntry): string {
+  return typeof entry === 'string' ? entry : entry.id;
 }

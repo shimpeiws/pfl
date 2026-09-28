@@ -39,4 +39,8 @@ export class CodexAdapter implements RuntimeAdapter {
   async resolve(observed: ObservedSnapshot, home?: string): Promise<ResolvedSnapshot> {
     return resolveCodex(observed, home ?? '');
   }
+
+  credentialKeyNames(): readonly string[] {
+    return ['OPENAI_API_KEY'];
+  }
 }

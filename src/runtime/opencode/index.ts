@@ -39,4 +39,8 @@ export class OpencodeAdapter implements RuntimeAdapter {
   async resolve(observed: ObservedSnapshot, home?: string): Promise<ResolvedSnapshot> {
     return resolveOpencode(observed, home ?? '');
   }
+
+  credentialKeyNames(): readonly string[] {
+    return ['OPENAI_API_KEY'];
+  }
 }

@@ -7,6 +7,9 @@ import { pathDerivedProjectId } from '../discovery/project-identity.js';
 import type { ProjectContext } from '../runtime/types.js';
 import {
   PROJECT_INDEX_VERSION,
+  clearDeadPath,
+  isDeadPath,
+  markDeadPath,
   projectIndexPath,
   readProjectIndex,
   resolveStoredProjectId,
@@ -128,7 +131,8 @@ describe('project index', () => {
     const home = await tempHome();
     await mkdir(join(home, '.pfl'), { recursive: true });
 
-    await writeFile(projectIndexPath(home), '{"indexVersion":"2","projects":{}}\n');
+    // v2 is now supported; use v3 as unsupported.
+    await writeFile(projectIndexPath(home), '{"indexVersion":"3","projects":{}}\n');
     await expect(resolveStoredProjectId(gitContext('/repo'), home)).rejects.toMatchObject({
       exitCode: EXIT_CODES.SNAPSHOT_STORE_FAILED,
     });
@@ -161,5 +165,58 @@ describe('project index', () => {
     const resolved = await resolveStoredProjectId(gitContext('/repo'), home, { write: false });
     expect(resolved.id).toBe(LEGACY);
     await expect(access(projectIndexPath(home))).rejects.toThrow();
+  });
+
+  it('reads v1 index (flat strings) and writes v2 on upgrade', async () => {
+    const home = await tempHome();
+    await mkdir(join(home, '.pfl'), { recursive: true });
+    await writeFile(
+      projectIndexPath(home),
+      '{"indexVersion":"1","projects":{"/existing":"git-0000000000000000"}}\n',
+    );
+
+    // Read: v1 is accepted.
+    const index = await readProjectIndex(home);
+    expect(index.projects['/existing']).toBe('git-0000000000000000');
+
+    // A new root triggers a write, which upgrades to v2.
+    await resolveStoredProjectId(gitContext('/new-repo'), home);
+    const written = JSON.parse(await readFile(projectIndexPath(home), 'utf8'));
+    expect(written.indexVersion).toBe(PROJECT_INDEX_VERSION);
+  });
+
+  it('marks and clears dead-path idempotently', async () => {
+    const home = await tempHome();
+    await resolveStoredProjectId(gitContext('/repo'), home);
+
+    // Mark dead-path.
+    const mark1 = await markDeadPath('/repo', home);
+    expect(mark1.diagnostics).toEqual([]);
+    expect(await isDeadPath('/repo', home)).toBe(true);
+
+    // Mark again: idempotent.
+    const mark2 = await markDeadPath('/repo', home);
+    expect(mark2.diagnostics).toEqual([]);
+
+    // Clear dead-path.
+    const clear1 = await clearDeadPath('/repo', home);
+    expect(clear1.diagnostics).toEqual([]);
+    expect(await isDeadPath('/repo', home)).toBe(false);
+
+    // Clear again: idempotent.
+    const clear2 = await clearDeadPath('/repo', home);
+    expect(clear2.diagnostics).toEqual([]);
+  });
+
+  it('returns diagnostic for dead-path on unknown root', async () => {
+    const home = await tempHome();
+    const result = await markDeadPath('/unknown', home);
+    expect(result.diagnostics).toHaveLength(1);
+    expect(result.diagnostics[0]?.code).toBe('unknown-project-root');
+  });
+
+  it('isDeadPath returns false for unknown root', async () => {
+    const home = await tempHome();
+    expect(await isDeadPath('/unknown', home)).toBe(false);
   });
 });

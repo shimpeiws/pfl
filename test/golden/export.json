@@ -34,7 +34,8 @@
       "resolvedSnapshotId": "res_0123456789ab",
       "capturedAt": "2026-09-18T00:00:00.000Z",
       "schemaVersion": "2",
-      "cellId": null
+      "cellId": null,
+      "deadPath": false
     },
     "resolution": {
       "confidence": "verified",

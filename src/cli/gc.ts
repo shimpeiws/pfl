@@ -5,7 +5,11 @@ import type { Diagnostic } from '../core/diagnostics.js';
 import { hasAnyUserConsent } from '../discovery/consent.js';
 import { resolveProjectContext } from '../discovery/project-identity.js';
 import { redactingLogger } from '../redact/output.js';
-import { readProjectIndex, resolveStoredProjectId } from '../snapshot/project-index.js';
+import {
+  projectIdFromEntry,
+  readProjectIndex,
+  resolveStoredProjectId,
+} from '../snapshot/project-index.js';
 import {
   artifactFilePath,
   interpretationsDir,
@@ -301,7 +305,8 @@ async function findOrphans(
 ): Promise<{ orphans: GcOrphanRef[]; unreferenced: GcOrphanRef[] }> {
   const index = await readProjectIndex(home);
   const rootsById = new Map<string, string[]>();
-  for (const [root, id] of Object.entries(index.projects)) {
+  for (const [root, value] of Object.entries(index.projects)) {
+    const id = projectIdFromEntry(value);
     const roots = rootsById.get(id) ?? [];
     roots.push(root);
     rootsById.set(id, roots);

@@ -39,4 +39,8 @@ export class ClaudeCodeAdapter implements RuntimeAdapter {
   async resolve(observed: ObservedSnapshot, home?: string): Promise<ResolvedSnapshot> {
     return resolveClaudeCode(observed, home ?? '');
   }
+
+  credentialKeyNames(): readonly string[] {
+    return ['ANTHROPIC_API_KEY', 'ANTHROPIC_AUTH_TOKEN'];
+  }
 }
