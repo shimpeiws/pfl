@@ -256,3 +256,41 @@ If not, treat it as implementation-maintenance evidence unless the internal
 shape is itself part of the contract. Unknown and incomplete states must survive
 all the way to export so downstream consumers can decide what they can and
 cannot conclude.
+
+## Concrete evidence inventory
+
+A first pass over the current suite shows that pfl already has strong semantic
+coverage. The missing piece was primarily an index from meaning to evidence.
+
+| Proposition | Existing evidence | Assessment |
+| --- | --- | --- |
+| VC-P-01 | `test/integration/security-invariants.test.ts` contains an explicit no-execution guard; runtime discovery / resolver tests; `test/e2e/cli.test.ts` exercises real `inspect` flows | Strong. The no-execution proposition is tested directly rather than inferred from architecture. |
+| VC-P-02 | `src/cli/export.test.ts` ("surfaces partial completeness rather than hiding it"); `test/integration/security-invariants.test.ts` records unsupported/unreadable entries as partial; E2E reports why a snapshot is partial | Strong across normalization, filesystem boundary, and CLI. |
+| VC-P-03 | `src/cli/inspect.test.ts` records caller-supplied `cell_id` as observation provenance and leaves standalone runs without it; `src/cli/export.test.ts` preserves unknown provenance rather than mismatch; E2E round-trips `--cell-id` | Cell provenance is strong. The **source-project provenance** half is the real open gap and is already tracked by #217. |
+| VC-P-04 | `src/resolution/resolver.test.ts`; runtime-specific `resolve.test.ts` suites; export behavior preserves null unresolved layers instead of turning them into negative facts | Strong at the semantic/resolution layer. Downstream Gatefold additionally qualifies "effective" as static potential. |
+| VC-P-05 | `test/integration/security-invariants.test.ts`; `test/integration/consent-choke-point.test.ts`; runtime consent tests; redaction tests; Linux/macOS CI | Strong. This has both negative-security tests and real filesystem boundaries. |
+
+### Gaps / active work
+
+Only one material gap was found in this five-card set:
+
+- **#217 — source-project provenance distinct from cell-local project identity.**
+  Current `cell_id` provenance already behaves correctly. What is missing is
+  the stable caller-declared source identity required for two independently
+  prepared cells to be comparable without pretending their temporary workspace
+  paths are the same observed project.
+
+No additional issue is warranted for VC-P-01, VC-P-02, VC-P-04, or VC-P-05
+based on this pass.
+
+### Candidate de-emphasis during future test cleanup
+
+A useful distinction emerged inside the resolver / adapter suites:
+
+- tests that protect precedence, applicability, opacity, or completeness are
+  semantic evidence;
+- tests that only mirror parser decomposition or internal adapter call shape are
+  maintenance evidence.
+
+Both can be kept, but only the former should drive confidence that a
+verification proposition is protected.
