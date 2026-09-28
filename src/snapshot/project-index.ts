@@ -43,6 +43,8 @@ export type ProjectFlag = 'dead-path';
 export interface ProjectIndexEntry {
   id: string;
   flags?: ProjectFlag[];
+  /** Raw flags not yet recognized by this version; preserved across rewrites. */
+  unknownFlags?: string[];
 }
 
 /** Root (canonical) to project id (v1) or entry (v2). */
@@ -202,17 +204,26 @@ export async function readProjectIndex(home: string = homedir()): Promise<Projec
       if (typeof entry.id !== 'string' || !isSafeSegment(entry.id)) {
         throw indexError('the project index has an invalid project id', home);
       }
-      // Validate flags if present.
+      // Validate flags if present; preserve unknown flags for forward compat.
       const flags: ProjectFlag[] = [];
+      const unknownFlags: string[] = [];
       if (Array.isArray(entry.flags)) {
         for (const flag of entry.flags) {
           if (flag === 'dead-path') {
             flags.push('dead-path');
+          } else if (typeof flag === 'string') {
+            unknownFlags.push(flag);
           }
-          // Unknown flags are tolerated (future extensibility).
         }
       }
-      entries[root] = flags.length > 0 ? { id: entry.id, flags } : { id: entry.id };
+      if (flags.length > 0 || unknownFlags.length > 0) {
+        const result: ProjectIndexEntry = { id: entry.id };
+        if (flags.length > 0) result.flags = flags;
+        if (unknownFlags.length > 0) result.unknownFlags = unknownFlags;
+        entries[root] = result;
+      } else {
+        entries[root] = { id: entry.id };
+      }
     } else {
       throw indexError('the project index has an invalid project entry', home);
     }

@@ -484,8 +484,10 @@ describe('runExport', () => {
     const filePath = join(outDir, `${outcome.data.snapshot.observedSnapshotId}.json`);
     const content = await readFile(filePath, 'utf-8');
     const written = JSON.parse(content);
-    expect(written.snapshot.observedSnapshotId).toBe(outcome.data.snapshot.observedSnapshotId);
-    expect(written.elements).toHaveLength(1);
+    // --out writes the full envelope (same as --json on stdout).
+    expect(written.ok).toBe(true);
+    expect(written.data.snapshot.observedSnapshotId).toBe(outcome.data.snapshot.observedSnapshotId);
+    expect(written.data.elements).toHaveLength(1);
   });
 
   it('implies --json when --out is set', async () => {

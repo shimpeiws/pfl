@@ -8,8 +8,9 @@ import type { Relation, ResolutionConfidence, ResolvedElement } from '../core/re
 import { withObservationProvenance } from '../discovery/assemble.js';
 import { redactElementSource, redactingLogger } from '../redact/output.js';
 import { isDeadPath } from '../snapshot/project-index.js';
+import { isPathWithin } from '../util/fs.js';
 import type { Logger } from '../util/logger.js';
-import { type CommandOutcome } from './document.js';
+import { type CommandOutcome, buildDocument } from './document.js';
 import { writeBundle } from './bundle.js';
 import { loadInterpretation } from './read.js';
 import { parseCellId } from './inspect.js';
@@ -192,17 +193,24 @@ export async function runExport(
     out.info(`Bundle written to ${bundleDir}`);
   }
 
+  const outcome = { data, diagnostics, completeness: observed.completeness };
+
   // When --out is provided, write the JSON document to the directory.
   // The file is `<out>/<snapshot-id>.json`. Creates the directory if missing.
   if (options.out !== undefined) {
     const outDir = resolve(options.out);
+    // Reject --out destinations inside the inspected project (same as bundle).
+    if (await isPathWithin(run.canonicalProjectRoot, outDir)) {
+      throw new Error('--out destination must not be inside the project directory');
+    }
     await mkdir(outDir, { recursive: true });
     const filePath = join(outDir, `${data.snapshot.observedSnapshotId}.json`);
-    await writeFile(filePath, `${JSON.stringify(data)}\n`);
+    // Write the full envelope (same as --json on stdout) so file consumers
+    // get completeness, diagnostics, and pflVersion.
+    const envelope = buildDocument('export', outcome, { home });
+    await writeFile(filePath, `${JSON.stringify(envelope)}\n`, { mode: 0o600 });
     out.info(`Written to ${filePath}`);
   }
-
-  const outcome = { data, diagnostics, completeness: observed.completeness };
 
   if (options.json) return outcome;
 
