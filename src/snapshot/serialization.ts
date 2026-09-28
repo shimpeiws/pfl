@@ -23,8 +23,15 @@ import { canonicalJsonStringify } from '../util/json.js';
 // (docs/design/schema-bump-procedure.md): an older reader must refuse rather
 // than silently drop the field. Version 1 stays supported so the new reader
 // adopts existing histories.
-export const SNAPSHOT_SCHEMA_VERSION = '2';
-export const SUPPORTED_SNAPSHOT_SCHEMA_VERSIONS: readonly string[] = [SNAPSHOT_SCHEMA_VERSION, '1'];
+// 2 → 3: `provenance` gained the optional `sourceProject` field, the
+// caller-declared source-project identity (#217). Same rule: an addition
+// bumps the version; versions 1 and 2 stay supported.
+export const SNAPSHOT_SCHEMA_VERSION = '3';
+export const SUPPORTED_SNAPSHOT_SCHEMA_VERSIONS: readonly string[] = [
+  SNAPSHOT_SCHEMA_VERSION,
+  '2',
+  '1',
+];
 
 const SCHEMA_VERSION_PATTERN = /^\d+$/;
 

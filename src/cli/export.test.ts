@@ -10,7 +10,12 @@ import {
 } from '../core/ids.js';
 import type { Diagnostic } from '../core/diagnostics.js';
 import type { Finding, Interpretation } from '../core/interpretation.js';
-import type { NativeOrigin, ObservedElement, ObservedSnapshot } from '../core/observed.js';
+import type {
+  AssertedSourceProject,
+  NativeOrigin,
+  ObservedElement,
+  ObservedSnapshot,
+} from '../core/observed.js';
 import type { ResolvedElement, ResolvedSnapshot, ResolvedStatus } from '../core/resolved.js';
 import { resolveProjectContext } from '../discovery/project-identity.js';
 import {
@@ -84,11 +89,12 @@ async function seed(
     observedDiagnostics?: Diagnostic[];
     resolvedDiagnostics?: Diagnostic[];
     cellId?: string;
+    sourceProject?: AssertedSourceProject;
   } = {},
 ): Promise<{ observed: ObservedSnapshot; resolved: ResolvedSnapshot }> {
   const projectId = (await resolveProjectContext(projectRoot)).id;
   const observed: ObservedSnapshot = {
-    schemaVersion: '2',
+    schemaVersion: '3',
     snapshotId: generateObservedSnapshotId(),
     capturedAt: '2026-09-16T00:00:00.000Z',
     project: { id: projectId, displayName: 'owner/repo', root: projectRoot },
@@ -97,11 +103,20 @@ async function seed(
     elements: pairs.map((p) => p.observed),
     diagnostics: options.observedDiagnostics ?? [],
     completeness: options.completeness ?? 'complete',
-    ...(options.cellId !== undefined ? { provenance: { cellId: options.cellId } } : {}),
+    ...(options.cellId !== undefined || options.sourceProject !== undefined
+      ? {
+          provenance: {
+            ...(options.cellId !== undefined ? { cellId: options.cellId } : {}),
+            ...(options.sourceProject !== undefined
+              ? { sourceProject: options.sourceProject }
+              : {}),
+          },
+        }
+      : {}),
     digests: { observed: 'sha256:x' },
   };
   const resolved: ResolvedSnapshot = {
-    schemaVersion: '2',
+    schemaVersion: '3',
     snapshotId: 'res_test' as ResolvedSnapshotId,
     observedSnapshotId: observed.snapshotId,
     runtime: { id: rid, version: '2.1.272' },
@@ -116,7 +131,7 @@ async function seed(
   await writeResolvedSnapshot(projectId, resolved, home);
   if (options.storeInterpretation === true) {
     const interpretation: Interpretation = {
-      schemaVersion: '2',
+      schemaVersion: '3',
       interpretationId: 'int_test' as never,
       resolvedSnapshotId: resolved.snapshotId,
       classifier: { id: 'pfl-native', version: '5' },
@@ -222,7 +237,7 @@ describe('runExport', () => {
     // whose elements array omits the element.
     const projectId = (await resolveProjectContext(projectRoot)).id;
     const observed: ObservedSnapshot = {
-      schemaVersion: '2',
+      schemaVersion: '3',
       snapshotId: generateObservedSnapshotId(),
       capturedAt: '2026-09-16T00:00:00.000Z',
       project: { id: projectId, displayName: 'owner/repo', root: projectRoot },
@@ -234,7 +249,7 @@ describe('runExport', () => {
       digests: { observed: 'sha256:x' },
     };
     const resolved: ResolvedSnapshot = {
-      schemaVersion: '2',
+      schemaVersion: '3',
       snapshotId: 'res_test' as ResolvedSnapshotId,
       observedSnapshotId: observed.snapshotId,
       runtime: { id: rid, version: '2.1.272' },
@@ -274,6 +289,184 @@ describe('runExport', () => {
     // The snapshot ids keep their own identity; provenance does not replace them.
     expect(outcome.data.snapshot.observedSnapshotId).toMatch(/^obs_/);
     expect(outcome.data.snapshot.resolvedSnapshotId).toBe('res_test');
+  });
+
+  it('exports the declared source-project identity beside, not instead of, the observed project id (#217)', async () => {
+    const projectRoot = await tempDir('pfl-export-project-');
+    const home = await tempDir('pfl-export-home-');
+    const sourceProject: AssertedSourceProject = {
+      id: 'git-0123456789abcdef',
+      kind: 'git-remote',
+      remote: 'github.com/owner/repo',
+      issuer: 'yuurei',
+      contractVersion: 1,
+      head: 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2',
+    };
+    const { observed } = await seed(projectRoot, home, [pair('instructions', 'CLAUDE.md')], {
+      cellId: 'cell_20260928T120000Z-a1b2',
+      sourceProject,
+    });
+    const { logger } = fakeLogger();
+
+    const outcome = await runExport(projectRoot, { home, json: true }, logger);
+
+    expect(outcome.data.snapshot.sourceProject).toEqual(sourceProject);
+    // The observed cell-local identity stays what it was: two cells of one
+    // source share `sourceProject.id` but keep distinct `project.id`s.
+    expect(outcome.data.project.id).toBe(observed.project.id);
+    expect(outcome.data.project.id).not.toBe(sourceProject.id);
+  });
+
+  it('keeps a stored sourceProject when --cell-id overrides cell provenance (#217)', async () => {
+    const projectRoot = await tempDir('pfl-export-project-');
+    const home = await tempDir('pfl-export-home-');
+    const sourceProject: AssertedSourceProject = {
+      id: 'git-0123456789abcdef',
+      kind: 'git-remote',
+      issuer: 'yuurei',
+      contractVersion: 1,
+    };
+    await seed(projectRoot, home, [pair('instructions', 'CLAUDE.md')], {
+      cellId: 'cell_original',
+      sourceProject,
+    });
+    const { logger } = fakeLogger();
+
+    const outcome = await runExport(
+      projectRoot,
+      { home, cellId: 'cell_override', json: true },
+      logger,
+    );
+
+    expect(outcome.data.snapshot.cellId).toBe('cell_override');
+    expect(outcome.data.snapshot.sourceProject).toEqual(sourceProject);
+  });
+
+  it('does not surface a tampered source field or a credential-bearing remote on export (#217)', async () => {
+    const projectRoot = await tempDir('pfl-export-project-');
+    const home = await tempDir('pfl-export-home-');
+    const { observed } = await seed(projectRoot, home, [pair('instructions', 'CLAUDE.md')]);
+    // A written-around artifact reintroduces the host `source` path the write
+    // path deliberately drops, beside a credential-bearing remote. The reader
+    // must refuse the artifact rather than project the fields into the export.
+    const tampered = {
+      ...observed,
+      provenance: {
+        sourceProject: {
+          id: 'git-0123456789abcdef',
+          kind: 'git-remote',
+          issuer: 'yuurei',
+          contractVersion: 1,
+          remote: 'https://x-access-token:SECRETVALUE9@github.com/owner/repo',
+          source: '/home/operator/src/repo',
+        },
+      },
+    };
+    await writeFile(
+      join(observationsDir(observed.project.id, home), `${observed.snapshotId}.json`),
+      `${JSON.stringify(tampered)}\n`,
+    );
+    const { logger, lines } = fakeLogger();
+
+    await expect(runExport(projectRoot, { home, json: true }, logger)).rejects.toThrow();
+    expect(JSON.stringify(lines)).not.toContain('/home/operator');
+    expect(JSON.stringify(lines)).not.toContain('SECRETVALUE9');
+  });
+
+  it('re-redacts asserted strings a written-around artifact carries (#217)', async () => {
+    const projectRoot = await tempDir('pfl-export-project-');
+    const home = await tempDir('pfl-export-home-');
+    const { observed } = await seed(projectRoot, home, [pair('instructions', 'CLAUDE.md')]);
+    // The persistence redaction runs only on the write path, so a caller can
+    // write around it: this artifact stays inside the closed allowlist but
+    // its `remote` carries a credential the parser would have masked. The
+    // document boundary re-asserts redaction rather than trusting the stored
+    // bytes (FIND-001 r2).
+    const tampered = {
+      ...observed,
+      provenance: {
+        sourceProject: {
+          id: 'git-0123456789abcdef',
+          kind: 'git-remote',
+          issuer: 'yuurei',
+          contractVersion: 1,
+          remote: 'https://x-access-token:SECRETVALUE9@github.com/owner/repo',
+        },
+      },
+    };
+    await writeFile(
+      join(observationsDir(observed.project.id, home), `${observed.snapshotId}.json`),
+      `${JSON.stringify(tampered)}\n`,
+    );
+    const { logger } = fakeLogger();
+
+    const outcome = await runExport(projectRoot, { home, json: true }, logger);
+    expect(JSON.stringify(outcome.data)).not.toContain('SECRETVALUE9');
+    expect(outcome.data.snapshot.sourceProject?.remote).toBe(
+      'https://[redacted]@github.com/owner/repo',
+    );
+  });
+
+  it('reports sourceProject as null when undeclared and on pre-schema-3 runs (#217)', async () => {
+    const projectRoot = await tempDir('pfl-export-project-');
+    const home = await tempDir('pfl-export-home-');
+    await seed(projectRoot, home, [pair('instructions', 'CLAUDE.md')]);
+    const { logger } = fakeLogger();
+
+    const standalone = await runExport(projectRoot, { home, json: true }, logger);
+    expect(standalone.data.snapshot.sourceProject).toBeNull();
+
+    // A schema-2 artifact predates the field: `provenance.cellId` still reads,
+    // and the absent `sourceProject` means unknown, never a mismatch.
+    const legacy = await tempDir('pfl-export-legacy-project-');
+    const legacyHome = await tempDir('pfl-export-legacy-home-');
+    const projectId = (await resolveProjectContext(legacy)).id;
+    const observed: ObservedSnapshot = {
+      schemaVersion: '2',
+      snapshotId: generateObservedSnapshotId(),
+      capturedAt: '2026-09-16T00:00:00.000Z',
+      project: { id: projectId, displayName: 'owner/repo', root: legacy },
+      runtime: { id: rid, version: '2.1.272' },
+      adapter: { id: 'claude-code', version: '0.1.0', runtimeCompatibility: 'verified' },
+      elements: [pair('instructions', 'CLAUDE.md').observed],
+      diagnostics: [],
+      completeness: 'complete',
+      provenance: { cellId: 'cell_legacy' },
+      digests: { observed: 'sha256:x' },
+    };
+    const resolved: ResolvedSnapshot = {
+      schemaVersion: '2',
+      snapshotId: 'res_legacy' as ResolvedSnapshotId,
+      observedSnapshotId: observed.snapshotId,
+      runtime: { id: rid, version: '2.1.272' },
+      resolution: { semanticsVersion: '1', confidence: 'verified' },
+      elements: [],
+      relations: [],
+      effectiveElementIds: [],
+      diagnostics: [],
+      digests: { harnessContent: 'sha256:h', resolvedSnapshot: 'sha256:r' },
+    };
+    await mkdir(observationsDir(projectId, legacyHome), { recursive: true });
+    await mkdir(snapshotsDir(projectId, legacyHome), { recursive: true });
+    await writeFile(
+      join(observationsDir(projectId, legacyHome), `${observed.snapshotId}.json`),
+      `${JSON.stringify(observed)}\n`,
+    );
+    await writeFile(
+      join(snapshotsDir(projectId, legacyHome), `${resolved.snapshotId}.json`),
+      `${JSON.stringify(resolved)}\n`,
+    );
+    await writeLatestPointer(
+      projectId,
+      { observed: observed.snapshotId, resolved: resolved.snapshotId },
+      legacyHome,
+    );
+
+    const legacyOutcome = await runExport(legacy, { home: legacyHome, json: true }, logger);
+
+    expect(legacyOutcome.data.snapshot.schemaVersion).toBe('2');
+    expect(legacyOutcome.data.snapshot.cellId).toBe('cell_legacy');
+    expect(legacyOutcome.data.snapshot.sourceProject).toBeNull();
   });
 
   it('reports unknown cell provenance, not a mismatch, on standalone and pre-schema-2 runs', async () => {

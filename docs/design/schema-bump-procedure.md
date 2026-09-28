@@ -76,3 +76,9 @@ Two things are explicitly **not** shape changes and do not bump:
   fixture exercises the read path. The field is provenance, not an observed
   fact: absent means unknown, and a supplied value does not certify which
   environment was observed. See ADR 0004.
+- **2 → 3 (#217)**: `provenance` gained optional `sourceProject`, the
+  caller-declared source-project identity of a prepared cell. Optional, so a
+  schema-2 artifact remains valid as written; `SUPPORTED_SNAPSHOT_SCHEMA_VERSIONS`
+  keeps `"1"` and `"2"`, and the `legacy-observed-2` fixture exercises the read
+  path. Same provenance stance as `cellId`: asserted, never verified, absent
+  means unknown. See ADR 0005.

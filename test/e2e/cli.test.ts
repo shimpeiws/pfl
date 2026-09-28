@@ -43,13 +43,17 @@ interface CliResult {
   stderr: string;
 }
 
-function runCli(m: Materialized, args: string[]): Promise<CliResult> {
+function runCli(
+  m: Materialized,
+  args: string[],
+  env: Record<string, string> = {},
+): Promise<CliResult> {
   return new Promise((resolve) => {
     const child = spawn(process.execPath, [cliEntry, ...args], {
       cwd: m.projectRoot,
       // An empty PATH keeps detection hermetic: the fixture has no installer
       // metadata, and the test must not read the machine's own installs.
-      env: { ...process.env, HOME: m.home, PATH: '' },
+      env: { ...process.env, HOME: m.home, PATH: '', ...env },
     });
     let stdout = '';
     let stderr = '';
@@ -122,6 +126,71 @@ describe('pfl CLI end to end', () => {
       data: { snapshot: { cellId: string | null } };
     };
     expect(exportDoc.data.snapshot.cellId).toBe('cell_20260928T120000Z-a1b2');
+  });
+
+  it('records a yuurei source-project declaration and exports it (#217)', async () => {
+    const m = await fixture();
+    // The contract file sits at the "cell root" — the parent of the
+    // inspected workspace — the way yuurei materializes it.
+    const contractPath = join(m.projectRoot, '..', 'source-project.json');
+    await writeFile(
+      contractPath,
+      JSON.stringify({
+        version: 1,
+        issuer: 'yuurei',
+        cell_id: 'cell_20260928T120000Z-a1b2',
+        source_project: {
+          id: 'git-0123456789abcdef',
+          kind: 'git-remote',
+          remote: 'github.com/owner/repo',
+          source: '/home/operator/src/repo',
+          head: 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2',
+        },
+      }),
+    );
+    const env = {
+      YUUREI_SOURCE_PROJECT_FILE: contractPath,
+      YUUREI_SOURCE_PROJECT_ID: 'git-0123456789abcdef',
+    };
+
+    const inspect = await runCli(
+      m,
+      ['inspect', '--runtime', 'claude-code', '--cell-id', 'cell_20260928T120000Z-a1b2', '--json'],
+      env,
+    );
+    expect(inspect.code, inspect.stderr).toBe(EXIT_CODES.SUCCESS);
+    const inspectDoc = JSON.parse(inspect.stdout) as {
+      data: { observed: { snapshotId: string; sourceProject: { id: string } | null } };
+    };
+    expect(inspectDoc.data.observed.sourceProject?.id).toBe('git-0123456789abcdef');
+
+    // The stored artifact carries the asserted identity — minus the host-side
+    // `source` path, which is never persisted.
+    const projectId = (await resolveProjectContext(m.projectRoot)).id;
+    const stored = JSON.parse(
+      await readFile(
+        join(observationsDir(projectId, m.home), `${inspectDoc.data.observed.snapshotId}.json`),
+        'utf8',
+      ),
+    ) as { provenance?: { sourceProject?: Record<string, unknown> } };
+    expect(stored.provenance?.sourceProject?.['id']).toBe('git-0123456789abcdef');
+    expect(JSON.stringify(stored)).not.toContain('/home/operator');
+
+    const exported = await runCli(m, ['export', '--json'], env);
+    expect(exported.code, exported.stderr).toBe(EXIT_CODES.SUCCESS);
+    const exportDoc = JSON.parse(exported.stdout) as {
+      data: {
+        project: { id: string };
+        snapshot: { sourceProject: { id: string; issuer: string } | null };
+      };
+    };
+    // The declared comparison identity is exported beside — never instead of —
+    // the observed cell-local project id.
+    expect(exportDoc.data.snapshot.sourceProject).toMatchObject({
+      id: 'git-0123456789abcdef',
+      issuer: 'yuurei',
+    });
+    expect(exportDoc.data.project.id).toBe(projectId);
   });
 
   it('rejects a malformed --cell-id with exit 2', async () => {

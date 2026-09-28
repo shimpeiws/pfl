@@ -41,7 +41,7 @@ describe('assembleObservedSnapshot', () => {
 
     const snapshot = assembleObservedSnapshot(input(elements));
 
-    expect(snapshot.schemaVersion).toBe('2');
+    expect(snapshot.schemaVersion).toBe('3');
     expect(snapshot.snapshotId).toMatch(/^obs_[0-9a-f]{12}$/);
     expect(snapshot.capturedAt).toBe('2026-09-16T00:00:00.000Z');
     expect(snapshot.digests.observed).toBe(harnessContentDigest(elements));

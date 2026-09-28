@@ -154,7 +154,7 @@ Only `data` varies. Each shape below is the payload once, not repeated per run.
   runtime, runtimeVersion, runtimeCompatibility,
   project,
   store,
-  observed: { snapshotId, elements, opaqueLayers, completeness, cellId },
+  observed: { snapshotId, elements, opaqueLayers, completeness, cellId, sourceProject },
   resolved: { snapshotId, effective, conditional, shadowed, confidence }
 }
 ```
@@ -168,6 +168,22 @@ inspection (#212; additive, nullable). It is caller-asserted provenance for the
 observation event — recorded verbatim, never verified — and is `null` when the
 flag was not given. A non-null value does not certify which environment was
 observed.
+
+`observed.sourceProject` is the caller-declared source-project identity (#217;
+additive, nullable): the `source_project` a caller such as yuurei declared for
+this observation through the `YUUREI_SOURCE_PROJECT_FILE` contract, shaped
+`{ id, kind, remote?, issuer, contractVersion, head? }`. It is asserted
+provenance with the same stance as `cellId` — recorded after validation, never
+verified — and `null` when no valid declaration was supplied. The verbatim
+strings (`remote`, `issuer`, `head`) pass the persistence redaction layer
+before they are stored and are re-redacted at the document boundary, so
+credential-shaped text in the declaration — or in a written-around artifact —
+is masked. They are also length-bounded and free of control and formatting
+characters (Cc/Cf and line/paragraph separators), at both write and read,
+since the values are echoed in documents and the human-facing `inspect`
+summary.
+It is a comparison handle for downstream tools, not the observed cell-local
+project identity; `project` keeps the latter.
 
 Observed and resolved diagnostics travel in the envelope's `diagnostics`, not
 nested under `data`.
@@ -305,7 +321,8 @@ artifact.
   project: { id, displayName },
   runtime: { id, version, adapter: { id, version, runtimeCompatibility } },
   snapshot: {
-    observedSnapshotId, resolvedSnapshotId, capturedAt, schemaVersion, cellId
+    observedSnapshotId, resolvedSnapshotId, capturedAt, schemaVersion, cellId,
+    sourceProject
   },
   resolution: { semanticsVersion, confidence },
   elements: [{ id, observed, resolved, interpretation }],
@@ -333,7 +350,25 @@ element requested).
 `null` for standalone inspections and for artifacts written before schema 2,
 where absence means unknown, not mismatch. `snapshot.schemaVersion` is the
 stored artifact's version — schema-1 artifacts export as `"1"` with
-`cellId: null`.
+`cellId: null` and `sourceProject: null`.
+
+`snapshot.sourceProject` carries the caller-declared source-project identity
+recorded at inspection time (#217; additive, nullable), shaped
+`{ id, kind, remote?, issuer, contractVersion, head? }`. `id` is the
+`git-<hex16>`/`path-<hex16>` identity the caller asserted for the project the
+observed cell was seeded from — the comparison key a consumer such as
+Gatefold uses to recognize two cells of one source. `kind` names the
+derivation the caller claims (`git-remote` or `local-path`), `issuer` who made
+the claim (e.g. `"yuurei"`), `contractVersion` the declaration contract's
+version, and `remote`/`head` the declared remote and head when present
+(redacted at persistence and re-redacted at the document boundary, so
+credential-shaped text never reaches the document even if the stored
+artifact was written around the CLI). It is asserted, not observed: pfl never verified it against the
+source, and `data.project.id` — the observed cell-local identity — is
+deliberately unaffected by it. `null` on standalone runs, on malformed declarations (the
+inspection reports a `source-project-declaration-*` warning diagnostic and
+records nothing), and on artifacts written before schema 3 — unknown, never a
+substituted value.
 
 `export.data.interpretation` names the classifier as `{ id, version }` rather
 than the `classifierVersion` string the other read commands use (see
@@ -382,7 +417,8 @@ deleted with it. `snapshots` and `gc` report `completeness: "unknown"`.
 The document is a display channel, so its text passes the same policy as other
 output. `diagnostics` and error messages are redacted at the export level, and
 the file paths a command emits — `show`'s element, `graph`'s node paths,
-`list`'s `path`, `export.data.elements[].observed.source.path` — are
+`list`'s `path`, `export.data.elements[].observed.source.path` — and the
+caller-asserted `sourceProject` strings (`remote`, `issuer`, `head`) are
 re-redacted at the boundary rather than trusted from the artifact. Every other
 `data` field is a structural fact, or a value that passed the allowlist and the
 redaction layer when the snapshot was persisted; the document layer does not

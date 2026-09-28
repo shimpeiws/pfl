@@ -116,15 +116,97 @@ export interface AdapterIdentity {
 }
 
 /**
+ * Caller-asserted source-project identity (yuurei's `source-project.json`
+ * contract, #217 / yuurei #214). The identity names the project the caller
+ * claims the observed cell was seeded from; pfl never re-derives or verifies
+ * it, and the verbatim strings (`remote`, `issuer`, `head`) pass the same
+ * redaction layer as observed text before persistence. It is a comparison
+ * handle for downstream tools —
+ * two cells of one source share `id` — not an observed fact: equal ids do not
+ * imply identical observations, and a host path (`source`) is deliberately
+ * not carried (persistence is deny-by-default).
+ */
+export interface AssertedSourceProject {
+  /** `git-<hex16>` over the normalized remote or `path-<hex16>` over the source root. */
+  id: string;
+  /** Which derivation produced `id`. */
+  kind: 'git-remote' | 'local-path';
+  /** The normalized remote URL; present only for `git-remote`. */
+  remote?: string;
+  /** Who issued the declaration, e.g. `"yuurei"`. Recorded verbatim. */
+  issuer: string;
+  /** The contract version the declaration was read as. */
+  contractVersion: number;
+  /** The asserted source head (a commit-ish digest), when declared. */
+  head?: string;
+}
+
+export const SOURCE_PROJECT_KINDS = [
+  'git-remote',
+  'local-path',
+] as const satisfies readonly AssertedSourceProject['kind'][];
+
+/**
+ * Bounds the verbatim-recorded strings of an asserted source-project identity
+ * are held to — shared by the declaration parser and the snapshot reader so a
+ * stored artifact validates under the same rules it was written with.
+ */
+export const SOURCE_PROJECT_ISSUER_MAX_CHARS = 64;
+export const SOURCE_PROJECT_REMOTE_MAX_CHARS = 512;
+export const SOURCE_PROJECT_HEAD_MAX_CHARS = 128;
+
+/**
+ * Asserted free text (`issuer`, `remote`, `head`) must not carry C0/C1
+ * controls, DEL, or invisible formatting characters: the values are echoed
+ * in documents and in the human-facing `inspect` summary, where control
+ * escapes could inject terminal sequences and format characters (bidi
+ * overrides, zero-width spaces, line/paragraph separators) could reorder or
+ * hide output. The redaction layer masks secret shapes but does not strip
+ * these, so the charset bound is held by the declaration parser and by the
+ * snapshot reader on a stored artifact.
+ */
+export const SOURCE_PROJECT_CONTROL_CHARS_PATTERN = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/u;
+
+/**
+ * The only source-project contract version this codebase reads. The writer
+ * pins recorded artifacts to it and the snapshot reader requires the same
+ * value, so a written-around artifact cannot claim a version never written
+ * here (#217).
+ */
+export const SOURCE_PROJECT_CONTRACT_VERSION = 1;
+
+/**
+ * `id`'s prefix encodes which derivation `kind` claims (`git-` for
+ * `git-remote`, `path-` for `local-path`). A declaration whose two halves
+ * disagree is self-contradictory; the parser and the snapshot reader both
+ * hold this so a written-around artifact cannot carry it either.
+ */
+export const SOURCE_PROJECT_ID_PREFIXES: Record<AssertedSourceProject['kind'], string> = {
+  'git-remote': 'git-',
+  'local-path': 'path-',
+};
+
+/**
+ * The shape `AssertedSourceProject.id` is held to: the `hashedProjectId`
+ * format, so a declared identity can be compared against an observed one.
+ * Same bounded shape on the write path and the snapshot reader, mirroring
+ * `CELL_ID_PATTERN`.
+ */
+export const SOURCE_PROJECT_ID_PATTERN = /^(git|path)-[0-9a-f]{16}$/;
+
+/**
  * Caller-supplied provenance for the observation event (yuurei cell
- * observation, #212). These fields assert something about the context the
- * inspection ran in; they are recorded verbatim and are not observed facts —
- * a supplied `cellId` does not certify which environment was actually
- * observed. Absent on standalone runs and on snapshots written before schema
- * version 2, where it reads as unknown rather than as a mismatch.
+ * observation, #212; source-project declaration, #217). These fields assert
+ * something about the context the inspection ran in; they are recorded
+ * verbatim and are not observed facts — a supplied `cellId` does not certify
+ * which environment was actually observed, and a supplied `sourceProject`
+ * does not certify which project the cell was seeded from. Absent on
+ * standalone runs and on snapshots written before schema version 2, where it
+ * reads as unknown rather than as a mismatch.
  */
 export interface ObservationProvenance {
-  cellId: string;
+  cellId?: string;
+  sourceProject?: AssertedSourceProject;
 }
 
 /**

@@ -3,10 +3,16 @@ import { classify } from '../classify/classifier.js';
 import { deriveFindings } from '../classify/findings.js';
 import { generateInterpretationId } from '../core/ids.js';
 import type { Interpretation } from '../core/interpretation.js';
-import { CELL_ID_PATTERN, type ObservedSnapshot } from '../core/observed.js';
+import {
+  CELL_ID_PATTERN,
+  type AssertedSourceProject,
+  type ObservationProvenance,
+  type ObservedSnapshot,
+} from '../core/observed.js';
 import type { ResolvedSnapshot, ResolvedStatus } from '../core/resolved.js';
 import { resolveAccessPolicy, type ConsentIO } from '../discovery/consent.js';
 import { resolveProjectContext } from '../discovery/project-identity.js';
+import { resolveSourceProjectDeclaration } from '../discovery/source-project.js';
 import { resolveHarness } from '../resolution/resolver.js';
 import { getAdapter, getClassifierContribution, getConsentRequest } from '../runtime/registry.js';
 import { allowsOutsideProject, type RuntimeDetection } from '../runtime/types.js';
@@ -21,7 +27,12 @@ import {
   writeObservedSnapshot,
   writeResolvedSnapshot,
 } from '../snapshot/store.js';
-import { redactPath, redactingLogger } from '../redact/output.js';
+import {
+  redactPath,
+  redactSourceProject,
+  redactingLogger,
+  type RedactionContext,
+} from '../redact/output.js';
 import type { Logger } from '../util/logger.js';
 import { type CommandOutcome } from './document.js';
 
@@ -38,6 +49,11 @@ export interface InspectData {
     completeness: string;
     /** The caller-supplied cell provenance, or `null` when none was supplied (#212). */
     cellId: string | null;
+    /**
+     * The caller-declared source-project identity (#217), or `null` when no
+     * valid declaration was supplied. Caller-asserted, never observed.
+     */
+    sourceProject: AssertedSourceProject | null;
   };
   resolved: {
     snapshotId: string;
@@ -71,6 +87,12 @@ export interface InspectOptions {
    * (#212).
    */
   cellId?: string;
+  /**
+   * Injected for tests; defaults to `process.env`. Read for the yuurei
+   * source-project declaration (`YUUREI_SOURCE_PROJECT_FILE` /
+   * `YUUREI_SOURCE_PROJECT_ID`, #217).
+   */
+  env?: Record<string, string | undefined>;
 }
 
 export function parseCellId(value: string | undefined): string | undefined {
@@ -101,6 +123,14 @@ export async function runInspect(
   const home = options.home ?? homedir();
   const out = redactingLogger(logger, options.json ? 'export' : 'display', { home });
   const cellId = parseCellId(options.cellId);
+  // The caller-declared source-project identity (#217): read from the process
+  // environment before any I/O so an invalid declaration is a diagnostic on
+  // this run. It is a caller assertion like --cell-id, never an observed fact.
+  const declaration = await resolveSourceProjectDeclaration({
+    env: options.env ?? process.env,
+    ...(cellId !== undefined ? { cellId } : {}),
+    home,
+  });
 
   const request = getConsentRequest(adapter.id(), 'user');
   const interactive =
@@ -139,9 +169,15 @@ export async function runInspect(
   const discovered = await adapter.discover(project, access, home, options.pathValue);
   // The caller's provenance attaches to the observation event after discovery:
   // it is an assertion about the context, never an observed fact, and an
-  // adapter must not need it to do its reading (#212).
+  // adapter must not need it to do its reading (#212, #217).
+  const provenance: ObservationProvenance = {
+    ...(cellId !== undefined ? { cellId } : {}),
+    ...(declaration.status === 'declared' ? { sourceProject: declaration.sourceProject } : {}),
+  };
   const observed =
-    cellId === undefined ? discovered : withObservationProvenance(discovered, { cellId });
+    provenance.cellId === undefined && provenance.sourceProject === undefined
+      ? discovered
+      : withObservationProvenance(discovered, provenance);
   const resolved = await resolveHarness(adapter, observed, home);
 
   await writeObservedSnapshot(project.id, observed, home);
@@ -152,7 +188,16 @@ export async function runInspect(
   // classification failure must not cost the captured run: the observed and
   // resolved snapshots are already stored, a read recomputes a missing
   // interpretation, and the failure is recorded as a diagnostic.
-  const diagnostics = [...stored.diagnostics, ...observed.diagnostics, ...resolved.diagnostics];
+  // A malformed declaration is reported here, on the inspect run that saw it,
+  // and is not persisted on the snapshot: it is a failure of the caller's
+  // contract, not a gap in the observed harness, so it must not move
+  // `completeness` to `partial`.
+  const diagnostics = [
+    ...stored.diagnostics,
+    ...(declaration.status === 'invalid' ? [declaration.diagnostic] : []),
+    ...observed.diagnostics,
+    ...resolved.diagnostics,
+  ];
   let interpretationId: string | undefined;
   try {
     const { mappings, findingKinds } = getClassifierContribution();
@@ -184,7 +229,7 @@ export async function runInspect(
   );
 
   const store = redactPath(projectDir(project.id, home), { home });
-  const data = inspectData(observed, resolved, store);
+  const data = inspectData(observed, resolved, store, { home });
 
   if (options.json !== true) {
     renderInspect(out, request.runtimeName, observed, resolved, detection, store);
@@ -196,6 +241,7 @@ function inspectData(
   observed: ObservedSnapshot,
   resolved: ResolvedSnapshot,
   store: string,
+  ctx: RedactionContext,
 ): InspectData {
   const opaqueLayers = observed.elements.filter(
     (element) => element.inspectability === 'opaque',
@@ -212,6 +258,13 @@ function inspectData(
       opaqueLayers,
       completeness: observed.completeness,
       cellId: observed.provenance?.cellId ?? null,
+      // Re-asserted at the document boundary like export does: the stored
+      // value is caller-asserted, and redaction is idempotent over what the
+      // parser already masked.
+      sourceProject:
+        observed.provenance?.sourceProject !== undefined
+          ? redactSourceProject(observed.provenance.sourceProject, ctx)
+          : null,
     },
     resolved: {
       snapshotId: resolved.snapshotId,
@@ -258,6 +311,12 @@ function renderInspect(
   const cellId = observed.provenance?.cellId;
   if (cellId !== undefined) {
     out.info(`  cell       ${cellId}`);
+  }
+  const sourceProject = observed.provenance?.sourceProject;
+  if (sourceProject !== undefined) {
+    out.info(
+      `  source     ${sourceProject.id} (${sourceProject.kind}, asserted by ${sourceProject.issuer})`,
+    );
   }
 
   out.info('');

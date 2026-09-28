@@ -54,8 +54,9 @@ a dry-run publish; and the OpenCode model was reconciled with the installed
 `docs/design/pfl-roadmap-v1.0.md`.
 
 Post-v1.0 work has begun: `inspect` accepts `--cell-id` to record
-caller-asserted observation provenance (#212; snapshot schema is now `"2"`,
-with `"1"` still readable).
+caller-asserted observation provenance (#212) and reads a caller-declared
+source-project identity from the `YUUREI_SOURCE_PROJECT_*` contract (#217;
+snapshot schema is now `"3"`, with `"1"` and `"2"` still readable).
 
 ## Commands
 

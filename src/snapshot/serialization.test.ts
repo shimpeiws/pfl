@@ -14,8 +14,8 @@ interface Fixture {
 
 describe('serializeSnapshot', () => {
   it('writes newline-terminated canonical JSON with sorted keys', () => {
-    const text = serializeSnapshot<Fixture>({ schemaVersion: '2', b: 'two', a: 1 });
-    expect(text).toBe('{"a":1,"b":"two","schemaVersion":"2"}\n');
+    const text = serializeSnapshot<Fixture>({ schemaVersion: '3', b: 'two', a: 1 });
+    expect(text).toBe('{"a":1,"b":"two","schemaVersion":"3"}\n');
   });
 
   it('refuses to write an unsupported schema version', () => {
@@ -30,7 +30,7 @@ describe('serializeSnapshot', () => {
 
 describe('deserializeSnapshot', () => {
   it('round-trips a snapshot', () => {
-    const fixture: Fixture = { schemaVersion: '2', b: 'two', a: 1 };
+    const fixture: Fixture = { schemaVersion: '3', b: 'two', a: 1 };
     expect(deserializeSnapshot<Fixture>(serializeSnapshot(fixture))).toEqual(fixture);
   });
 

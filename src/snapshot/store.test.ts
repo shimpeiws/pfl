@@ -60,7 +60,7 @@ afterEach(async () => {
 
 function makeObserved(overrides: Partial<ObservedSnapshot> = {}): ObservedSnapshot {
   return {
-    schemaVersion: '2',
+    schemaVersion: '3',
     snapshotId: generateObservedSnapshotId(),
     capturedAt: '2026-09-16T00:00:00.000Z',
     project: { id: 'proj', displayName: 'owner/repo', root: '/repo' },
@@ -76,7 +76,7 @@ function makeObserved(overrides: Partial<ObservedSnapshot> = {}): ObservedSnapsh
 
 function makeResolved(observedSnapshotId: ObservedSnapshotId): ResolvedSnapshot {
   return {
-    schemaVersion: '2',
+    schemaVersion: '3',
     snapshotId: generateResolvedSnapshotId(),
     observedSnapshotId,
     runtime: { id: runtimeId('claude-code'), version: '2.1.272' },
@@ -156,6 +156,245 @@ describe('observed snapshots', () => {
 
     const read = await readObservedSnapshot('proj', snapshot.snapshotId, home);
     expect(read.provenance?.cellId).toBe('cell_20260928T120000Z-a1b2');
+  });
+
+  it('round-trips a caller-declared source project, alone or beside cellId (#217)', async () => {
+    const home = await tempHome();
+    const sourceProject = {
+      id: 'git-0123456789abcdef',
+      kind: 'git-remote' as const,
+      remote: 'github.com/owner/repo',
+      issuer: 'yuurei',
+      contractVersion: 1,
+      head: 'a1b2c3d4e5f6a1b2c3d4e5f6a1b2c3d4e5f6a1b2',
+    };
+
+    const withBoth = makeObserved({ provenance: { cellId: 'cell_x', sourceProject } });
+    await writeObservedSnapshot('proj', withBoth, home);
+    expect((await readObservedSnapshot('proj', withBoth.snapshotId, home)).provenance).toEqual({
+      cellId: 'cell_x',
+      sourceProject,
+    });
+
+    const sourceOnly = makeObserved({ provenance: { sourceProject } });
+    await writeObservedSnapshot('proj', sourceOnly, home);
+    expect(
+      (await readObservedSnapshot('proj', sourceOnly.snapshotId, home)).provenance?.sourceProject,
+    ).toEqual(sourceProject);
+  });
+
+  it('rejects an observation whose sourceProject is malformed (#217)', async () => {
+    const home = await tempHome();
+    await mkdir(observationsDir('proj', home), { recursive: true });
+    for (const [id, provenance] of [
+      ['obs_badsp1', { sourceProject: 'git-0123456789abcdef' }],
+      [
+        'obs_badsp2',
+        {
+          sourceProject: { id: 'bogus', kind: 'git-remote', issuer: 'yuurei', contractVersion: 1 },
+        },
+      ],
+      [
+        'obs_badsp3',
+        {
+          sourceProject: {
+            id: 'git-0123456789abcdef',
+            kind: 'magic',
+            issuer: 'yuurei',
+            contractVersion: 1,
+          },
+        },
+      ],
+      [
+        'obs_badsp4',
+        {
+          sourceProject: {
+            id: 'git-0123456789abcdef',
+            kind: 'git-remote',
+            issuer: '',
+            contractVersion: 1,
+          },
+        },
+      ],
+      [
+        'obs_badsp5',
+        { sourceProject: { id: 'git-0123456789abcdef', kind: 'git-remote', issuer: 'yuurei' } },
+      ],
+      [
+        'obs_badsp6',
+        {
+          cellId: 'cell_x',
+          sourceProject: {
+            id: 'git-0123456789abcdef',
+            kind: 'git-remote',
+            issuer: 'yuurei',
+            contractVersion: 1,
+            remote: 42,
+          },
+        },
+      ],
+      // A written-around artifact cannot smuggle the host `source` path (or any
+      // non-allowlisted key) back in through the read path (#217, FIND-001).
+      [
+        'obs_badsp7',
+        {
+          sourceProject: {
+            id: 'git-0123456789abcdef',
+            kind: 'git-remote',
+            issuer: 'yuurei',
+            contractVersion: 1,
+            source: '/home/operator/src/repo',
+          },
+        },
+      ],
+      // `id`'s prefix encodes the derivation `kind` claims; a disagreement is
+      // self-contradictory and rejected (#217, FIND-002).
+      [
+        'obs_badsp8',
+        {
+          sourceProject: {
+            id: 'path-0123456789abcdef',
+            kind: 'git-remote',
+            issuer: 'yuurei',
+            contractVersion: 1,
+          },
+        },
+      ],
+      // The writer pins `contractVersion` to the one supported value; the
+      // reader must hold the same bound rather than accepting any number
+      // (#217, FIND-002 r2).
+      [
+        'obs_badsp9',
+        {
+          sourceProject: {
+            id: 'git-0123456789abcdef',
+            kind: 'git-remote',
+            issuer: 'yuurei',
+            contractVersion: 2,
+          },
+        },
+      ],
+      [
+        'obs_badsp10',
+        {
+          sourceProject: {
+            id: 'git-0123456789abcdef',
+            kind: 'git-remote',
+            issuer: 'yuurei',
+            contractVersion: 1.5,
+          },
+        },
+      ],
+      [
+        'obs_badsp11',
+        {
+          sourceProject: {
+            id: 'git-0123456789abcdef',
+            kind: 'git-remote',
+            issuer: 'yuurei',
+            contractVersion: 0,
+          },
+        },
+      ],
+      // `remote` describes the remote the `git-remote` derivation used; a
+      // `local-path` artifact carrying one contradicts itself (#217, review
+      // C-2).
+      [
+        'obs_badsp12',
+        {
+          sourceProject: {
+            id: 'path-0123456789abcdef',
+            kind: 'local-path',
+            issuer: 'yuurei',
+            contractVersion: 1,
+            remote: 'github.com/owner/repo',
+          },
+        },
+      ],
+      // Asserted free text is echoed in documents; a written-around artifact
+      // must not carry control characters through the reader (#217, review
+      // C-1 r6).
+      [
+        'obs_badsp13',
+        {
+          sourceProject: {
+            id: 'git-0123456789abcdef',
+            kind: 'git-remote',
+            issuer: 'yuurei\u001b[31m',
+            contractVersion: 1,
+          },
+        },
+      ],
+      [
+        'obs_badsp14',
+        {
+          sourceProject: {
+            id: 'git-0123456789abcdef',
+            kind: 'git-remote',
+            issuer: 'yuurei',
+            contractVersion: 1,
+            remote: 'github.com/o/r\n',
+          },
+        },
+      ],
+      [
+        'obs_badsp15',
+        {
+          sourceProject: {
+            id: 'git-0123456789abcdef',
+            kind: 'git-remote',
+            issuer: 'yuurei',
+            contractVersion: 1,
+            head: 'abc\u0007',
+          },
+        },
+      ],
+      // Format characters (Cf — bidi override) are rejected like control
+      // characters (#217, review C-1 r7).
+      [
+        'obs_badsp16',
+        {
+          sourceProject: {
+            id: 'git-0123456789abcdef',
+            kind: 'git-remote',
+            issuer: 'yuurei\u202e',
+            contractVersion: 1,
+          },
+        },
+      ],
+    ] as const) {
+      await writeFile(
+        join(observationsDir('proj', home), `${id}.json`),
+        JSON.stringify({ ...makeObserved({ snapshotId: id as ObservedSnapshotId }), provenance }),
+      );
+      await expect(readObservedSnapshot('proj', id, home)).rejects.toThrowError(PflError);
+    }
+  });
+
+  it('tolerates provenance fields a future schema may add (#217)', async () => {
+    const home = await tempHome();
+    await mkdir(observationsDir('proj', home), { recursive: true });
+    const id = 'obs_futureprov';
+    await writeFile(
+      join(observationsDir('proj', home), `${id}.json`),
+      JSON.stringify({
+        ...makeObserved({ snapshotId: id as ObservedSnapshotId }),
+        provenance: {
+          cellId: 'cell_x',
+          sourceProject: {
+            id: 'git-0123456789abcdef',
+            kind: 'git-remote',
+            issuer: 'yuurei',
+            contractVersion: 1,
+          },
+          futureField: { nested: ['anything'] },
+        },
+      }),
+    );
+
+    const read = await readObservedSnapshot('proj', id, home);
+    expect(read.provenance?.cellId).toBe('cell_x');
+    expect(read.provenance?.sourceProject?.id).toBe('git-0123456789abcdef');
   });
 
   it('rejects an observation whose provenance is malformed', async () => {
@@ -485,7 +724,7 @@ describe('listRuns', () => {
     await writeFile(
       join(interpretationsDir('proj', home), 'foo.json'),
       serializeSnapshot({
-        schemaVersion: '2',
+        schemaVersion: '3',
         interpretationId: 'int_x',
         resolvedSnapshotId: resolved.snapshotId,
         classifier: { id: 'classifier', version: '1' },
@@ -519,7 +758,7 @@ describe('readInterpretationForResolved', () => {
   it('round-trips a populated interpretation and reports absence as null', async () => {
     const home = await tempHome();
     const interpretation: Interpretation = {
-      schemaVersion: '2',
+      schemaVersion: '3',
       interpretationId: generateInterpretationId(),
       resolvedSnapshotId: 'res_y' as ResolvedSnapshotId,
       classifier: { id: 'pfl-native', version: '4' },
@@ -593,7 +832,7 @@ describe('readInterpretationForResolved', () => {
     await writeFile(
       join(interpretationsDir('proj', home), 'res_y.json'),
       serializeSnapshot({
-        schemaVersion: '2',
+        schemaVersion: '3',
         interpretationId: 'int_x',
         resolvedSnapshotId: 'res_z',
         classifier: { id: 'classifier', version: '1' },

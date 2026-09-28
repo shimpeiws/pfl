@@ -9,7 +9,12 @@ import {
   type ResolvedSnapshotId,
 } from '../core/ids.js';
 import type { Interpretation } from '../core/interpretation.js';
-import type { NativeOrigin, ObservedElement, ObservedSnapshot } from '../core/observed.js';
+import type {
+  AssertedSourceProject,
+  NativeOrigin,
+  ObservedElement,
+  ObservedSnapshot,
+} from '../core/observed.js';
 import type { ResolvedElement, ResolvedSnapshot } from '../core/resolved.js';
 import { resolveProjectContext } from '../discovery/project-identity.js';
 import {
@@ -69,6 +74,7 @@ async function seed(
   home: string,
   pairs: Pair[],
   files?: Record<string, string>,
+  options: { sourceProject?: AssertedSourceProject } = {},
 ): Promise<{ observed: ObservedSnapshot; resolved: ResolvedSnapshot }> {
   if (files !== undefined) {
     const { writeFile: wf } = await import('node:fs/promises');
@@ -82,7 +88,7 @@ async function seed(
 
   const projectId = (await resolveProjectContext(projectRoot)).id;
   const observed: ObservedSnapshot = {
-    schemaVersion: '2',
+    schemaVersion: '3',
     snapshotId: generateObservedSnapshotId(),
     capturedAt: '2026-09-25T00:00:00.000Z',
     project: { id: projectId, displayName: 'owner/repo', root: projectRoot },
@@ -91,10 +97,13 @@ async function seed(
     elements: pairs.map((p) => p.observed),
     diagnostics: [],
     completeness: 'complete',
+    ...(options.sourceProject !== undefined
+      ? { provenance: { sourceProject: options.sourceProject } }
+      : {}),
     digests: { observed: 'sha256:x' },
   };
   const resolved: ResolvedSnapshot = {
-    schemaVersion: '2',
+    schemaVersion: '3',
     snapshotId: 'res_test' as ResolvedSnapshotId,
     observedSnapshotId: observed.snapshotId,
     runtime: { id: rid, version: '2.1.272' },
@@ -108,7 +117,7 @@ async function seed(
   await writeObservedSnapshot(projectId, observed, home);
   await writeResolvedSnapshot(projectId, resolved, home);
   const interpretation: Interpretation = {
-    schemaVersion: '2',
+    schemaVersion: '3',
     interpretationId: 'int_test' as never,
     resolvedSnapshotId: resolved.snapshotId,
     classifier: { id: 'pfl-native', version: '5' },
@@ -251,6 +260,30 @@ describe('evidence bundle (R3: metadata only)', () => {
 
     const outcome = await runExport(projectRoot, { home, json: true }, logger);
     expect(outcome.data.elements).toHaveLength(1);
+  });
+
+  it('carries the declared sourceProject into the bundle harness.json (#217)', async () => {
+    const projectRoot = await tempDir('pfl-bundle-project-');
+    const home = await tempDir('pfl-bundle-home-');
+    const bundleDir = join(await tempDir('pfl-bundle-out-'), 'my-bundle');
+    const sourceProject: AssertedSourceProject = {
+      id: 'git-0123456789abcdef',
+      kind: 'git-remote',
+      remote: 'github.com/owner/repo',
+      issuer: 'yuurei',
+      contractVersion: 1,
+    };
+    const elem = pair('instructions', 'CLAUDE.md');
+    await seed(projectRoot, home, [elem], { 'CLAUDE.md': 'test' }, { sourceProject });
+    const { logger } = fakeLogger();
+
+    await runExport(projectRoot, { home, json: true, bundle: bundleDir }, logger);
+
+    const harness = JSON.parse(await readFile(join(bundleDir, 'harness.json'), 'utf8'));
+    // The bundle writes the same boundary-redacted ExportData document as
+    // --json, so the asserted identity rides along beside the observed one.
+    expect(harness.snapshot.sourceProject).toEqual(sourceProject);
+    expect(harness.project.id).not.toBe(sourceProject.id);
   });
 
   it('produces a manifest with matching harnessDigest', async () => {

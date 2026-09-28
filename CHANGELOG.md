@@ -9,6 +9,22 @@ snapshot schema, the resolution semantics, or the classifier; see
 
 ## [Unreleased]
 
+### Added
+
+- **Source-project declaration provenance** (#217; yuurei #214) — `pfl inspect`
+  reads the caller-declared source-project contract pointed to by
+  `YUUREI_SOURCE_PROJECT_FILE` (cross-checked against
+  `YUUREI_SOURCE_PROJECT_ID` and `--cell-id` when present) and records
+  `{ id, kind, remote?, issuer, contractVersion, head? }` as
+  `provenance.sourceProject` on the observed snapshot, surfaced as
+  `sourceProject` in `inspect` and `export` JSON (`null` when absent or
+  invalid). Asserted provenance, not verification: it does not change the
+  observed cell-local `project.id`, snapshot ids, or `digests.observed`, and
+  pfl never reads host Git metadata to reconstruct it.
+- **Snapshot schema bumped (2 → 3).** Schema-1 and schema-2 artifacts remain
+  readable; their absent `sourceProject` surfaces as `null`. See ADR 0005 and
+  `docs/design/schema-bump-procedure.md`.
+
 ## [1.2.0] - 2026-09-28
 
 ### Added
