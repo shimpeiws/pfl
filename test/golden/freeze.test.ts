@@ -24,7 +24,7 @@ import { runReport } from '../../src/cli/report.js';
 import { runShow } from '../../src/cli/show.js';
 import { runSnapshots } from '../../src/cli/snapshots.js';
 import { resolveProjectContext } from '../../src/discovery/project-identity.js';
-import { projectIndexPath, readProjectIndex } from '../../src/snapshot/project-index.js';
+import { projectIndexPath, readProjectIndex, PROJECT_INDEX_VERSION } from '../../src/snapshot/project-index.js';
 import { serializeSnapshot } from '../../src/snapshot/serialization.js';
 import {
   interpretationsDir,
@@ -274,8 +274,9 @@ describe('read compatibility', () => {
 
       const index = await readProjectIndex(indexHome);
 
+      // v1 index is accepted and normalized to the current version on read.
       expect(index).toEqual({
-        indexVersion: '1',
+        indexVersion: PROJECT_INDEX_VERSION,
         projects: { '/repo': 'path-0123456789abcdef' },
       });
     } finally {

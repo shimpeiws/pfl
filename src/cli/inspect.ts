@@ -73,7 +73,7 @@ export interface InspectOptions {
   cellId?: string;
 }
 
-function parseCellId(value: string | undefined): string | undefined {
+export function parseCellId(value: string | undefined): string | undefined {
   if (value === undefined) return undefined;
   if (!CELL_ID_PATTERN.test(value)) {
     throw new PflError(

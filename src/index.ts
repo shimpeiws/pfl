@@ -317,6 +317,14 @@ cli
   .option('--snapshot <id>', 'Snapshot id (default: latest)')
   .option('--runtime <id>', `Scope 'latest' to a runtime: ${RUNTIME_CHOICES}`)
   .option(
+    '--cell-id <id>',
+    'Override the cell id on the exported snapshot (advisory; the stored snapshot is immutable)',
+  )
+  .option(
+    '--out <dir>',
+    'Write JSON output to a file in this directory instead of stdout (implies --json)',
+  )
+  .option(
     '--bundle <dir>',
     'Write a bundle (harness.json + evidence manifest) to this directory (R3: no raw content)',
   )
@@ -327,13 +335,23 @@ cli
   .action(
     withErrorHandling(
       'export',
-      async (flags: { snapshot?: string; runtime?: string; bundle?: string } & CommonFlags) => {
+      async (
+        flags: {
+          snapshot?: string;
+          runtime?: string;
+          cellId?: string;
+          out?: string;
+          bundle?: string;
+        } & CommonFlags,
+      ) => {
         const runtime = parseRuntimeFlag(flags.runtime);
         return runExport(
           process.cwd(),
           {
             ...(flags.snapshot !== undefined ? { snapshot: flags.snapshot } : {}),
             ...(runtime !== undefined ? { runtime } : {}),
+            ...(flags.cellId !== undefined ? { cellId: flags.cellId } : {}),
+            ...(flags.out !== undefined ? { out: flags.out } : {}),
             ...(flags.bundle !== undefined ? { bundle: flags.bundle } : {}),
             json: flags.json ?? false,
           },

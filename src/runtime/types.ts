@@ -116,4 +116,14 @@ export interface RuntimeAdapter {
   ): Promise<ObservedSnapshot>;
 
   resolve(observed: ObservedSnapshot, home?: string): Promise<ResolvedSnapshot>;
+
+  /**
+   * Returns the environment variable names this adapter considers sensitive
+   * (API keys, auth tokens, secrets). Observers call this at startup to build
+   * a credential-free env clone.
+   *
+   * Invariant: the set is adapter-static; it does not depend on runtime state,
+   * access policy, or detected version.
+   */
+  credentialKeyNames(): readonly string[];
 }
