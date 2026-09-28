@@ -9,6 +9,8 @@ snapshot schema, the resolution semantics, or the classifier; see
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-09-28
+
 ### Added
 
 - **`pfl inspect --cell-id <id>`** (#212) — record a caller-asserted isolation
@@ -19,6 +21,15 @@ snapshot schema, the resolution semantics, or the classifier; see
 - **Snapshot schema bumped (1 → 2).** Schema-1 artifacts remain readable; their
   absent `provenance` surfaces as `cellId: null`. See ADR 0004 and
   `docs/design/schema-bump-procedure.md`.
+- **`pfl export --cell-id <id> --out <dir>`** (#213) — override cell provenance
+  on the exported document; `--out` writes the full envelope JSON to
+  `<dir>/<snapshot-id>.json` with mode `0o600`. Rejects destinations inside the
+  inspected project.
+- **Dead-path annotation** (ProjectIndex v2) — `markDeadPath` / `clearDeadPath` /
+  `isDeadPath` idempotent functions; `deadPath: boolean` on export snapshots.
+- **`credentialKeyNames()`** on `RuntimeAdapter` — returns sensitive env var
+  names per adapter (claude-code, codex, opencode) for credential-stripped
+  observer environments.
 
 ## [1.1.0] - 2026-09-27
 
