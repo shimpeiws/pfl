@@ -5,7 +5,11 @@ import type { Diagnostic } from '../core/diagnostics.js';
 import { hasAnyUserConsent } from '../discovery/consent.js';
 import { resolveProjectContext } from '../discovery/project-identity.js';
 import { redactingLogger } from '../redact/output.js';
-import { projectIdFromEntry, readProjectIndex, resolveStoredProjectId } from '../snapshot/project-index.js';
+import {
+  projectIdFromEntry,
+  readProjectIndex,
+  resolveStoredProjectId,
+} from '../snapshot/project-index.js';
 import {
   artifactFilePath,
   interpretationsDir,

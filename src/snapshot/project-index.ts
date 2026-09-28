@@ -356,10 +356,7 @@ export async function clearDeadPath(
 /**
  * Check whether a project root is marked dead-path.
  */
-export async function isDeadPath(
-  projectRoot: string,
-  home: string = homedir(),
-): Promise<boolean> {
+export async function isDeadPath(projectRoot: string, home: string = homedir()): Promise<boolean> {
   const index = await readProjectIndex(home);
   const existing = index.projects[projectRoot];
   if (existing === undefined) return false;

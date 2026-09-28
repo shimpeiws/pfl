@@ -24,7 +24,11 @@ import { runReport } from '../../src/cli/report.js';
 import { runShow } from '../../src/cli/show.js';
 import { runSnapshots } from '../../src/cli/snapshots.js';
 import { resolveProjectContext } from '../../src/discovery/project-identity.js';
-import { projectIndexPath, readProjectIndex, PROJECT_INDEX_VERSION } from '../../src/snapshot/project-index.js';
+import {
+  projectIndexPath,
+  readProjectIndex,
+  PROJECT_INDEX_VERSION,
+} from '../../src/snapshot/project-index.js';
 import { serializeSnapshot } from '../../src/snapshot/serialization.js';
 import {
   interpretationsDir,
