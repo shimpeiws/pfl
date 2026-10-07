@@ -1,16 +1,14 @@
 {
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Bash",
-        "hooks": [
-          {
-            "type": "command",
-            "command": "python3 /Users/shin/.hermes/scripts/devin_dangerous_guard.py",
-            "timeout": 5
-          }
-        ]
-      }
-    ]
-  }
+  "PreToolUse": [
+    {
+      "matcher": "^exec$",
+      "hooks": [
+        {
+          "type": "command",
+          "command": "if [ -f \"$HOME/.hermes/scripts/devin_dangerous_guard.py\" ]; then python3 \"$HOME/.hermes/scripts/devin_dangerous_guard.py\"; fi",
+          "timeout": 5
+        }
+      ]
+    }
+  ]
 }
