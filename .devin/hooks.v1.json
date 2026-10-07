@@ -5,7 +5,7 @@
       "hooks": [
         {
           "type": "command",
-          "command": "if [ -f \"$HOME/.hermes/scripts/devin_dangerous_guard.py\" ]; then python3 \"$HOME/.hermes/scripts/devin_dangerous_guard.py\"; fi",
+          "command": "python3 \"$DEVIN_PROJECT_DIR/.devin/devin_dangerous_guard.py\"",
           "timeout": 5
         }
       ]
